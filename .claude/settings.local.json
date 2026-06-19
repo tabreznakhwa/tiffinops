@@ -18,7 +18,8 @@
       "Bash(claude plugin *)",
       "Bash(dir /s /b \"C:\\\\Users\\\\tabre\\\\.claude\\\\plugins\\\\cache\\\\ui-ux-pro-max-skill\\\\ui-ux-pro-max\\\\2.5.0\\\\\" 2>/dev/null)",
       "Bash(dir /s /b \"C:\\\\Users\\\\tabre\\\\.claude\\\\plugins\\\\cache\\\\ui-ux-pro-max-skill\\\\ui-ux-pro-max\\\\2.5.0\")",
-      "Bash(npx create-next-app@latest fixops --typescript --tailwind --eslint --app --src-dir --import-alias \"@/*\" --no-turbopack --yes)"
+      "Bash(npx create-next-app@latest fixops --typescript --tailwind --eslint --app --src-dir --import-alias \"@/*\" --no-turbopack --yes)",
+      "Bash(npx supabase *)"
     ]
   }
 }
