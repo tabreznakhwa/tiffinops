@@ -1,0 +1,24 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(ls \"C:\\\\Users\\\\tabre\\\\tiffinops\\\\\")",
+      "Read(//c/Users/tabre/**)",
+      "Bash(npm --version)",
+      "Bash(npx create-next-app@latest . --typescript --tailwind --eslint --app --no-src-dir --import-alias \"@/*\" --yes)",
+      "Read(//c/tmp/**)",
+      "Bash(npx create-next-app@latest tiffinops-scaffold --typescript --tailwind --eslint --app --no-src-dir --import-alias \"@/*\" --yes)",
+      "Bash(ls /c/tmp/tiffinops-scaffold/ 2>/dev/null || ls /tmp/tiffinops-scaffold/ 2>/dev/null || ls \"C:\\\\Users\\\\tabre\\\\AppData\\\\Local\\\\Temp\\\\tiffinops-scaffold\" 2>/dev/null || ls \"/c/Users/tabre/AppData/Local/Temp/tiffinops-scaffold/\")",
+      "Read(//tmp/**)",
+      "Bash(npx shadcn@latest init -y)",
+      "Bash(npx tsc *)",
+      "Bash(npx next *)",
+      "Bash(python3 -c ' *)",
+      "Bash(identify \"Apna Chulha Logo White.png\" \"Apna chulha logo brown.png\" \"Apna Chulha logo black.png\")",
+      "Bash(node -e \"require\\('recharts'\\); console.log\\('ok'\\)\")",
+      "Bash(claude plugin *)",
+      "Bash(dir /s /b \"C:\\\\Users\\\\tabre\\\\.claude\\\\plugins\\\\cache\\\\ui-ux-pro-max-skill\\\\ui-ux-pro-max\\\\2.5.0\\\\\" 2>/dev/null)",
+      "Bash(dir /s /b \"C:\\\\Users\\\\tabre\\\\.claude\\\\plugins\\\\cache\\\\ui-ux-pro-max-skill\\\\ui-ux-pro-max\\\\2.5.0\")",
+      "Bash(npx create-next-app@latest fixops --typescript --tailwind --eslint --app --src-dir --import-alias \"@/*\" --no-turbopack --yes)"
+    ]
+  }
+}

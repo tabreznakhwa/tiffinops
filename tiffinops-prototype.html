@@ -1,0 +1,1477 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>TiffinOps — Apna Chulha</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400..800&family=Inter:wght@400;500;600;700&family=Saira+Stencil+One&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+:root{
+  --saffron:#E76F2A; --saffron-soft:#FBE7D5; --ember:#8B2E1F;
+  --ink:#221A13; --muted:#7C7063; --cream:#FBF6EE; --surface:#FFFFFF; --border:#ECE2D3;
+  --green:#2E7D4F; --green-soft:#E2F0E6; --red:#C0392B; --red-soft:#FBE6E2; --gold:#B7860B;
+  --shadow:0 1px 2px rgba(34,26,19,.05), 0 8px 24px rgba(34,26,19,.06);
+  --radius:14px;
+}
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+body{margin:0;background:var(--cream);color:var(--ink);font-family:"Inter",system-ui,sans-serif;font-size:15px;line-height:1.5;-webkit-font-smoothing:antialiased}
+h1,h2,h3,.display{font-family:"Bricolage Grotesque","Inter",sans-serif;letter-spacing:-.02em;margin:0}
+.num{font-family:"Bricolage Grotesque","Inter",sans-serif;font-variant-numeric:tabular-nums;letter-spacing:-.01em}
+button{font-family:inherit;cursor:pointer}
+
+/* top bar */
+.topbar{position:sticky;top:0;z-index:40;background:var(--ink);color:#fff;display:flex;align-items:center;gap:12px;padding:12px 18px}
+.logo-badge{width:40px;height:40px;border-radius:50%;background:var(--saffron);display:flex;align-items:center;justify-content:center;flex:0 0 auto;box-shadow:0 0 0 3px rgba(231,111,42,.25)}
+.logo-badge span{font-family:"Saira Stencil One",sans-serif;color:#221A13;font-size:14px;line-height:1}
+.brand-meta{display:flex;flex-direction:column;line-height:1.15}
+.brand-meta .wm{font-family:"Bricolage Grotesque";font-weight:800;font-size:18px}
+.brand-meta .sub{font-size:11.5px;color:#C9BEB1;letter-spacing:.02em}
+.topbar .spacer{flex:1}
+.top-right{display:flex;align-items:center;gap:14px}
+.today-pill{font-size:12px;color:#D8CEC1;display:flex;align-items:center;gap:7px}
+.dot{width:7px;height:7px;border-radius:50%;background:var(--green);display:inline-block;box-shadow:0 0 0 3px rgba(46,125,79,.3)}
+.user-chip{display:flex;align-items:center;gap:8px;font-size:13px}
+.avatar{width:30px;height:30px;border-radius:50%;background:var(--ember);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:12px}
+.user-chip .role{color:#C9BEB1;font-size:11px}
+
+/* nav */
+.nav{position:sticky;top:64px;z-index:30;background:var(--cream);border-bottom:1px solid var(--border);display:flex;gap:2px;padding:0 12px;overflow-x:auto;-webkit-overflow-scrolling:touch}
+.nav button{border:none;background:none;color:var(--muted);font-weight:600;font-size:14px;padding:14px 12px 12px;border-bottom:2.5px solid transparent;white-space:nowrap;display:flex;align-items:center;gap:6px}
+.nav button .badge{background:var(--red);color:#fff;font-size:10.5px;font-weight:700;border-radius:9px;padding:1px 6px;line-height:1.5}
+.nav button.active{color:var(--ink);border-bottom-color:var(--saffron)}
+.nav svg{width:17px;height:17px;stroke-width:2}
+
+main{max-width:1180px;margin:0 auto;padding:20px 16px 96px}
+.view{display:none;animation:fade .25s ease}
+.view.active{display:block}
+@keyframes fade{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+@media (prefers-reduced-motion:reduce){.view{animation:none}}
+
+.page-head{display:flex;align-items:flex-end;justify-content:space-between;gap:12px;margin-bottom:16px;flex-wrap:wrap}
+.page-head h1{font-size:25px}
+.page-head .eyebrow{font-size:11.5px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--saffron);margin-bottom:4px}
+.page-head .lede{color:var(--muted);font-size:13.5px;margin-top:3px;max-width:60ch}
+
+/* KPI */
+.kpi-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(168px,1fr));gap:12px;margin-bottom:18px}
+.kpi{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:15px 16px;box-shadow:var(--shadow);position:relative;overflow:hidden}
+.kpi::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--saffron)}
+.kpi.k-green::before{background:var(--green)} .kpi.k-red::before{background:var(--red)} .kpi.k-ember::before{background:var(--ember)}
+.kpi .label{font-size:12px;color:var(--muted);font-weight:600}
+.kpi .value{font-size:26px;font-weight:800;margin-top:7px}
+.kpi .value small{font-size:13px;color:var(--muted);font-weight:600}
+.kpi .delta{font-size:11.5px;font-weight:600;margin-top:5px;display:inline-flex;align-items:center;gap:4px}
+.kpi .delta.up{color:var(--green)} .kpi .delta.down{color:var(--red)} .kpi .delta.flat{color:var(--muted)}
+
+.grid-2{display:grid;grid-template-columns:1.3fr 1fr;gap:14px;margin-bottom:14px}
+.grid-2.even{grid-template-columns:1fr 1fr}
+.panel{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:16px 17px;box-shadow:var(--shadow)}
+.panel-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;gap:10px}
+.panel-head h3{font-size:16px}
+.panel-head .hint{font-size:12px;color:var(--muted)}
+.seg{display:inline-flex;background:var(--cream);border:1px solid var(--border);border-radius:9px;padding:2px}
+.seg button{border:none;background:none;font-size:12.5px;font-weight:600;color:var(--muted);padding:6px 12px;border-radius:7px;min-height:36px}
+.seg button.on{background:var(--surface);color:var(--ink);box-shadow:var(--shadow)}
+.chart-wrap{position:relative;height:210px}
+
+.row-list{display:flex;flex-direction:column}
+.row-item{display:flex;align-items:center;gap:12px;padding:11px 0;border-bottom:1px solid var(--border)}
+.row-item:last-child{border-bottom:none}
+.row-item .av{width:34px;height:34px;border-radius:9px;background:var(--saffron-soft);color:var(--ember);display:flex;align-items:center;justify-content:center;font-weight:700;font-size:13px;flex:0 0 auto}
+.row-item .meta{flex:1;min-width:0}
+.row-item .meta .nm{font-weight:600;font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.row-item .meta .sm{font-size:12px;color:var(--muted)}
+.row-item .amt{font-weight:700;font-size:14.5px;white-space:nowrap}
+.amt.due{color:var(--red)} .amt.paid{color:var(--green)}
+.badge-status{font-size:11px;font-weight:700;padding:3px 9px;border-radius:999px;white-space:nowrap}
+.bs-paid{background:var(--green-soft);color:var(--green)} .bs-pending{background:var(--saffron-soft);color:var(--ember)}
+.bs-delivered{background:var(--green-soft);color:var(--green)} .bs-out{background:#E7EEF6;color:#2C5E8F} .bs-overdue{background:var(--red-soft);color:var(--red)}
+.barlist{display:flex;flex-direction:column;gap:11px}
+.barlist .b{display:grid;grid-template-columns:120px 1fr auto;align-items:center;gap:10px}
+.barlist .b .bn{font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.barlist .b .track{height:9px;background:var(--cream);border-radius:999px;overflow:hidden}
+.barlist .b .fill{height:100%;background:linear-gradient(90deg,var(--saffron),var(--ember));border-radius:999px}
+.barlist .b .bv{font-size:13px;font-weight:700;font-variant-numeric:tabular-nums}
+
+/* ---------- ORDER ENTRY ---------- */
+.oe-grid{display:grid;grid-template-columns:1fr 340px;gap:16px;align-items:start}
+.field{display:flex;flex-direction:column;gap:5px;margin-bottom:14px}
+.field label{font-size:11.5px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.06em}
+.field select,.field input{font-family:inherit;font-size:14px;font-weight:500;padding:11px 12px;border:1px solid var(--border);border-radius:10px;background:var(--surface);min-height:46px;width:100%}
+.field select:focus-visible,.field input:focus-visible{outline:2px solid var(--saffron);outline-offset:1px}
+.meal-toggle{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:16px}
+.meal-toggle button{border:1.5px solid var(--border);background:var(--surface);border-radius:12px;padding:13px 8px;min-height:60px;display:flex;flex-direction:column;align-items:center;gap:4px;font-weight:700;font-size:13.5px;color:var(--muted)}
+.meal-toggle button .ic{width:22px;height:22px}
+.meal-toggle button.on{border-color:var(--saffron);background:var(--saffron-soft);color:var(--ember)}
+.item-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px}
+.item-card{border:1px solid var(--border);background:var(--surface);border-radius:12px;padding:11px 12px;display:flex;flex-direction:column;gap:9px}
+.item-card.has{border-color:var(--saffron);box-shadow:0 0 0 2px var(--saffron-soft)}
+.item-card .inm{font-weight:600;font-size:13.5px;line-height:1.25}
+.item-card .ip{font-size:12px;color:var(--muted);font-weight:600}
+.stepper{display:flex;align-items:center;justify-content:space-between;gap:6px}
+.stepper button{width:34px;height:34px;border-radius:9px;border:1px solid var(--border);background:var(--cream);font-size:18px;font-weight:700;color:var(--ink);display:flex;align-items:center;justify-content:center;line-height:1}
+.stepper button:hover{border-color:var(--saffron)}
+.stepper .q{font-weight:800;font-size:16px;font-variant-numeric:tabular-nums;min-width:24px;text-align:center}
+.summary{position:sticky;top:118px}
+.summary .s-items{display:flex;flex-direction:column;gap:0;margin:10px 0;max-height:280px;overflow:auto}
+.summary .s-row{display:flex;justify-content:space-between;gap:8px;padding:8px 0;border-bottom:1px dashed var(--border);font-size:13.5px}
+.summary .s-row .q{color:var(--muted);font-weight:600}
+.summary .s-empty{color:#BAB0A2;font-style:italic;font-size:13px;padding:18px 0;text-align:center}
+.summary .s-total{display:flex;justify-content:space-between;font-weight:800;font-size:20px;font-family:"Bricolage Grotesque";padding-top:8px;border-top:2px solid var(--ink);margin-top:4px}
+.paytoggle{display:flex;gap:8px;margin:12px 0}
+.paytoggle button{flex:1;border:1.5px solid var(--border);background:var(--surface);border-radius:10px;padding:10px;font-weight:700;font-size:13px;color:var(--muted);min-height:44px}
+.paytoggle button.on{border-color:var(--ink);background:var(--ink);color:#fff}
+.btn{border:none;border-radius:11px;font-weight:700;font-size:14px;padding:12px 18px;min-height:48px;display:inline-flex;align-items:center;justify-content:center;gap:8px}
+.btn-primary{background:var(--saffron);color:#fff;width:100%}
+.btn-primary:hover{background:#d8631f}
+.btn-primary:disabled{background:#E7D8C8;color:#fff;cursor:not-allowed}
+.btn-wa{background:#1FA855;color:#fff}.btn-wa:hover{background:#188947}
+.btn-ghost{background:var(--surface);border:1px solid var(--border);color:var(--ink)}.btn-ghost:hover{background:var(--cream)}
+.btn svg{width:17px;height:17px}
+.recent-strip{margin-top:18px}
+.recent-strip .rs-row{display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid var(--border);font-size:13.5px}
+.recent-strip .rs-row:last-child{border-bottom:none}
+.mtag{font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;padding:2px 8px;border-radius:7px}
+.mt-b{background:var(--saffron-soft);color:var(--ember)} .mt-l{background:#FBEFD6;color:var(--gold)} .mt-d{background:#EDE3F2;color:#6B3FA0}
+
+/* ---------- PACKING ---------- */
+.pack-bar{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:14px;justify-content:space-between}
+.pack-stat{display:flex;gap:18px;flex-wrap:wrap}
+.pack-stat .ps{display:flex;flex-direction:column}
+.pack-stat .ps .v{font-family:"Bricolage Grotesque";font-weight:800;font-size:22px}
+.pack-stat .ps .k{font-size:11.5px;color:var(--muted);font-weight:600}
+.kitchen-list{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:10px}
+.kl-item{display:flex;align-items:center;justify-content:space-between;border:1px solid var(--border);background:var(--surface);border-radius:11px;padding:12px 14px}
+.kl-item .kn{font-weight:600;font-size:14px}
+.kl-item .kq{font-family:"Bricolage Grotesque";font-weight:800;font-size:20px;background:var(--saffron-soft);color:var(--ember);border-radius:9px;padding:3px 11px;min-width:46px;text-align:center}
+.pack-cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:11px}
+.pc{border:1px solid var(--border);background:var(--surface);border-radius:12px;padding:13px 14px;box-shadow:var(--shadow)}
+.pc .pc-h{display:flex;justify-content:space-between;align-items:start;gap:8px;margin-bottom:8px}
+.pc .pc-h .cn{font-weight:700;font-size:14.5px}
+.pc .pc-h .cc{font-size:12px;color:var(--muted)}
+.pc .pc-h .pc-id{font-size:10.5px;font-weight:700;color:var(--muted);background:var(--cream);border:1px solid var(--border);border-radius:6px;padding:3px 7px;letter-spacing:.02em;white-space:nowrap;flex:0 0 auto}
+.pc .pc-audit{display:flex;flex-wrap:wrap;gap:6px 12px;font-size:11.5px;color:var(--muted);margin-bottom:9px;padding:7px 9px;background:var(--cream);border-radius:8px;border-left:3px solid var(--saffron)}
+.pc .pc-audit .ai{display:inline-flex;align-items:center;gap:5px}
+.pc .pc-audit .ai svg{width:12px;height:12px;color:var(--ember);flex:0 0 auto}
+.pc .pc-audit .ai b{color:var(--ink);font-weight:600}
+.pc .pc-loc{font-size:12px;color:var(--muted);display:flex;align-items:center;gap:5px;margin-bottom:9px}
+.pc .pc-loc svg{width:13px;height:13px;color:var(--saffron)}
+.pc .pc-items{display:flex;flex-direction:column;gap:4px}
+.pc .pc-items .pi{display:flex;justify-content:space-between;font-size:13px;padding:3px 0;border-bottom:1px dashed var(--border)}
+.pc .pc-items .pi:last-child{border-bottom:none}
+.pc .pc-items .pi .x{font-weight:800;color:var(--ember)}
+
+/* ---------- BILL ---------- */
+.bill-controls{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:16px;align-items:end}
+.statement{background:var(--surface);border:1px solid var(--border);border-radius:18px;box-shadow:var(--shadow);overflow:hidden}
+.st-head{padding:20px 20px 16px;border-bottom:1px solid var(--border);background:linear-gradient(180deg,#fff,#FFFBF6)}
+.st-top{display:flex;justify-content:space-between;align-items:flex-start;gap:14px;flex-wrap:wrap}
+.st-brand{display:flex;align-items:center;gap:11px}
+.st-brand .logo-badge{box-shadow:0 0 0 3px var(--saffron-soft)}
+.st-brand .bn-name{font-family:"Bricolage Grotesque";font-weight:800;font-size:18px;line-height:1.1}
+.st-brand .bn-sub{font-size:11.5px;color:var(--muted)}
+.st-meta{text-align:right}
+.st-meta .tag{font-size:11px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--saffron)}
+.st-meta .no{font-weight:700;font-size:15px;margin-top:2px}
+.st-meta .dt{font-size:12px;color:var(--muted)}
+.st-cust{display:flex;justify-content:space-between;gap:16px;flex-wrap:wrap;margin-top:16px}
+.st-cust .blk .k{font-size:11px;color:var(--muted);font-weight:600;text-transform:uppercase;letter-spacing:.05em}
+.st-cust .blk .v{font-weight:600;font-size:14px}
+.due-chip{background:var(--red-soft);color:var(--red);font-weight:700;font-size:12.5px;padding:7px 12px;border-radius:10px;display:inline-flex;flex-direction:column;line-height:1.3}
+.due-chip small{font-weight:600;opacity:.8;font-size:10.5px}
+.days{padding:8px 14px 6px}
+.day{display:grid;grid-template-columns:84px 1fr 86px;gap:12px;padding:13px 6px;border-bottom:1px solid var(--border);align-items:start}
+.day:last-child{border-bottom:none}
+.day .d-date{display:flex;flex-direction:column;align-items:center;background:var(--cream);border-radius:10px;padding:7px 4px}
+.day .d-date .dow{font-size:10.5px;font-weight:700;color:var(--muted);text-transform:uppercase}
+.day .d-date .dd{font-family:"Bricolage Grotesque";font-weight:800;font-size:20px;line-height:1}
+.day .d-date .mo{font-size:10.5px;color:var(--muted)}
+.meals{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+.meal .m-label{font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--saffron);display:flex;align-items:center;gap:5px;margin-bottom:5px}
+.meal.lunch .m-label{color:var(--gold)} .meal.dinner .m-label{color:#6B3FA0}
+.meal .m-item{font-size:13px;display:flex;justify-content:space-between;gap:8px;padding:2px 0}
+.meal .m-item .q{color:var(--muted);font-weight:600}
+.meal .m-item .p{font-variant-numeric:tabular-nums;color:var(--muted);font-size:12px}
+.meal .m-none{font-size:12.5px;color:#BAB0A2;font-style:italic}
+.day .d-total{text-align:right;font-weight:800;font-family:"Bricolage Grotesque";font-size:16px;font-variant-numeric:tabular-nums;padding-top:2px}
+.day .d-total small{display:block;font-size:10px;color:var(--muted);font-weight:600;font-family:"Inter";letter-spacing:.04em}
+.st-foot{padding:16px 20px 20px;background:#FFFBF6;border-top:1px solid var(--border)}
+.totals{margin-left:auto;max-width:320px}
+.totals .t-row{display:flex;justify-content:space-between;padding:6px 0;font-size:14px}
+.totals .t-row.grand{border-top:2px solid var(--ink);margin-top:6px;padding-top:10px;font-weight:800;font-size:18px;font-family:"Bricolage Grotesque"}
+.totals .t-row .pos{color:var(--green)} .totals .t-row .neg{color:var(--red)}
+.st-actions{display:flex;gap:10px;margin-top:16px;flex-wrap:wrap}
+
+/* reports */
+.rep-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:12px;margin-bottom:16px}
+.rep-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:15px;box-shadow:var(--shadow)}
+.rep-card .rh{display:flex;align-items:center;gap:9px;margin-bottom:10px}
+.rep-card .ico{width:32px;height:32px;border-radius:9px;background:var(--saffron-soft);color:var(--ember);display:flex;align-items:center;justify-content:center}
+.rep-card .ico svg{width:17px;height:17px}
+.rep-card h3{font-size:15px}
+.rep-card ul{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:2px}
+.rep-card li{font-size:13px;color:var(--muted);padding:5px 0;display:flex;align-items:center;gap:7px;border-bottom:1px dashed var(--border)}
+.rep-card li:last-child{border-bottom:none}
+.rep-card li::before{content:"";width:5px;height:5px;border-radius:50%;background:var(--saffron);flex:0 0 auto}
+.exports{display:flex;gap:7px;flex-wrap:wrap;margin-top:11px}
+.chip{font-size:11.5px;font-weight:700;padding:7px 11px;border-radius:9px;border:1px solid var(--border);background:var(--cream);color:var(--ink);display:inline-flex;align-items:center;gap:5px;min-height:38px}
+.chip:hover{border-color:var(--saffron);color:var(--ember)}
+.tbl-wrap{overflow-x:auto}
+table.data{width:100%;border-collapse:collapse;font-size:13.5px}
+table.data th{text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);font-weight:700;padding:10px 12px;border-bottom:1px solid var(--border)}
+table.data td{padding:11px 12px;border-bottom:1px solid var(--border)}
+table.data td.r,table.data th.r{text-align:right;font-variant-numeric:tabular-nums}
+table.data tr:hover td{background:var(--cream)}
+
+/* approvals */
+.approve-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);box-shadow:var(--shadow);padding:14px 16px;margin-bottom:11px;display:flex;gap:14px;align-items:center;flex-wrap:wrap}
+.approve-card .ac-main{flex:1;min-width:200px}
+.approve-card .ac-main .t{font-weight:700;font-size:15px}
+.approve-card .ac-main .s{font-size:12.5px;color:var(--muted);margin-top:3px}
+.approve-card .ac-main .reason{font-size:12.5px;margin-top:6px;background:var(--cream);border-left:3px solid var(--gold);padding:6px 10px;border-radius:0 8px 8px 0}
+.approve-card .ac-amt{font-family:"Bricolage Grotesque";font-weight:800;font-size:18px}
+.approve-card .ac-btns{display:flex;gap:8px}
+.btn-sm{border:none;border-radius:9px;font-weight:700;font-size:13px;padding:9px 14px;min-height:42px;display:inline-flex;align-items:center;gap:6px}
+.btn-approve{background:var(--green-soft);color:var(--green)}.btn-approve:hover{background:#cfe6d7}
+.btn-reject{background:var(--red-soft);color:var(--red)}.btn-reject:hover{background:#f6d8d2}
+.empty{text-align:center;color:var(--muted);padding:40px 20px}
+.empty svg{width:42px;height:42px;color:var(--green);margin-bottom:10px}
+
+#toast{position:fixed;left:50%;bottom:22px;transform:translateX(-50%) translateY(20px);background:var(--ink);color:#fff;padding:13px 18px;border-radius:12px;font-size:14px;font-weight:600;box-shadow:0 10px 30px rgba(0,0,0,.25);opacity:0;pointer-events:none;transition:.28s;z-index:80;display:flex;align-items:center;gap:9px;max-width:90vw}
+#toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+#toast .tdot{width:8px;height:8px;border-radius:50%;background:var(--saffron)}
+.note{font-size:12.5px;color:var(--muted);background:var(--saffron-soft);border:1px solid #F3D6BD;border-radius:10px;padding:9px 13px;margin-bottom:16px;display:flex;gap:8px;align-items:flex-start}
+.note svg{width:16px;height:16px;color:var(--ember);flex:0 0 auto;margin-top:1px}
+
+@media (max-width:900px){.oe-grid{grid-template-columns:1fr}.summary{position:static}}
+@media (max-width:860px){.grid-2,.grid-2.even{grid-template-columns:1fr}}
+@media (max-width:680px){
+  .brand-meta .sub,.today-pill{display:none}
+  main{padding:16px 12px 96px}
+  .day{grid-template-columns:62px 1fr;grid-template-areas:"date meals" "date total"}
+  .day .d-date{grid-area:date}.day .meals{grid-area:meals;grid-template-columns:1fr}
+  .meal{border-bottom:1px dashed var(--border);padding-bottom:7px}.meal:last-child{border-bottom:none}
+  .day .d-total{grid-area:total;text-align:left;display:flex;gap:8px;align-items:baseline}.day .d-total small{display:inline}
+  .barlist .b{grid-template-columns:96px 1fr auto}
+  .totals{max-width:none}.page-head h1{font-size:22px}
+}
+/* customers + modal */
+.cust-toolbar{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:14px}
+.cust-toolbar input{flex:1;min-width:200px;font-family:inherit;font-size:14px;padding:11px 13px;border:1px solid var(--border);border-radius:10px;background:var(--surface);min-height:46px}
+.cust-toolbar input:focus-visible{outline:2px solid var(--saffron);outline-offset:1px}
+.cust-list{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:11px}
+.cust-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);box-shadow:var(--shadow);padding:14px 15px}
+.cust-card .cc-top{display:flex;justify-content:space-between;align-items:start;gap:8px}
+.cust-card .cc-id{display:flex;align-items:center;gap:10px;min-width:0}
+.cust-card .cc-av{width:38px;height:38px;border-radius:10px;background:var(--saffron-soft);color:var(--ember);display:flex;align-items:center;justify-content:center;font-weight:700;font-size:14px;flex:0 0 auto}
+.cust-card .cc-nm{font-weight:700;font-size:15px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.cust-card .cc-co{font-size:12.5px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.cust-card .cc-meta{display:flex;gap:14px;flex-wrap:wrap;margin-top:11px;font-size:12.5px;color:var(--muted)}
+.cust-card .cc-meta b{color:var(--ink);font-weight:600}
+.cust-card .cc-foot{display:flex;justify-content:space-between;align-items:center;margin-top:12px;padding-top:11px;border-top:1px solid var(--border)}
+.cust-card .cc-bal{font-weight:800;font-family:"Bricolage Grotesque";font-size:16px}
+.type-pill{font-size:10.5px;font-weight:700;padding:3px 9px;border-radius:999px;background:#EDE6FA;color:#6B3FA0;white-space:nowrap}
+.type-pill.t-fixed{background:var(--green-soft);color:var(--green)}
+.type-pill.t-hybrid{background:var(--saffron-soft);color:var(--ember)}
+.link-edit{font-size:13px;font-weight:700;color:var(--saffron);background:none;border:none;padding:6px 4px}
+
+.modal-overlay{position:fixed;inset:0;background:rgba(34,26,19,.5);display:none;align-items:center;justify-content:center;z-index:90;padding:16px}
+.modal-overlay.open{display:flex}
+.modal{background:var(--surface);border-radius:18px;width:100%;max-width:580px;max-height:92vh;display:flex;flex-direction:column;box-shadow:0 20px 60px rgba(0,0,0,.3);overflow:hidden}
+.modal-head{display:flex;justify-content:space-between;align-items:center;padding:16px 20px;border-bottom:1px solid var(--border)}
+.modal-head h3{font-size:18px}
+.modal-x{border:none;background:var(--cream);width:34px;height:34px;border-radius:9px;font-size:15px;color:var(--muted)}
+.modal-x:hover{background:var(--red-soft);color:var(--red)}
+.modal-body{padding:18px 20px;overflow:auto}
+.modal-grid{display:grid;grid-template-columns:1fr 1fr;gap:13px}
+.modal-foot{display:flex;justify-content:flex-end;gap:10px;padding:14px 20px;border-top:1px solid var(--border);background:#FFFBF6}
+@media (max-width:560px){.modal-grid{grid-template-columns:1fr}}
+/* menu table */
+#menuTable .price-edit{width:74px;font-family:"Bricolage Grotesque";font-weight:700;font-size:14px;padding:6px 8px;border:1px solid var(--border);border-radius:8px;text-align:right;background:var(--cream)}
+#menuTable .price-edit:focus-visible{outline:2px solid var(--saffron);outline-offset:1px;background:#fff}
+#menuTable .meal-tag{font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;padding:3px 8px;border-radius:7px}
+.tg{position:relative;width:42px;height:24px;border-radius:999px;background:#D9CFC0;border:none;cursor:pointer;transition:.18s;flex:0 0 auto}
+.tg.on{background:var(--green)}
+.tg::after{content:"";position:absolute;top:2px;left:2px;width:20px;height:20px;border-radius:50%;background:#fff;transition:.18s;box-shadow:0 1px 3px rgba(0,0,0,.2)}
+.tg.on::after{left:20px}
+.icon-btn{border:none;background:none;color:var(--muted);padding:6px;border-radius:7px;cursor:pointer}
+.icon-btn:hover{background:var(--red-soft);color:var(--red)}
+.icon-btn svg{width:16px;height:16px}
+/* payments */
+.pay-info{background:var(--saffron-soft);border:1px solid #F3D6BD;border-radius:11px;padding:11px 13px;margin-bottom:14px;display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap}
+.pay-info .pi-bal{display:flex;flex-direction:column;line-height:1.25}
+.pay-info .pi-bal .k{font-size:11px;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.05em}
+.pay-info .pi-bal .v{font-family:"Bricolage Grotesque";font-weight:800;font-size:20px;color:var(--red)}
+.pay-info .pi-bal .v.zero{color:var(--green)}
+.pay-info .pi-meta{font-size:12.5px;color:var(--muted);text-align:right}
+.quick-amt{display:flex;gap:7px;flex-wrap:wrap;margin-bottom:14px}
+.quick-amt button{font-family:inherit;font-size:12.5px;font-weight:700;padding:7px 12px;border-radius:8px;border:1px solid var(--border);background:var(--cream);color:var(--ink);cursor:pointer;min-height:38px}
+.quick-amt button:hover{border-color:var(--saffron);color:var(--ember)}
+.pay-preview{margin-top:14px;padding:13px 15px;background:var(--cream);border-radius:11px;border-left:3px solid var(--saffron);font-size:13.5px;line-height:1.55;display:none}
+.pay-preview.show{display:block}
+.pay-preview .row{display:flex;justify-content:space-between;padding:3px 0}
+.pay-preview .row.grand{font-weight:800;border-top:1px solid var(--border);margin-top:6px;padding-top:8px;font-size:15px}
+.pay-preview .row.grand .v.due{color:var(--red)}.pay-preview .row.grand .v.set{color:var(--green)}.pay-preview .row.grand .v.adv{color:var(--gold)}
+.ledger-debit{color:var(--red);font-weight:700}
+.ledger-credit{color:var(--green);font-weight:700}
+.ledger-type{font-size:10.5px;font-weight:700;padding:2px 8px;border-radius:6px;text-transform:uppercase;letter-spacing:.04em}
+.lt-order{background:#FBE7D5;color:var(--ember)}
+.lt-stmt{background:#FBE6E2;color:var(--red)}
+.lt-pay{background:var(--green-soft);color:var(--green)}
+.lt-disc{background:#FBEFD6;color:var(--gold)}
+.mode-pill{font-size:10.5px;font-weight:700;padding:2px 7px;border-radius:6px;background:var(--cream);color:var(--muted);text-transform:uppercase;letter-spacing:.04em}
+/* deliveries */
+.del-list{display:flex;flex-direction:column;gap:9px}
+.del-row{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:13px 14px;box-shadow:var(--shadow);display:grid;grid-template-columns:1fr auto;gap:10px;align-items:center;border-left:4px solid var(--saffron)}
+.del-row.s-pending{border-left-color:var(--saffron)}
+.del-row.s-out{border-left-color:#2C5E8F}
+.del-row.s-delivered{border-left-color:var(--green)}
+.del-row.s-skipped{border-left-color:var(--muted);opacity:.78}
+.del-row .dr-main .dr-cust{font-weight:700;font-size:14.5px}
+.del-row .dr-main .dr-meta{font-size:12.5px;color:var(--muted);margin-top:2px;display:flex;flex-wrap:wrap;gap:4px 10px}
+.del-row .dr-main .dr-audit{font-size:11.5px;color:var(--muted);margin-top:6px;display:flex;flex-wrap:wrap;gap:4px 10px}
+.del-row .dr-main .dr-audit b{color:var(--ink);font-weight:600}
+.del-row .dr-main .dr-skip{font-size:12px;color:var(--ember);margin-top:5px;background:var(--cream);border-left:3px solid var(--gold);padding:5px 9px;border-radius:0 8px 8px 0;display:inline-block}
+.dr-actions{display:flex;flex-direction:column;align-items:flex-end;gap:7px;flex:0 0 auto}
+.dr-actions .a-row{display:flex;gap:6px}
+.dr-act{border:1px solid var(--border);background:var(--cream);color:var(--ink);font-family:inherit;font-size:12px;font-weight:700;padding:6px 11px;border-radius:8px;cursor:pointer;min-height:36px;display:inline-flex;align-items:center;gap:5px}
+.dr-act svg{width:13px;height:13px}
+.dr-act:hover{border-color:var(--saffron);color:var(--ember)}
+.dr-act.go-deliver{background:var(--green-soft);color:var(--green);border-color:transparent}
+.dr-act.go-deliver:hover{background:#cfe6d7}
+.dr-act.go-out{background:#E7EEF6;color:#2C5E8F;border-color:transparent}
+.dr-act.go-skip{color:var(--red)}
+.dr-act.go-skip:hover{border-color:var(--red);background:var(--red-soft)}
+.dr-act.undo{font-weight:600;color:var(--muted)}
+
+/* tappable status pill on dashboard */
+.badge-status.tappable{cursor:pointer;user-select:none;display:inline-flex;align-items:center;gap:4px}
+.badge-status.tappable:hover{filter:brightness(.94);box-shadow:0 0 0 2px var(--border)}
+.badge-status.tappable::after{content:"";width:0;height:0;border-left:3.5px solid transparent;border-right:3.5px solid transparent;border-top:4px solid currentColor;opacity:.55;margin-left:2px}
+.bs-skipped{background:#E8E2D6;color:#5F5650}
+
+/* skip modal reasons */
+.skip-reasons{display:grid;grid-template-columns:1fr 1fr;gap:7px}
+.skip-reasons button{font-family:inherit;font-size:13px;font-weight:600;text-align:left;padding:11px 13px;border:1.5px solid var(--border);background:var(--surface);border-radius:10px;color:var(--ink);cursor:pointer;min-height:44px}
+.skip-reasons button:hover{border-color:var(--saffron)}
+.skip-reasons button.on{border-color:var(--saffron);background:var(--saffron-soft);color:var(--ember)}
+@media (max-width:520px){.skip-reasons{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+
+<header class="topbar">
+  <div class="logo-badge"><span>AC</span></div>
+  <div class="brand-meta">
+    <div class="wm">TiffinOps</div>
+    <div class="sub">Apna Chulha Restaurant LLC · Dubai</div>
+  </div>
+  <div class="spacer"></div>
+  <div class="top-right">
+    <div class="today-pill"><span class="dot"></span><span id="todayLabel"></span></div>
+    <div class="user-chip"><div class="avatar">TA</div><div><div style="font-weight:600">Tabrez</div><div class="role">Owner</div></div></div>
+  </div>
+</header>
+
+<nav class="nav" id="nav">
+  <button data-view="neworder" class="active">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="12" cy="12" r="9"/><path d="M12 8v8M8 12h8"/></svg>
+    New Order
+  </button>
+  <button data-view="customers">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="9" cy="8" r="3.2"/><path d="M3.5 20c0-3.2 2.8-5.2 5.5-5.2s5.5 2 5.5 5.2M17 9.5a2.6 2.6 0 1 0-2-4.5M16 14.6c2.4.3 4.5 1.8 4.5 4.4"/></svg>
+    Customers
+  </button>
+  <button data-view="menu">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M5 3v18M5 8h4M9 3v18M16 3c-1.5 0-2.5 2-2.5 5s1 4 2.5 4 2.5-1 2.5-4-1-5-2.5-5ZM16 16v5"/></svg>
+    Menu
+  </button>
+  <button data-view="dashboard">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/></svg>
+    Dashboard
+  </button>
+  <button data-view="packing">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M3 8l9-5 9 5v8l-9 5-9-5V8Z"/><path d="M3 8l9 5 9-5M12 13v8"/></svg>
+    Packing
+  </button>
+  <button data-view="deliveries">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="6" cy="18" r="2"/><circle cx="17" cy="18" r="2"/><path d="M2 5h11v13M13 9h5l3 4v5h-2"/></svg>
+    Deliveries
+  </button>
+  <button data-view="bill">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M6 2h9l5 5v13a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V3a1 1 0 0 1 1-1Z"/><path d="M14 2v6h6M9 13h6M9 17h4"/></svg>
+    A La Carte Bill
+  </button>
+  <button data-view="reports">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M4 19V5M4 19h16M8 16v-5M12 16V8M16 16v-8"/></svg>
+    Reports
+  </button>
+  <button data-view="payments">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="3" y="6" width="18" height="12" rx="2"/><path d="M3 10h18M7 15h4"/></svg>
+    Payments
+  </button>
+  <button data-view="approvals">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M9 12l2 2 4-4"/><circle cx="12" cy="12" r="9"/></svg>
+    Approvals <span class="badge" id="apprBadge">3</span>
+  </button>
+</nav>
+
+<main>
+
+<!-- ============ NEW ORDER (executive entry) ============ -->
+<section class="view active" id="view-neworder">
+  <div class="page-head">
+    <div>
+      <div class="eyebrow">Executive · fast entry</div>
+      <h1>New Order</h1>
+      <div class="lede">Customer messaged on WhatsApp → pick them, choose the meal, tap items. Tagging the meal here is what feeds the packing report and the monthly bill.</div>
+    </div>
+  </div>
+
+  <div class="oe-grid">
+    <div>
+      <div class="field">
+        <label for="oeCust">Customer</label>
+        <div style="display:flex;gap:8px">
+          <select id="oeCust" style="flex:1"></select>
+          <button class="btn-ghost" style="border-radius:10px;padding:0 14px;min-height:46px;font-weight:700;white-space:nowrap" onclick="openCustModal(true)">+ New</button>
+        </div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+        <div class="field"><label for="oeDate">Order date</label><input type="date" id="oeDate" value="2026-06-13"></div>
+        <div class="field"><label>Delivery to</label><input id="oeLoc" readonly style="background:var(--cream)"></div>
+      </div>
+
+      <label class="field" style="margin-bottom:6px"><span style="font-size:11.5px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.06em">Meal</span></label>
+      <div class="meal-toggle" id="mealToggle">
+        <button data-meal="breakfast" class="on"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8h1a3 3 0 0 1 0 6h-1M5 8h13v5a5 5 0 0 1-5 5H10a5 5 0 0 1-5-5V8ZM8 2v2M12 2v2M16 2v2"/></svg>Breakfast</button>
+        <button data-meal="lunch"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 11h18M12 11a8 8 0 0 1 8 8H4a8 8 0 0 1 8-8ZM12 7V4"/></svg>Lunch</button>
+        <button data-meal="dinner"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 3v7a3 3 0 0 0 6 0V3M7 10v11M17 3c-1.5 0-2.5 2-2.5 5s1 4 2.5 4 2.5-1 2.5-4-1-5-2.5-5ZM17 16v5"/></svg>Dinner</button>
+      </div>
+
+      <div class="item-grid" id="itemGrid"></div>
+
+      <div class="recent-strip panel" style="margin-top:18px">
+        <div class="panel-head"><h3>Saved today</h3><span class="hint" id="savedCount"></span></div>
+        <div id="recentList"></div>
+      </div>
+    </div>
+
+    <!-- order summary -->
+    <div class="panel summary">
+      <div class="panel-head"><h3>This order</h3><span class="hint" id="oeMealLabel">Breakfast</span></div>
+      <div class="s-items" id="oeItems"><div class="s-empty">Tap items to add them</div></div>
+      <div class="s-total"><span>Total</span><span class="num" id="oeTotal">AED 0.00</span></div>
+      <div class="paytoggle" id="payToggle">
+        <button data-pay="credit" class="on">Credit (month bill)</button>
+        <button data-pay="paid">Paid now</button>
+      </div>
+      <button class="btn btn-primary" id="saveBtn" disabled onclick="saveOrder()">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 13l4 4L19 7"/></svg>
+        Save order
+      </button>
+    </div>
+  </div>
+</section>
+
+<!-- ============ DASHBOARD ============ -->
+<section class="view" id="view-dashboard">
+  <div class="page-head"><div><div class="eyebrow">Today at a glance</div><h1>Operations Dashboard</h1><div class="lede" id="dashDate"></div></div></div>
+  <div class="kpi-grid">
+    <div class="kpi"><div class="label">Today's Orders</div><div class="value num" id="kOrders">47</div><div class="delta up">▲ 12% vs yesterday</div></div>
+    <div class="kpi"><div class="label">A La Carte Sales</div><div class="value num">AED 1,284</div><div class="delta up">▲ 8% vs yesterday</div></div>
+    <div class="kpi k-ember"><div class="label">Active Fixed Customers</div><div class="value num">86</div><div class="delta flat">3 paused</div></div>
+    <div class="kpi k-green"><div class="label">Deliveries Done</div><div class="value num">79<small> / 86</small></div><div class="delta flat">7 pending</div></div>
+    <div class="kpi k-green"><div class="label">Collected Today</div><div class="value num">AED 3,540</div><div class="delta up">6 payments</div></div>
+    <div class="kpi k-red"><div class="label">Total Pending</div><div class="value num">AED 22,450</div><div class="delta down">due ~26th</div></div>
+    <div class="kpi"><div class="label">This Month Revenue</div><div class="value num">AED 64,300</div><div class="delta up">▲ 18% MoM</div></div>
+  </div>
+  <div class="grid-2">
+    <div class="panel"><div class="panel-head"><h3>Sales trend</h3><div class="seg" id="rangeSeg"><button class="on" data-range="7">7 days</button><button data-range="30">30 days</button></div></div><div class="chart-wrap"><canvas id="salesChart"></canvas></div></div>
+    <div class="panel"><div class="panel-head"><h3>Today's mix</h3><span class="hint">by meal</span></div><div class="chart-wrap"><canvas id="mixChart"></canvas></div></div>
+  </div>
+  <div class="grid-2 even">
+    <div class="panel"><div class="panel-head"><h3>Top pending customers</h3><span class="hint">collect on salary day</span></div><div class="row-list" id="pendingList"></div></div>
+    <div class="panel"><div class="panel-head"><h3>Today's deliveries</h3><span class="hint">fixed menu</span></div><div class="row-list" id="deliveryList"></div></div>
+  </div>
+  <div class="panel" style="margin-top:14px"><div class="panel-head"><h3>Company-wise receivables</h3><span class="hint">outstanding this cycle</span></div><div class="barlist" id="companyBars"></div></div>
+</section>
+
+<!-- ============ PACKING ============ -->
+<section class="view" id="view-packing">
+  <div class="page-head">
+    <div>
+      <div class="eyebrow">Send to kitchen & packing</div>
+      <h1>Packing Report</h1>
+      <div class="lede">All orders for one meal, consolidated. Enter breakfast in the morning, send the breakfast report; do lunch and dinner the same way.</div>
+    </div>
+  </div>
+
+  <div class="pack-bar">
+    <div class="seg" id="packMeal">
+      <button class="on" data-meal="breakfast">Breakfast</button>
+      <button data-meal="lunch">Lunch</button>
+      <button data-meal="dinner">Dinner</button>
+    </div>
+    <div class="seg" id="packMode">
+      <button class="on" data-mode="kitchen">Kitchen totals</button>
+      <button data-mode="packing">Packing list</button>
+    </div>
+  </div>
+
+  <div class="panel" style="margin-bottom:14px">
+    <div class="pack-bar" style="margin-bottom:0">
+      <div class="pack-stat" id="packStat"></div>
+      <div style="display:flex;gap:9px">
+        <button class="btn btn-wa" id="sendPackBtn">
+          <svg viewBox="0 0 24 24" fill="currentColor"><path d="M17.5 14.4c-.3-.2-1.7-.8-2-.9-.3-.1-.5-.2-.7.1-.2.3-.7.9-.9 1.1-.2.2-.3.2-.6.1-1.6-.8-2.6-1.4-3.7-3.2-.3-.5.3-.4.8-1.4.1-.2 0-.4 0-.5 0-.2-.7-1.6-.9-2.2-.2-.6-.5-.5-.7-.5h-.6c-.2 0-.5.1-.8.4-.3.3-1 1-1 2.5s1.1 2.9 1.2 3.1c.2.2 2.1 3.3 5.2 4.6 1.9.8 2.6.9 3.5.8.6-.1 1.7-.7 1.9-1.4.2-.7.2-1.2.2-1.4-.1-.1-.3-.2-.6-.3M12 2a10 10 0 0 0-8.6 15l-1.3 4.7L7 20.4A10 10 0 1 0 12 2"/></svg>
+          Send to Packing Team
+        </button>
+        <button class="btn btn-ghost" onclick="toast('Opening print sheet…')">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9V2h12v7M6 18H4a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v3a2 2 0 0 1-2 2h-2M6 14h12v8H6z"/></svg>
+          Print
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <div id="packBody"></div>
+</section>
+
+<!-- ============ DELIVERIES ============ -->
+<section class="view" id="view-deliveries">
+  <div class="page-head">
+    <div>
+      <div class="eyebrow">Fixed-menu delivery sweep</div>
+      <h1>Today's Deliveries</h1>
+      <div class="lede">Mark each fixed-menu customer delivered, out for delivery, or skipped. Every status change captures who did it and when — for the audit trail and the monthly statement.</div>
+    </div>
+  </div>
+
+  <div class="pack-bar" style="margin-bottom:14px">
+    <div class="seg" id="delFilter">
+      <button class="on" data-f="all">All</button>
+      <button data-f="pending">Pending</button>
+      <button data-f="out">Out</button>
+      <button data-f="delivered">Delivered</button>
+      <button data-f="skipped">Skipped</button>
+    </div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap">
+      <button class="btn btn-ghost" onclick="bulkMark('out')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="6" cy="18" r="2"/><circle cx="17" cy="18" r="2"/><path d="M2 5h11v13M13 9h5l3 4v5h-2"/></svg>All pending → Out</button>
+      <button class="btn btn-ghost" onclick="toast('Delivery sheet sent to driver on WhatsApp ✓')"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M17.5 14.4c-.3-.2-1.7-.8-2-.9-.3-.1-.5-.2-.7.1-.2.3-.7.9-.9 1.1-.2.2-.3.2-.6.1-1.6-.8-2.6-1.4-3.7-3.2-.3-.5.3-.4.8-1.4.1-.2 0-.4 0-.5 0-.2-.7-1.6-.9-2.2-.2-.6-.5-.5-.7-.5h-.6c-.2 0-.5.1-.8.4-.3.3-1 1-1 2.5s1.1 2.9 1.2 3.1c.2.2 2.1 3.3 5.2 4.6 1.9.8 2.6.9 3.5.8.6-.1 1.7-.7 1.9-1.4.2-.7.2-1.2.2-1.4-.1-.1-.3-.2-.6-.3M12 2a10 10 0 0 0-8.6 15l-1.3 4.7L7 20.4A10 10 0 1 0 12 2"/></svg>Send to driver</button>
+    </div>
+  </div>
+
+  <div class="panel" style="margin-bottom:14px">
+    <div class="pack-stat" id="delStat"></div>
+  </div>
+
+  <div id="delBody"></div>
+</section>
+
+<!-- ============ BILL ============ -->
+<section class="view" id="view-bill">
+  <div class="page-head"><div><div class="eyebrow">Monthly statement</div><h1>A La Carte Bill</h1><div class="lede">Day-by-day, meal-by-meal — exactly what each customer ate, ready to collect on salary day.</div></div></div>
+  <div class="note"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="12" cy="12" r="9"/><path d="M12 8v5M12 16h.01"/></svg><span>Built automatically from the meal-tagged orders your executive enters all month.</span></div>
+  <div class="bill-controls">
+    <div class="field" style="margin-bottom:0"><label for="custSel">Customer</label><select id="custSel"></select></div>
+    <div class="field" style="margin-bottom:0"><label for="cycleSel">Billing cycle</label><select id="cycleSel"><option>26 May – 25 Jun 2026</option><option>26 Apr – 25 May 2026</option></select></div>
+  </div>
+  <div class="statement" id="statement"></div>
+</section>
+
+<!-- ============ REPORTS ============ -->
+<section class="view" id="view-reports">
+  <div class="page-head"><div><div class="eyebrow">Everything exportable</div><h1>Reports</h1><div class="lede">Sales, payments, customers and operations — filter on screen, export to CSV, Excel or PDF.</div></div></div>
+  <div class="rep-grid" id="repGrid"></div>
+  <div class="panel">
+    <div class="panel-head"><h3>Company-wise outstanding</h3><div class="exports"><button class="chip" onclick="toast('Exporting CSV…')">CSV</button><button class="chip" onclick="toast('Exporting Excel…')">Excel</button><button class="chip" onclick="toast('Generating PDF…')">PDF</button></div></div>
+    <div class="tbl-wrap"><table class="data"><thead><tr><th>Company</th><th class="r">Customers</th><th class="r">Billed</th><th class="r">Collected</th><th class="r">Outstanding</th><th>Status</th></tr></thead><tbody id="outTable"></tbody></table></div>
+  </div>
+</section>
+
+<!-- ============ PAYMENTS ============ -->
+<section class="view" id="view-payments">
+  <div class="page-head">
+    <div>
+      <div class="eyebrow">Money in</div>
+      <h1>Payments &amp; Ledger</h1>
+      <div class="lede">Record cash, card or bank transfer. Every payment posts to the customer's ledger instantly — partial payments are supported, balance recalculates from the entries.</div>
+    </div>
+    <button class="btn btn-primary" style="width:auto" onclick="openPayModal()">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
+      Record Payment
+    </button>
+  </div>
+  <div class="kpi-grid" style="margin-bottom:14px">
+    <div class="kpi k-green"><div class="label">Collected today</div><div class="value num" id="payCollToday">AED 3,540</div><div class="delta up">6 payments</div></div>
+    <div class="kpi k-green"><div class="label">Collected this month</div><div class="value num" id="payCollMonth">AED 41,850</div><div class="delta flat">82 payments</div></div>
+    <div class="kpi k-red"><div class="label">Total pending</div><div class="value num" id="payPending">AED 22,450</div><div class="delta down">across 18 customers</div></div>
+    <div class="kpi"><div class="label">Partial payments</div><div class="value num" id="payPartial">4</div><div class="delta flat">awaiting balance</div></div>
+  </div>
+
+  <div class="grid-2 even" style="margin-bottom:14px">
+    <div class="panel">
+      <div class="panel-head"><h3>Today's payments</h3><span class="hint">latest first</span></div>
+      <div class="row-list" id="todaysPayments"></div>
+    </div>
+    <div class="panel">
+      <div class="panel-head"><h3>Customers with balance</h3><span class="hint">click to record payment</span></div>
+      <div class="row-list" id="payBalances"></div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-head">
+      <h3>Customer ledger — live entries</h3>
+      <div style="display:flex;gap:8px;align-items:center">
+        <select id="ledgerCust" style="font-size:13px;padding:8px 11px;border:1px solid var(--border);border-radius:8px;background:var(--surface);min-height:40px"></select>
+        <div class="exports"><button class="chip" onclick="toast('Statement exported')">PDF</button></div>
+      </div>
+    </div>
+    <div class="tbl-wrap"><table class="data" id="ledgerTable"></table></div>
+  </div>
+</section>
+
+<!-- ============ APPROVALS ============ -->
+<section class="view" id="view-approvals">
+  <div class="page-head"><div><div class="eyebrow">Needs your sign-off</div><h1>Delete Approvals</h1><div class="lede">When an executive deletes an order, it pauses here for you or a manager to approve before anything is removed.</div></div></div>
+  <div id="apprList"></div>
+</section>
+
+<!-- ============ MENU ============ -->
+<section class="view" id="view-menu">
+  <div class="page-head">
+    <div>
+      <div class="eyebrow">Menu &amp; pricing</div>
+      <h1>Menu Items</h1>
+      <div class="lede">Add dishes, change prices, toggle availability. In the live app every edit saves to the database instantly and updates the order screen for all staff in real time.</div>
+    </div>
+    <button class="btn btn-primary" style="width:auto" onclick="openMenuModal()">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
+      Add Item
+    </button>
+  </div>
+  <div class="note"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="12" cy="12" r="9"/><path d="M12 8v5M12 16h.01"/></svg><span>Tap any price to edit it inline — change it here and jump to New Order to see it update live.</span></div>
+  <div class="cust-toolbar">
+    <input id="menuSearch" placeholder="Search dish…" oninput="renderMenu()">
+    <div class="seg" id="menuFilter">
+      <button class="on" data-f="all">All</button>
+      <button data-f="breakfast">Breakfast</button>
+      <button data-f="lunch">Lunch</button>
+      <button data-f="dinner">Dinner</button>
+    </div>
+  </div>
+  <div class="panel" style="padding:0;overflow:hidden">
+    <div class="tbl-wrap"><table class="data" id="menuTable"></table></div>
+  </div>
+</section>
+
+<!-- ============ CUSTOMERS ============ -->
+<section class="view" id="view-customers">
+  <div class="page-head">
+    <div>
+      <div class="eyebrow">Customer management</div>
+      <h1>Customers</h1>
+      <div class="lede">Search, filter and add customers. New ones show up instantly in the order portal.</div>
+    </div>
+    <button class="btn btn-primary" style="width:auto" onclick="openCustModal(false)">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
+      Add Customer
+    </button>
+  </div>
+  <div class="cust-toolbar">
+    <input id="custSearch" placeholder="Search name, company or mobile…" oninput="renderCustomers()">
+    <div class="seg" id="custFilter">
+      <button class="on" data-f="all">All</button>
+      <button data-f="A La Carte">A La Carte</button>
+      <button data-f="Fixed Menu">Fixed</button>
+      <button data-f="Hybrid">Hybrid</button>
+    </div>
+  </div>
+  <div class="cust-list" id="custList"></div>
+</section>
+
+</main>
+
+<!-- Add Customer modal -->
+<div class="modal-overlay" id="custModal">
+  <div class="modal" role="dialog" aria-modal="true" aria-label="Add customer">
+    <div class="modal-head">
+      <h3 id="custModalTitle">Add Customer</h3>
+      <button class="modal-x" onclick="closeCustModal()" aria-label="Close">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="modal-grid">
+        <div class="field" style="margin:0"><label>Full name *</label><input id="cfName" placeholder="e.g. Imran Shaikh"></div>
+        <div class="field" style="margin:0"><label>Company</label><input id="cfCo" placeholder="e.g. Galaxy Trading LLC"></div>
+        <div class="field" style="margin:0"><label>Employee ID</label><input id="cfEmp" placeholder="EMP-1042"></div>
+        <div class="field" style="margin:0"><label>Mobile *</label><input id="cfMob" placeholder="+971 5x xxx xxxx"></div>
+        <div class="field" style="margin:0"><label>WhatsApp</label><input id="cfWa" placeholder="same as mobile"></div>
+        <div class="field" style="margin:0"><label>Email</label><input id="cfEmail" placeholder="optional"></div>
+        <div class="field" style="margin:0;grid-column:1 / -1"><label>Delivery location</label><input id="cfLoc" placeholder="e.g. Al Nahda 2, Tower B"></div>
+        <div class="field" style="margin:0"><label>Customer type</label><select id="cfType"><option>A La Carte</option><option>Fixed Menu</option><option>Hybrid</option></select></div>
+        <div class="field" style="margin:0"><label>Billing day</label><select id="cfBill"><option>26th (salary day)</option><option>27th</option><option>1st</option><option>Pay per order</option></select></div>
+        <div class="field" style="margin:0;grid-column:1 / -1"><label>Notes</label><input id="cfNotes" placeholder="e.g. No onion, leave at reception"></div>
+      </div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-ghost" onclick="closeCustModal()">Cancel</button>
+      <button class="btn btn-primary" style="width:auto" onclick="saveCustomer()">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 13l4 4L19 7"/></svg>Save customer
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- Add Menu Item modal -->
+<div class="modal-overlay" id="menuModal">
+  <div class="modal" role="dialog" aria-modal="true" aria-label="Add menu item">
+    <div class="modal-head"><h3>Add Menu Item</h3><button class="modal-x" onclick="closeMenuModal()" aria-label="Close">✕</button></div>
+    <div class="modal-body"><div class="modal-grid">
+      <div class="field" style="margin:0;grid-column:1 / -1"><label>Dish name *</label><input id="miName" placeholder="e.g. Paneer Tikka Masala"></div>
+      <div class="field" style="margin:0"><label>Meal *</label><select id="miMeal"><option value="breakfast">Breakfast</option><option value="lunch">Lunch</option><option value="dinner">Dinner</option></select></div>
+      <div class="field" style="margin:0"><label>Category</label><input id="miCat" placeholder="e.g. Curry"></div>
+      <div class="field" style="margin:0"><label>Price (AED) *</label><input id="miPrice" type="number" inputmode="decimal" placeholder="0"></div>
+      <div class="field" style="margin:0"><label>Available</label><select id="miAvail"><option value="yes">Yes — show in orders</option><option value="no">No — hidden</option></select></div>
+    </div></div>
+    <div class="modal-foot">
+      <button class="btn btn-ghost" onclick="closeMenuModal()">Cancel</button>
+      <button class="btn btn-primary" style="width:auto" onclick="saveMenuItem()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 13l4 4L19 7"/></svg>Save item</button>
+    </div>
+  </div>
+</div>
+
+<!-- Record Payment modal -->
+<div class="modal-overlay" id="payModal">
+  <div class="modal" role="dialog" aria-modal="true" aria-label="Record payment">
+    <div class="modal-head"><h3>Record Payment</h3><button class="modal-x" onclick="closePayModal()" aria-label="Close">✕</button></div>
+    <div class="modal-body">
+      <div class="field" style="margin-bottom:14px">
+        <label>Customer *</label>
+        <select id="pfCust" onchange="updatePayCustInfo()"></select>
+      </div>
+      <div id="pfInfo" class="pay-info"></div>
+
+      <div class="field" style="margin-bottom:10px"><label>Amount received (AED) *</label>
+        <input id="pfAmt" type="number" inputmode="decimal" placeholder="0.00" oninput="updatePayPreview()">
+      </div>
+      <div class="quick-amt" id="pfQuick"></div>
+
+      <div class="modal-grid">
+        <div class="field" style="margin:0"><label>Payment mode *</label>
+          <select id="pfMode">
+            <option value="cash">Cash</option>
+            <option value="card">Card / POS</option>
+            <option value="bank">Bank transfer</option>
+            <option value="cheque">Cheque</option>
+            <option value="online">Online (link / wallet)</option>
+          </select>
+        </div>
+        <div class="field" style="margin:0"><label>Payment date</label><input id="pfDate" type="date"></div>
+        <div class="field" style="margin:0;grid-column:1 / -1"><label id="pfRefLabel">Reference number</label><input id="pfRef" placeholder="optional — txn id, last 4 of card, cheque #"></div>
+        <div class="field" style="margin:0;grid-column:1 / -1"><label>Notes</label><input id="pfNotes" placeholder="e.g. balance promised by 5 Jul"></div>
+      </div>
+
+      <div id="pfPreview" class="pay-preview"></div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-ghost" onclick="closePayModal()">Cancel</button>
+      <button class="btn btn-primary" style="width:auto" onclick="savePayment()">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 13l4 4L19 7"/></svg>Save payment
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- Skip Delivery modal -->
+<div class="modal-overlay" id="skipModal">
+  <div class="modal" role="dialog" aria-modal="true" aria-label="Skip delivery">
+    <div class="modal-head"><h3 id="skipTitle">Skip delivery</h3><button class="modal-x" onclick="closeSkipModal()" aria-label="Close">✕</button></div>
+    <div class="modal-body">
+      <div class="field" style="margin-bottom:14px">
+        <label>Reason *</label>
+        <div class="skip-reasons" id="skipReasons">
+          <button data-r="Customer on leave">Customer on leave</button>
+          <button data-r="No answer at gate / door">No answer at gate / door</button>
+          <button data-r="Weekend / off day">Weekend / off day</button>
+          <button data-r="Subscription paused">Subscription paused</button>
+          <button data-r="Office closed">Office closed</button>
+          <button data-r="Customer cancelled today">Customer cancelled today</button>
+          <button data-r="Address not reachable">Address not reachable</button>
+          <button data-r="Other">Other</button>
+        </div>
+      </div>
+      <div class="field" style="margin:0"><label>Note (optional)</label><input id="skipNote" placeholder="e.g. WhatsApp message at 11:50, said back Sunday"></div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-ghost" onclick="closeSkipModal()">Cancel</button>
+      <button class="btn btn-primary" style="width:auto" id="skipSaveBtn" disabled onclick="confirmSkip()">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 13l4 4L19 7"/></svg>Confirm skip
+      </button>
+    </div>
+  </div>
+</div>
+
+<div id="toast"><span class="tdot"></span><span id="toastMsg"></span></div>
+
+<script>
+const AED = n => 'AED ' + n.toLocaleString('en-AE',{minimumFractionDigits:2,maximumFractionDigits:2});
+const AED0 = n => 'AED ' + n.toLocaleString('en-AE');
+const now = new Date('2026-06-13T10:00:00+04:00');
+document.getElementById('todayLabel').textContent = now.toLocaleDateString('en-GB',{weekday:'long',day:'numeric',month:'long',year:'numeric'});
+document.getElementById('dashDate').textContent = 'Saturday, 13 June 2026 · Dubai (GST)';
+
+/* nav */
+const nav=document.getElementById('nav');
+nav.addEventListener('click',e=>{const b=e.target.closest('button[data-view]');if(!b)return;
+  nav.querySelectorAll('button').forEach(x=>x.classList.remove('active'));b.classList.add('active');
+  document.querySelectorAll('.view').forEach(v=>v.classList.remove('active'));
+  document.getElementById('view-'+b.dataset.view).classList.add('active');
+  if(b.dataset.view==='packing') renderPacking();
+  if(b.dataset.view==='deliveries') renderDelScreen();
+  if(b.dataset.view==='customers') renderCustomers();
+  if(b.dataset.view==='menu') renderMenu();
+  if(b.dataset.view==='payments') renderPaymentsScreen();
+  window.scrollTo({top:0,behavior:'smooth'});});
+
+/* toast */
+let toastT;
+function toast(msg){document.getElementById('toastMsg').textContent=msg;const t=document.getElementById('toast');t.classList.add('show');clearTimeout(toastT);toastT=setTimeout(()=>t.classList.remove('show'),2600);}
+
+/* ---------- shared menu ---------- */
+let MENU_ID=100;
+const MENU_ITEMS=[
+  {id:++MENU_ID,name:'Anda Bhurji',meal:'breakfast',cat:'Egg',price:12,available:true},
+  {id:++MENU_ID,name:'Aloo Paratha',meal:'breakfast',cat:'Bread',price:10,available:true},
+  {id:++MENU_ID,name:'Kanda Poha',meal:'breakfast',cat:'Veg',price:9,available:true},
+  {id:++MENU_ID,name:'Misal Pav',meal:'breakfast',cat:'Veg',price:14,available:true},
+  {id:++MENU_ID,name:'Bun Maska',meal:'breakfast',cat:'Bread',price:6,available:true},
+  {id:++MENU_ID,name:'Masala Chai',meal:'breakfast',cat:'Beverage',price:3,available:true},
+  {id:++MENU_ID,name:'Chicken Biryani',meal:'lunch',cat:'Rice',price:22,available:true},
+  {id:++MENU_ID,name:'Mutton Biryani',meal:'lunch',cat:'Rice',price:28,available:true},
+  {id:++MENU_ID,name:'Veg Pulao',meal:'lunch',cat:'Rice',price:16,available:true},
+  {id:++MENU_ID,name:'Dal Tadka',meal:'lunch',cat:'Curry',price:14,available:true},
+  {id:++MENU_ID,name:'Jeera Rice',meal:'lunch',cat:'Rice',price:12,available:true},
+  {id:++MENU_ID,name:'Tawa Roti',meal:'lunch',cat:'Bread',price:3,available:true},
+  {id:++MENU_ID,name:'Chaas',meal:'lunch',cat:'Beverage',price:4,available:true},
+  {id:++MENU_ID,name:'Butter Chicken',meal:'dinner',cat:'Curry',price:26,available:true},
+  {id:++MENU_ID,name:'Chicken Fried Rice',meal:'dinner',cat:'Chinese',price:18,available:true},
+  {id:++MENU_ID,name:'Chicken Manchurian',meal:'dinner',cat:'Chinese',price:20,available:true},
+  {id:++MENU_ID,name:'Veg Hakka Noodles',meal:'dinner',cat:'Chinese',price:16,available:true},
+  {id:++MENU_ID,name:'Mutton Kichda',meal:'dinner',cat:'Special',price:30,available:true},
+  {id:++MENU_ID,name:'Chicken Seekh Paratha',meal:'dinner',cat:'Bread',price:18,available:true},
+  {id:++MENU_ID,name:'Butter Naan',meal:'dinner',cat:'Bread',price:4,available:true}
+];
+const CUSTOMERS=[
+  {id:'imran',name:'Imran Shaikh',co:'Galaxy Trading LLC',loc:'Al Nahda 2, Tower B',emp:'EMP-1042',mob:'+971 56 991 0479',type:'A La Carte',status:'Active',bal:780},
+  {id:'faiz',name:'Faiz Ahmed',co:'Crescent Steel Industries',loc:'Al Quoz Ind. 3',emp:'EMP-0307',mob:'+971 55 204 8830',type:'A La Carte',status:'Active',bal:642.5},
+  {id:'sana',name:'Sana Khan',co:'Al Noor Textiles',loc:'Deira, Naif Road',emp:'EMP-2289',mob:'+971 50 663 1187',type:'Hybrid',status:'Active',bal:560},
+  {id:'rohit',name:'Rohit Verma',co:'Pearl Logistics',loc:'JAFZA South',emp:'EMP-0915',mob:'+971 52 770 4421',type:'A La Carte',status:'Active',bal:495},
+  {id:'bilal',name:'Bilal Qureshi',co:'Zaytoon Foods',loc:'Al Nahda 1',emp:'EMP-1188',mob:'+971 54 332 9006',type:'Fixed Menu',status:'Active',bal:430},
+  {id:'walkin',name:'Walk-in / Cash',co:'—',loc:'Counter pickup',emp:'—',mob:'—',type:'A La Carte',status:'Active',bal:0}
+];
+
+/* ---------- ORDER ENTRY ---------- */
+let curMeal='breakfast', curPay='credit', cart={};
+const CURRENT_USER='Tabrez Ahmed'; // in real app: from logged-in session
+const mealNice={breakfast:'Breakfast',lunch:'Lunch',dinner:'Dinner'};
+const oeCust=document.getElementById('oeCust');
+function renderCustDropdown(sel){oeCust.innerHTML=CUSTOMERS.map(c=>`<option value="${c.id}">${c.name}${c.co&&c.co!=='—'?' — '+c.co:''}</option>`).join('');if(sel)oeCust.value=sel;setLoc();}
+function setLoc(){const c=CUSTOMERS.find(x=>x.id===oeCust.value);document.getElementById('oeLoc').value=c?(c.loc||''):'';}
+renderCustDropdown();
+oeCust.addEventListener('change',setLoc);
+
+function renderItemGrid(){
+  const items=MENU_ITEMS.filter(i=>i.meal===curMeal&&i.available);
+  if(!items.length){document.getElementById('itemGrid').innerHTML='<div class="s-empty" style="grid-column:1/-1">No items for this meal yet — add them in the Menu tab.</div>';return;}
+  document.getElementById('itemGrid').innerHTML=items.map(it=>{
+    const nm=it.name,pr=it.price,q=cart[nm]?.qty||0;
+    return `<div class="item-card ${q>0?'has':''}">
+      <div><div class="inm">${nm}</div><div class="ip">AED ${pr}</div></div>
+      <div class="stepper">
+        <button onclick="bump('${nm.replace(/'/g,"\\'")}',${pr},-1)" aria-label="remove">−</button>
+        <span class="q">${q}</span>
+        <button onclick="bump('${nm.replace(/'/g,"\\'")}',${pr},1)" aria-label="add">+</button>
+      </div></div>`;
+  }).join('');
+}
+function bump(nm,pr,d){
+  const q=(cart[nm]?.qty||0)+d;
+  if(q<=0) delete cart[nm]; else cart[nm]={price:pr,qty:q};
+  renderItemGrid();renderCart();
+}
+function renderCart(){
+  const keys=Object.keys(cart);
+  const box=document.getElementById('oeItems');
+  if(!keys.length){box.innerHTML='<div class="s-empty">Tap items to add them</div>';}
+  else{box.innerHTML=keys.map(k=>`<div class="s-row"><span>${k} <span class="q">×${cart[k].qty}</span></span><span class="num">${AED(cart[k].qty*cart[k].price)}</span></div>`).join('');}
+  const tot=keys.reduce((s,k)=>s+cart[k].qty*cart[k].price,0);
+  document.getElementById('oeTotal').textContent=AED(tot);
+  document.getElementById('saveBtn').disabled=keys.length===0;
+}
+document.getElementById('mealToggle').addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;
+  document.querySelectorAll('#mealToggle button').forEach(x=>x.classList.remove('on'));b.classList.add('on');
+  curMeal=b.dataset.meal;cart={};document.getElementById('oeMealLabel').textContent=mealNice[curMeal];renderItemGrid();renderCart();});
+document.getElementById('payToggle').addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;
+  document.querySelectorAll('#payToggle button').forEach(x=>x.classList.remove('on'));b.classList.add('on');curPay=b.dataset.pay;});
+
+function saveOrder(){
+  const c=CUSTOMERS.find(x=>x.id===oeCust.value);
+  const items=Object.keys(cart).map(k=>({name:k,qty:cart[k].qty,price:cart[k].price}));
+  if(!items.length)return;
+  TODAY.unshift({id:Date.now(),cust:c.name,co:c.co,loc:c.loc,meal:curMeal,items,pay:curPay,createdAt:new Date().toISOString(),createdBy:CURRENT_USER});
+  const tot=items.reduce((s,i)=>s+i.qty*i.price,0);
+  toast(`${mealNice[curMeal]} order saved · ${c.name.split(' ')[0]} · ${AED(tot)} → added to ${mealNice[curMeal]} packing`);
+  cart={};renderItemGrid();renderCart();renderRecent();
+}
+function renderRecent(){
+  document.getElementById('savedCount').textContent=TODAY.length+' orders today';
+  const mc={breakfast:'mt-b',lunch:'mt-l',dinner:'mt-d'};
+  document.getElementById('recentList').innerHTML=TODAY.slice(0,6).map(o=>{
+    const tot=o.items.reduce((s,i)=>s+i.qty*i.price,0);
+    return `<div class="rs-row"><span class="mtag ${mc[o.meal]}">${o.meal[0].toUpperCase()+o.meal.slice(1)}</span>
+      <span style="flex:1"><b>${o.cust}</b> · ${o.items.map(i=>i.name+'×'+i.qty).join(', ')}</span>
+      <span class="num" style="font-weight:700">${AED(tot)}</span></div>`;
+  }).join('');
+}
+
+/* ---------- TODAY'S ORDERS (drives packing) ---------- */
+const TODAY=[
+  {id:1,cust:'Imran Shaikh',co:'Galaxy Trading LLC',loc:'Al Nahda 2, Tower B',meal:'breakfast',items:[{name:'Anda Bhurji',qty:1,price:12},{name:'Aloo Paratha',qty:2,price:10}],createdAt:'2026-06-13T07:42:00+04:00',createdBy:'Aslam Sayed'},
+  {id:2,cust:'Sana Khan',co:'Al Noor Textiles',loc:'Deira, Naif Road',meal:'breakfast',items:[{name:'Kanda Poha',qty:1,price:9},{name:'Masala Chai',qty:1,price:3}],createdAt:'2026-06-13T07:48:00+04:00',createdBy:'Aslam Sayed'},
+  {id:3,cust:'Bilal Qureshi',co:'Zaytoon Foods',loc:'Al Nahda 1',meal:'breakfast',items:[{name:'Misal Pav',qty:2,price:14}],createdAt:'2026-06-13T07:55:00+04:00',createdBy:'Priya Nair'},
+  {id:4,cust:'Rohit Verma',co:'Pearl Logistics',loc:'JAFZA South',meal:'breakfast',items:[{name:'Aloo Paratha',qty:1,price:10},{name:'Masala Chai',qty:2,price:3}],createdAt:'2026-06-13T08:03:00+04:00',createdBy:'Aslam Sayed'},
+  {id:5,cust:'Faiz Ahmed',co:'Crescent Steel Industries',loc:'Al Quoz Ind. 3',meal:'breakfast',items:[{name:'Bun Maska',qty:2,price:6},{name:'Masala Chai',qty:2,price:3}],createdAt:'2026-06-13T08:11:00+04:00',createdBy:'Priya Nair'},
+  {id:11,cust:'Imran Shaikh',co:'Galaxy Trading LLC',loc:'Al Nahda 2, Tower B',meal:'lunch',items:[{name:'Chicken Biryani',qty:1,price:22}],createdAt:'2026-06-13T11:12:00+04:00',createdBy:'Aslam Sayed'},
+  {id:12,cust:'Faiz Ahmed',co:'Crescent Steel Industries',loc:'Al Quoz Ind. 3',meal:'lunch',items:[{name:'Veg Pulao',qty:1,price:16},{name:'Dal Tadka',qty:1,price:14},{name:'Tawa Roti',qty:3,price:3}],createdAt:'2026-06-13T11:18:00+04:00',createdBy:'Priya Nair'},
+  {id:13,cust:'Sana Khan',co:'Al Noor Textiles',loc:'Deira, Naif Road',meal:'lunch',items:[{name:'Chicken Biryani',qty:1,price:22},{name:'Chaas',qty:1,price:4}],createdAt:'2026-06-13T11:25:00+04:00',createdBy:'Aslam Sayed'},
+  {id:14,cust:'Rohit Verma',co:'Pearl Logistics',loc:'JAFZA South',meal:'lunch',items:[{name:'Mutton Biryani',qty:1,price:28}],createdAt:'2026-06-13T11:31:00+04:00',createdBy:'Aslam Sayed'},
+  {id:15,cust:'Bilal Qureshi',co:'Zaytoon Foods',loc:'Al Nahda 1',meal:'lunch',items:[{name:'Veg Pulao',qty:2,price:16},{name:'Dal Tadka',qty:1,price:14}],createdAt:'2026-06-13T11:40:00+04:00',createdBy:'Priya Nair'},
+  {id:16,cust:'Aslam Sayed',co:'Galaxy Trading LLC',loc:'Al Nahda 2, Tower B',meal:'lunch',items:[{name:'Chicken Biryani',qty:1,price:22},{name:'Jeera Rice',qty:1,price:12}],createdAt:'2026-06-13T11:47:00+04:00',createdBy:'Aslam Sayed'},
+  {id:21,cust:'Imran Shaikh',co:'Galaxy Trading LLC',loc:'Al Nahda 2, Tower B',meal:'dinner',items:[{name:'Butter Chicken',qty:1,price:26},{name:'Butter Naan',qty:2,price:4}],createdAt:'2026-06-13T17:34:00+04:00',createdBy:'Aslam Sayed'},
+  {id:22,cust:'Rohit Verma',co:'Pearl Logistics',loc:'JAFZA South',meal:'dinner',items:[{name:'Chicken Fried Rice',qty:1,price:18},{name:'Chicken Manchurian',qty:1,price:20}],createdAt:'2026-06-13T17:41:00+04:00',createdBy:'Priya Nair'},
+  {id:23,cust:'Faiz Ahmed',co:'Crescent Steel Industries',loc:'Al Quoz Ind. 3',meal:'dinner',items:[{name:'Mutton Kichda',qty:1,price:30}],createdAt:'2026-06-13T17:48:00+04:00',createdBy:'Aslam Sayed'},
+  {id:24,cust:'Sana Khan',co:'Al Noor Textiles',loc:'Deira, Naif Road',meal:'dinner',items:[{name:'Veg Hakka Noodles',qty:1,price:16},{name:'Chicken Manchurian',qty:1,price:20}],createdAt:'2026-06-13T17:55:00+04:00',createdBy:'Priya Nair'},
+];
+renderItemGrid();renderCart();renderRecent();
+
+/* ---------- PACKING ---------- */
+let packMeal='breakfast', packMode='kitchen';
+document.getElementById('packMeal').addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;
+  document.querySelectorAll('#packMeal button').forEach(x=>x.classList.remove('on'));b.classList.add('on');packMeal=b.dataset.meal;renderPacking();});
+document.getElementById('packMode').addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;
+  document.querySelectorAll('#packMode button').forEach(x=>x.classList.remove('on'));b.classList.add('on');packMode=b.dataset.mode;renderPacking();});
+document.getElementById('sendPackBtn').addEventListener('click',()=>{
+  const o=TODAY.filter(x=>x.meal===packMeal);
+  toast(`${mealNice[packMeal]} report sent to Packing Team on WhatsApp · ${o.length} orders ✓`);
+});
+function renderPacking(){
+  const orders=TODAY.filter(o=>o.meal===packMeal);
+  const totals={};let itemCount=0;
+  orders.forEach(o=>o.items.forEach(i=>{totals[i.name]=(totals[i.name]||0)+i.qty;itemCount+=i.qty;}));
+  document.getElementById('packStat').innerHTML=`
+    <div class="ps"><span class="v num">${orders.length}</span><span class="k">${mealNice[packMeal]} orders</span></div>
+    <div class="ps"><span class="v num">${new Set(orders.map(o=>o.cust)).size}</span><span class="k">customers</span></div>
+    <div class="ps"><span class="v num">${itemCount}</span><span class="k">items to pack</span></div>`;
+  const body=document.getElementById('packBody');
+  if(!orders.length){body.innerHTML='<div class="panel empty">No '+mealNice[packMeal]+' orders entered yet.</div>';return;}
+  if(packMode==='kitchen'){
+    const rows=Object.entries(totals).sort((a,b)=>b[1]-a[1]).map(([n,q])=>`<div class="kl-item"><span class="kn">${n}</span><span class="kq num">${q}</span></div>`).join('');
+    body.innerHTML=`<div class="panel"><div class="panel-head"><h3>${mealNice[packMeal]} — total to prepare</h3><span class="hint">item-wise</span></div><div class="kitchen-list">${rows}</div></div>`;
+  }else{
+    const cards=orders.map(o=>{
+      const ts=new Date(o.createdAt);
+      const dateStr=ts.toLocaleDateString('en-GB',{day:'2-digit',month:'short',timeZone:'Asia/Dubai'});
+      const timeStr=ts.toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit',hour12:false,timeZone:'Asia/Dubai'});
+      const orderNo='AC-'+String(o.id).slice(-5);
+      return `<div class="pc">
+      <div class="pc-h">
+        <div><div class="cn">${o.cust}</div><div class="cc">${o.co}</div></div>
+        <span class="pc-id">#${orderNo}</span>
+      </div>
+      <div class="pc-audit">
+        <span class="ai"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>${dateStr} · <b>${timeStr}</b></span>
+        <span class="ai"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="8" r="3.5"/><path d="M5 20c0-3 3-5 7-5s7 2 7 5"/></svg>by <b>${o.createdBy}</b></span>
+      </div>
+      <div class="pc-loc"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 21s7-6.3 7-11a7 7 0 1 0-14 0c0 4.7 7 11 7 11Z"/><circle cx="12" cy="10" r="2.5"/></svg>${o.loc}</div>
+      <div class="pc-items">${o.items.map(i=>`<div class="pi"><span>${i.name}</span><span class="x">×${i.qty}</span></div>`).join('')}</div>
+    </div>`;}).join('');
+    body.innerHTML=`<div class="pack-cards">${cards}</div>`;
+  }
+}
+
+/* ---------- DASHBOARD lists & charts ---------- */
+const pending=[{n:'Imran Shaikh',c:'Galaxy Trading LLC',a:780},{n:'Faiz Ahmed',c:'Crescent Steel Industries',a:642.5},{n:'Sana Khan',c:'Al Noor Textiles',a:560},{n:'Rohit Verma',c:'Pearl Logistics',a:495},{n:'Bilal Qureshi',c:'Zaytoon Foods',a:430}];
+document.getElementById('pendingList').innerHTML=pending.map(p=>`<div class="row-item"><div class="av">${p.n.split(' ').map(w=>w[0]).join('').slice(0,2)}</div><div class="meta"><div class="nm">${p.n}</div><div class="sm">${p.c}</div></div><div class="amt due">${AED(p.a)}</div></div>`).join('');
+const DELIVERIES=[
+  {id:'d1',cust:'Galaxy Trading LLC',sub:'Lunch x14',loc:'Al Nahda 2, Tower B',plan:'Lunch',status:'delivered',updatedAt:'2026-06-13T13:08:00+04:00',updatedBy:'Salman Sheikh',skipReason:null},
+  {id:'d2',cust:'Crescent Steel Industries',sub:'Lunch + Dinner x9',loc:'Al Quoz Ind. 3',plan:'Lunch + Dinner',status:'out',updatedAt:'2026-06-13T12:45:00+04:00',updatedBy:'Salman Sheikh',skipReason:null},
+  {id:'d3',cust:'Al Noor Textiles',sub:'Lunch x11',loc:'Deira, Naif Road',plan:'Lunch',status:'delivered',updatedAt:'2026-06-13T13:14:00+04:00',updatedBy:'Rashid Khan',skipReason:null},
+  {id:'d4',cust:'Pearl Logistics',sub:'Dinner x6',loc:'JAFZA South',plan:'Dinner',status:'pending',updatedAt:null,updatedBy:null,skipReason:null},
+  {id:'d5',cust:'Zaytoon Foods',sub:'Lunch x8',loc:'Al Nahda 1',plan:'Lunch',status:'delivered',updatedAt:'2026-06-13T12:58:00+04:00',updatedBy:'Salman Sheikh',skipReason:null},
+  {id:'d6',cust:'Bright Star Trading',sub:'Lunch x5',loc:'Bur Dubai',plan:'Lunch',status:'pending',updatedAt:null,updatedBy:null,skipReason:null},
+  {id:'d7',cust:'Marina Engineering',sub:'Lunch + Dinner x12',loc:'Dubai Marina',plan:'Lunch + Dinner',status:'delivered',updatedAt:'2026-06-13T13:22:00+04:00',updatedBy:'Rashid Khan',skipReason:null},
+];
+const sLabel={pending:'Pending',out:'Out for delivery',delivered:'Delivered',skipped:'Skipped'};
+const sCls={pending:'bs-pending',out:'bs-out',delivered:'bs-delivered',skipped:'bs-skipped'};
+const cycle={pending:'out',out:'delivered',delivered:'pending',skipped:'pending'};
+
+function renderDashDeliveries(){
+  document.getElementById('deliveryList').innerHTML=DELIVERIES.slice(0,5).map(d=>`
+    <div class="row-item">
+      <div class="av"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="#8B2E1F" stroke-width="2"><path d="M3 8l9-5 9 5v8l-9 5-9-5V8Z"/><path d="M3 8l9 5 9-5M12 13v8"/></svg></div>
+      <div class="meta"><div class="nm">${d.cust} — ${d.sub}</div></div>
+      <span class="badge-status ${sCls[d.status]} tappable" onclick="cycleDashStatus('${d.id}')" title="Tap to update">${sLabel[d.status]}</span>
+    </div>`).join('');
+}
+function cycleDashStatus(id){
+  const d=DELIVERIES.find(x=>x.id===id);
+  if(d.status==='delivered'||d.status==='out'){
+    // forward cycle, but skip requires reason
+    d.status=cycle[d.status];
+    d.updatedAt=new Date().toISOString();d.updatedBy=CURRENT_USER;d.skipReason=null;
+    renderDashDeliveries();
+    toast(`${d.cust}: ${sLabel[d.status]} ✓`);
+  }else if(d.status==='pending'){
+    d.status='out';d.updatedAt=new Date().toISOString();d.updatedBy=CURRENT_USER;
+    renderDashDeliveries();
+    toast(`${d.cust}: Out for delivery ✓`);
+  }else{ // skipped → pending
+    d.status='pending';d.skipReason=null;d.updatedAt=new Date().toISOString();d.updatedBy=CURRENT_USER;
+    renderDashDeliveries();
+    toast(`${d.cust}: reset to pending`);
+  }
+}
+renderDashDeliveries();
+
+let delFilter='all', skipTarget=null, skipReason=null;
+document.getElementById('delFilter').addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;
+  document.querySelectorAll('#delFilter button').forEach(x=>x.classList.remove('on'));b.classList.add('on');delFilter=b.dataset.f;renderDelScreen();});
+
+function fmtTime(iso){if(!iso)return '';const d=new Date(iso);return d.toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit',hour12:false,timeZone:'Asia/Dubai'});}
+
+function renderDelScreen(){
+  const rows=DELIVERIES.filter(d=>delFilter==='all'||d.status===delFilter);
+  const totals={pending:0,out:0,delivered:0,skipped:0};DELIVERIES.forEach(d=>totals[d.status]++);
+  document.getElementById('delStat').innerHTML=`
+    <div class="ps"><span class="v num">${DELIVERIES.length}</span><span class="k">total today</span></div>
+    <div class="ps"><span class="v num" style="color:var(--green)">${totals.delivered}</span><span class="k">delivered</span></div>
+    <div class="ps"><span class="v num" style="color:#2C5E8F">${totals.out}</span><span class="k">out</span></div>
+    <div class="ps"><span class="v num" style="color:var(--ember)">${totals.pending}</span><span class="k">pending</span></div>
+    <div class="ps"><span class="v num" style="color:var(--muted)">${totals.skipped}</span><span class="k">skipped</span></div>`;
+  const body=document.getElementById('delBody');
+  if(!rows.length){body.innerHTML='<div class="panel empty">No deliveries match.</div>';return;}
+  body.innerHTML='<div class="del-list">'+rows.map(d=>{
+    const audit=d.updatedAt?`<div class="dr-audit"><span><svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:-1px;color:var(--ember)"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg> ${fmtTime(d.updatedAt)}</span><span>by <b>${d.updatedBy}</b></span></div>`:'';
+    const skipNote=d.status==='skipped'&&d.skipReason?`<div class="dr-skip">Skipped: ${d.skipReason}</div>`:'';
+    let actions='';
+    if(d.status==='pending'){
+      actions=`<div class="a-row">
+        <button class="dr-act go-out" onclick="setStatus('${d.id}','out')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="6" cy="18" r="2"/><circle cx="17" cy="18" r="2"/><path d="M2 5h11v13M13 9h5l3 4v5h-2"/></svg>Out</button>
+        <button class="dr-act go-deliver" onclick="setStatus('${d.id}','delivered')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M5 13l4 4L19 7"/></svg>Delivered</button>
+      </div><div class="a-row"><button class="dr-act go-skip" onclick="openSkipModal('${d.id}')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg>Skip</button></div>`;
+    }else if(d.status==='out'){
+      actions=`<div class="a-row">
+        <button class="dr-act go-deliver" onclick="setStatus('${d.id}','delivered')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M5 13l4 4L19 7"/></svg>Mark delivered</button>
+      </div><div class="a-row"><button class="dr-act go-skip" onclick="openSkipModal('${d.id}')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg>Skip</button></div>`;
+    }else{
+      actions=`<div class="a-row"><button class="dr-act undo" onclick="setStatus('${d.id}','pending')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/></svg>Undo</button></div>`;
+    }
+    return `<div class="del-row s-${d.status}">
+      <div class="dr-main">
+        <div class="dr-cust">${d.cust}</div>
+        <div class="dr-meta"><span>${d.sub}</span><span>· ${d.loc}</span><span class="badge-status ${sCls[d.status]}">${sLabel[d.status]}</span></div>
+        ${audit}${skipNote}
+      </div>
+      <div class="dr-actions">${actions}</div>
+    </div>`;
+  }).join('')+'</div>';
+  renderDashDeliveries();
+}
+function setStatus(id,s){
+  const d=DELIVERIES.find(x=>x.id===id);
+  d.status=s;d.updatedAt=new Date().toISOString();d.updatedBy=CURRENT_USER;
+  if(s!=='skipped')d.skipReason=null;
+  renderDelScreen();
+  toast(`${d.cust}: ${sLabel[s]} ✓`);
+}
+function bulkMark(s){
+  const target=DELIVERIES.filter(d=>d.status==='pending');
+  if(!target.length){toast('Nothing pending');return;}
+  target.forEach(d=>{d.status=s;d.updatedAt=new Date().toISOString();d.updatedBy=CURRENT_USER;});
+  renderDelScreen();
+  toast(`${target.length} marked ${sLabel[s]} ✓`);
+}
+
+function openSkipModal(id){
+  skipTarget=id;skipReason=null;
+  const d=DELIVERIES.find(x=>x.id===id);
+  document.getElementById('skipTitle').textContent=`Skip — ${d.cust}`;
+  document.getElementById('skipNote').value='';
+  document.getElementById('skipSaveBtn').disabled=true;
+  document.querySelectorAll('#skipReasons button').forEach(b=>b.classList.remove('on'));
+  document.getElementById('skipModal').classList.add('open');
+}
+function closeSkipModal(){document.getElementById('skipModal').classList.remove('open');}
+document.getElementById('skipModal').addEventListener('click',e=>{if(e.target.id==='skipModal')closeSkipModal();});
+document.getElementById('skipReasons').addEventListener('click',e=>{
+  const b=e.target.closest('button');if(!b)return;
+  document.querySelectorAll('#skipReasons button').forEach(x=>x.classList.remove('on'));b.classList.add('on');
+  skipReason=b.dataset.r;document.getElementById('skipSaveBtn').disabled=false;
+});
+function confirmSkip(){
+  if(!skipReason||!skipTarget)return;
+  const d=DELIVERIES.find(x=>x.id===skipTarget);
+  const note=document.getElementById('skipNote').value.trim();
+  d.status='skipped';d.skipReason=skipReason+(note?` — ${note}`:'');d.updatedAt=new Date().toISOString();d.updatedBy=CURRENT_USER;
+  closeSkipModal();renderDelScreen();
+  toast(`${d.cust}: skipped (${skipReason}) ✓`);
+}
+
+const companies=[{n:'Galaxy Trading',v:6420},{n:'Crescent Steel',v:5180},{n:'Al Noor Textiles',v:4350},{n:'Pearl Logistics',v:3920},{n:'Zaytoon Foods',v:2580}];
+const maxC=Math.max(...companies.map(c=>c.v));
+document.getElementById('companyBars').innerHTML=companies.map(c=>`<div class="b"><div class="bn">${c.n}</div><div class="track"><div class="fill" style="width:${(c.v/maxC*100).toFixed(0)}%"></div></div><div class="bv">${AED0(c.v)}</div></div>`).join('');
+
+const muted='#7C7063',saff='#E76F2A',ember='#8B2E1F',gold='#B7860B',grid='#ECE2D3';
+Chart.defaults.font.family="Inter, sans-serif";Chart.defaults.color=muted;
+const data7={labels:['Sun','Mon','Tue','Wed','Thu','Fri','Sat'],v:[1120,980,1340,1210,1480,1620,1284]};
+const data30={labels:Array.from({length:30},(_,i)=>i+1),v:Array.from({length:30},(_,i)=>900+Math.round(Math.sin(i/3)*250)+i*12+(i%7===5?300:0))};
+let salesChart;
+function drawSales(range){const d=range==='7'?data7:data30;if(salesChart)salesChart.destroy();
+  salesChart=new Chart(document.getElementById('salesChart'),{type:'bar',data:{labels:d.labels,datasets:[{data:d.v,backgroundColor:d.v.map((_,i)=>i===d.v.length-1?saff:'#F3C9A8'),borderRadius:6,maxBarThickness:34}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>'AED '+c.parsed.y.toLocaleString()}}},scales:{y:{grid:{color:grid},ticks:{callback:v=>'AED '+(v/1000).toFixed(1)+'k'}},x:{grid:{display:false}}}}});}
+drawSales('7');
+document.getElementById('rangeSeg').addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;document.querySelectorAll('#rangeSeg button').forEach(x=>x.classList.remove('on'));b.classList.add('on');drawSales(b.dataset.range);});
+new Chart(document.getElementById('mixChart'),{type:'doughnut',data:{labels:['Breakfast','Lunch','Dinner'],datasets:[{data:[18,52,30],backgroundColor:[saff,gold,'#6B3FA0'],borderWidth:2,borderColor:'#fff'}]},options:{responsive:true,maintainAspectRatio:false,cutout:'62%',plugins:{legend:{position:'bottom',labels:{boxWidth:11,padding:14,font:{size:12}}},tooltip:{callbacks:{label:c=>c.label+': '+c.parsed+'%'}}}}});
+
+/* ---------- BILL ---------- */
+const menuB={bhurji:['Anda Bhurji',12],aparatha:['Aloo Paratha',10],chai:['Masala Chai',3],poha:['Kanda Poha',9],misal:['Misal Pav',14],cbiry:['Chicken Biryani',22],mbiry:['Mutton Biryani',28],vpulao:['Veg Pulao',16],dal:['Dal Tadka',14],roti:['Tawa Roti',3],chaas:['Chaas',4],butter:['Butter Chicken',26],naan:['Butter Naan',4],cfried:['Chicken Fried Rice',18],manch:['Chicken Manchurian',20],noodles:['Veg Hakka Noodles',16],kichda:['Mutton Kichda',30],seekh:['Chicken Seekh Paratha',18]};
+function ln(k,q){const m=menuB[k];return{name:m[0],qty:q,price:m[1]};}
+function buildDays(pattern){const days=[];const start=new Date('2026-05-26T00:00:00+04:00');
+  for(let i=0;i<31;i++){const date=new Date(start);date.setDate(start.getDate()+i);if(date>new Date('2026-06-25T00:00:00+04:00'))break;
+    const dow=date.getDay();if(dow===5&&pattern.fri!==true){days.push({date,b:[],l:[],d:[]});continue;}
+    const p=pattern.pick(i,dow);days.push({date,b:p.b||[],l:p.l||[],d:p.d||[]});}return days;}
+const patterns={
+  imran:{pick:i=>({l:(i%5===0)?[ln('mbiry',1)]:(i%3===0)?[ln('cbiry',1)]:[ln('vpulao',1),ln('dal',1),ln('roti',2)],d:(i%4===0)?[ln('butter',1),ln('naan',2)]:(i%2===0)?[ln('cfried',1)]:[ln('manch',1),ln('noodles',1)],b:(i%6===0)?[ln('bhurji',1),ln('aparatha',1),ln('chai',1)]:[]})},
+  faiz:{pick:i=>({l:(i%4===0)?[ln('cbiry',1),ln('chaas',1)]:(i%2===0)?[ln('vpulao',1),ln('dal',1),ln('roti',3)]:[ln('cbiry',1)]})},
+  sana:{fri:false,pick:i=>({b:(i%2===0)?[ln('poha',1),ln('chai',1)]:[ln('misal',1),ln('chai',1)],l:(i%3===0)?[ln('cbiry',1)]:[ln('vpulao',1),ln('dal',1)]})}
+};
+const billCust={imran:{name:'Imran Shaikh',co:'Galaxy Trading LLC',emp:'EMP-1042',mob:'+971 56 991 0479',plan:'A La Carte (credit)',disc:20},faiz:{name:'Faiz Ahmed',co:'Crescent Steel Industries',emp:'EMP-0307',mob:'+971 55 204 8830',plan:'A La Carte (credit)',disc:0},sana:{name:'Sana Khan',co:'Al Noor Textiles',emp:'EMP-2289',mob:'+971 50 663 1187',plan:'A La Carte (credit)',disc:15}};
+Object.keys(billCust).forEach(k=>billCust[k].days=buildDays(patterns[k]));
+const custSel=document.getElementById('custSel');
+custSel.innerHTML=Object.keys(billCust).map(k=>`<option value="${k}">${billCust[k].name} — ${billCust[k].co}</option>`).join('');
+custSel.addEventListener('change',()=>renderBill(custSel.value));
+document.getElementById('cycleSel').addEventListener('change',()=>renderBill(custSel.value));
+function mealCol(cls,label,items){if(!items.length)return `<div class="meal ${cls}"><div class="m-label">${label}</div><div class="m-none">—</div></div>`;
+  return `<div class="meal ${cls}"><div class="m-label">${label}</div>${items.map(it=>`<div class="m-item"><span>${it.name} <span class="q">×${it.qty}</span></span><span class="p">${(it.qty*it.price).toFixed(0)}</span></div>`).join('')}</div>`;}
+function dayTotal(d){return [...d.b,...d.l,...d.d].reduce((s,i)=>s+i.qty*i.price,0);}
+function renderBill(key){
+  const c=billCust[key];const active=c.days.filter(d=>dayTotal(d)>0);
+  const subtotal=c.days.reduce((s,d)=>s+dayTotal(d),0);const discount=c.disc?Math.round(c.disc):0;const grand=subtotal-discount;
+  const cycle=document.getElementById('cycleSel').value;
+  const daysHtml=c.days.map(d=>{const t=dayTotal(d);const op=t===0?'opacity:.55':'';const dt=d.date;
+    return `<div class="day" style="${op}"><div class="d-date"><span class="dow">${dt.toLocaleDateString('en-GB',{weekday:'short'})}</span><span class="dd">${dt.getDate()}</span><span class="mo">${dt.toLocaleDateString('en-GB',{month:'short'})}</span></div>
+      <div class="meals">${mealCol('breakfast','Breakfast',d.b)}${mealCol('lunch','Lunch',d.l)}${mealCol('dinner','Dinner',d.d)}</div>
+      <div class="d-total">${t?AED(t):'<span style="color:#BAB0A2;font-size:13px;font-weight:600">No order</span>'}<small>${t?'day total':''}</small></div></div>`;}).join('');
+  document.getElementById('statement').innerHTML=`
+    <div class="st-head"><div class="st-top">
+      <div class="st-brand"><div class="logo-badge"><span>AC</span></div><div><div class="bn-name">Apna Chulha Restaurant LLC</div><div class="bn-sub">@apnachulha_dubai · Dubai</div></div></div>
+      <div class="st-meta"><div class="tag">Monthly Statement</div><div class="no">#AC-STMT-2606-${key.slice(0,3).toUpperCase()}</div><div class="dt">Issued 13 Jun 2026</div></div>
+    </div>
+    <div class="st-cust">
+      <div class="blk"><div class="k">Billed to</div><div class="v">${c.name}</div><div class="bn-sub">${c.co} · ${c.emp}</div></div>
+      <div class="blk"><div class="k">Mobile</div><div class="v">${c.mob}</div><div class="bn-sub">${c.plan}</div></div>
+      <div class="blk"><div class="k">Cycle</div><div class="v">${cycle}</div><div class="bn-sub">${active.length} order days</div></div>
+      <div class="due-chip"><small>PAYMENT DUE</small>26 Jun 2026</div>
+    </div></div>
+    <div class="days">${daysHtml}</div>
+    <div class="st-foot"><div class="totals">
+      <div class="t-row"><span>Subtotal (${active.length} days)</span><span class="num">${AED(subtotal)}</span></div>
+      ${discount?`<div class="t-row"><span>Goodwill discount</span><span class="neg num">– ${AED(discount)}</span></div>`:''}
+      <div class="t-row"><span>Paid this cycle</span><span class="pos num">${AED(0)}</span></div>
+      <div class="t-row grand"><span>Balance due</span><span class="num">${AED(grand)}</span></div>
+    </div>
+    <div class="st-actions">
+      <button class="btn btn-wa" onclick="toast('WhatsApp statement sent to ${c.name.split(' ')[0]} ✓')"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M17.5 14.4c-.3-.2-1.7-.8-2-.9-.3-.1-.5-.2-.7.1-.2.3-.7.9-.9 1.1-.2.2-.3.2-.6.1-1.6-.8-2.6-1.4-3.7-3.2-.3-.5.3-.4.8-1.4.1-.2 0-.4 0-.5 0-.2-.7-1.6-.9-2.2-.2-.6-.5-.5-.7-.5h-.6c-.2 0-.5.1-.8.4-.3.3-1 1-1 2.5s1.1 2.9 1.2 3.1c.2.2 2.1 3.3 5.2 4.6 1.9.8 2.6.9 3.5.8.6-.1 1.7-.7 1.9-1.4.2-.7.2-1.2.2-1.4-.1-.1-.3-.2-.6-.3M12 2a10 10 0 0 0-8.6 15l-1.3 4.7L7 20.4A10 10 0 1 0 12 2"/></svg>Send on WhatsApp</button>
+      <button class="btn btn-ghost" onclick="toast('Generating PDF statement…')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v12m0 0l-4-4m4 4l4-4M5 21h14"/></svg>Download PDF</button>
+      <button class="btn btn-ghost" onclick="openPayModal('${key}')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 6L9 17l-5-5"/></svg>Record payment</button>
+    </div></div>`;
+}
+renderBill('imran');
+
+/* ---------- REPORTS ---------- */
+const reports=[
+  {t:'Sales',ic:'<path d="M4 19V5M4 19h16M8 15v-4M12 15V8M16 15v-6"/>',items:['Daily sales','Monthly sales','A la carte vs Fixed','Item-wise demand','Customer-wise','Company-wise']},
+  {t:'Payments',ic:'<rect x="3" y="6" width="18" height="12" rx="2"/><path d="M3 10h18"/>',items:['Daily collection','Monthly collection','Pending payments','Part payments','Payment-mode split','Overdue customers']},
+  {t:'Customers',ic:'<circle cx="9" cy="8" r="3"/><path d="M3 20c0-3 3-5 6-5s6 2 6 5M16 11l2 2 4-4"/>',items:['Active fixed','Active a la carte','Hybrid','Inactive / paused','Company-wise list','Customer balances']},
+  {t:'Operations',ic:'<path d="M3 8l9-5 9 5v8l-9 5-9-5V8Z"/><path d="M3 8l9 5 9-5"/>',items:['Daily delivery','Packing reports','Cancelled orders','Staff order-entry','Menu demand','Skip / pause log']},
+];
+document.getElementById('repGrid').innerHTML=reports.map(r=>`<div class="rep-card"><div class="rh"><div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">${r.ic}</svg></div><h3>${r.t}</h3></div><ul>${r.items.map(i=>`<li>${i}</li>`).join('')}</ul><div class="exports"><button class="chip" onclick="toast('${r.t}: exporting CSV…')">CSV</button><button class="chip" onclick="toast('${r.t}: exporting Excel…')">Excel</button><button class="chip" onclick="toast('${r.t}: generating PDF…')">PDF</button></div></div>`).join('');
+const outRows=[{c:'Galaxy Trading LLC',n:14,b:6420,p:0},{c:'Crescent Steel Industries',n:9,b:5180,p:1200},{c:'Al Noor Textiles',n:11,b:4350,p:2000},{c:'Pearl Logistics',n:6,b:3920,p:3920},{c:'Zaytoon Foods',n:8,b:2580,p:600}];
+document.getElementById('outTable').innerHTML=outRows.map(r=>{const out=r.b-r.p;const st=out===0?'<span class="badge-status bs-paid">Settled</span>':r.p>0?'<span class="badge-status bs-pending">Partial</span>':'<span class="badge-status bs-overdue">Unpaid</span>';
+  return `<tr><td>${r.c}</td><td class="r">${r.n}</td><td class="r">${AED(r.b)}</td><td class="r">${AED(r.p)}</td><td class="r" style="font-weight:700">${AED(out)}</td><td>${st}</td></tr>`;}).join('');
+
+/* ---------- APPROVALS ---------- */
+let approvals=[
+  {id:1,order:'AC-A-20614-031',cust:'Rohit Verma · Pearl Logistics',by:'Aslam (Data Entry)',when:'18 min ago',amt:42,reason:'Customer cancelled dinner — called after kitchen close.'},
+  {id:2,order:'AC-A-20614-027',cust:'Imran Shaikh · Galaxy Trading',by:'Aslam (Data Entry)',when:'40 min ago',amt:22,reason:'Duplicate entry — biryani logged twice for lunch.'},
+  {id:3,order:'AC-A-20613-089',cust:'Sana Khan · Al Noor Textiles',by:'Priya (Data Entry)',when:'2 hrs ago',amt:30,reason:'Wrong customer selected, re-entered correctly.'},
+];
+function renderApprovals(){
+  const el=document.getElementById('apprList');const bd=document.getElementById('apprBadge');
+  bd.textContent=approvals.length;bd.style.display=approvals.length?'':'none';
+  if(!approvals.length){el.innerHTML='<div class="panel empty"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 12l2 2 4-4"/><circle cx="12" cy="12" r="9"/></svg><div style="font-weight:700;font-size:16px">All clear</div><div>No deletion requests waiting.</div></div>';return;}
+  el.innerHTML=approvals.map(a=>`<div class="approve-card"><div class="ac-main"><div class="t">Delete order ${a.order}</div><div class="s">${a.cust} · requested by ${a.by} · ${a.when}</div><div class="reason">“${a.reason}”</div></div><div class="ac-amt">${AED(a.amt)}</div><div class="ac-btns"><button class="btn-sm btn-approve" onclick="resolve(${a.id},true)"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M20 6L9 17l-5-5"/></svg>Approve</button><button class="btn-sm btn-reject" onclick="resolve(${a.id},false)"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M18 6L6 18M6 6l12 12"/></svg>Reject</button></div></div>`).join('');
+}
+function resolve(id,ok){approvals=approvals.filter(a=>a.id!==id);renderApprovals();toast(ok?'Order deleted & ledger reversed ✓':'Request rejected — order kept');}
+renderApprovals();
+
+/* ---------- PAYMENTS + LEDGER ---------- */
+const PAY_ID_BASE=83;
+let PAY_NEXT=PAY_ID_BASE+1;
+const LEDGER=[
+  {date:'2026-06-02',cust:'imran',type:'order',ref:'AC-00011',desc:'Order · Chicken Biryani lunch',debit:22,credit:0,mode:null,by:'Aslam Sayed'},
+  {date:'2026-06-05',cust:'imran',type:'order',ref:'AC-00018',desc:'Order · Veg Pulao + Dal',debit:33,credit:0,mode:null,by:'Aslam Sayed'},
+  {date:'2026-06-11',cust:'imran',type:'order',ref:'AC-00043',desc:'Order · Butter Chicken + Naan',debit:34,credit:0,mode:null,by:'Priya Nair'},
+  {date:'2026-06-13',cust:'imran',type:'stmt',ref:'AC-STMT-2606-IMR',desc:'Statement (22 days)',debit:691,credit:0,mode:null,by:'system'},
+  {date:'2026-06-02',cust:'faiz',type:'order',ref:'AC-00012',desc:'Order · Veg Pulao + Roti',debit:33,credit:0,mode:null,by:'Priya Nair'},
+  {date:'2026-06-09',cust:'faiz',type:'order',ref:'AC-00031',desc:'Order · Chicken Biryani',debit:22,credit:0,mode:null,by:'Aslam Sayed'},
+  {date:'2026-05-28',cust:'faiz',type:'pay',ref:'PAY-00076',desc:'Part payment — promised balance soon',debit:0,credit:300,mode:'cash',by:'Tabrez Ahmed'},
+  {date:'2026-06-13',cust:'faiz',type:'stmt',ref:'AC-STMT-2606-FAI',desc:'Statement (cycle total)',debit:889.5,credit:0,mode:null,by:'system'},
+  {date:'2026-06-04',cust:'sana',type:'order',ref:'AC-00021',desc:'Order · Poha + Chai',debit:12,credit:0,mode:null,by:'Aslam Sayed'},
+  {date:'2026-06-13',cust:'sana',type:'stmt',ref:'AC-STMT-2606-SAN',desc:'Statement (cycle total)',debit:548,credit:0,mode:null,by:'system'},
+  {date:'2026-06-13',cust:'sana',type:'disc',ref:'',desc:'Goodwill discount',debit:0,credit:0,mode:null,by:'Tabrez Ahmed',adjustCredit:15}
+];
+LEDGER.forEach(e=>{if(e.adjustCredit){e.credit=e.adjustCredit;delete e.adjustCredit;}});
+
+function custBalance(custId){
+  const entries=LEDGER.filter(e=>e.cust===custId);
+  return entries.reduce((s,e)=>s+e.debit-e.credit,0);
+}
+function ledgerOf(custId){
+  return LEDGER.filter(e=>e.cust===custId).slice().sort((a,b)=>a.date.localeCompare(b.date));
+}
+
+const payCustomers=CUSTOMERS.filter(c=>c.id!=='walkin');
+const ledgerSel=document.getElementById('ledgerCust');
+ledgerSel.innerHTML=payCustomers.map(c=>`<option value="${c.id}">${c.name} — ${c.co}</option>`).join('');
+ledgerSel.addEventListener('change',()=>renderLedgerTable(ledgerSel.value));
+
+function renderPaymentsScreen(){
+  const today=new Date().toISOString().slice(0,10);
+  const todays=LEDGER.filter(e=>e.type==='pay'&&e.date===today);
+  const tEl=document.getElementById('todaysPayments');
+  if(!todays.length){tEl.innerHTML='<div class="s-empty">No payments recorded today.</div>';}
+  else{
+    tEl.innerHTML=todays.map(p=>{const c=payCustomers.find(x=>x.id===p.cust);return `<div class="row-item">
+      <div class="av">${c?c.name.split(' ').map(w=>w[0]).join('').slice(0,2):'?'}</div>
+      <div class="meta"><div class="nm">${c?c.name:p.cust}</div><div class="sm">#${p.ref} · <span class="mode-pill">${p.mode}</span> · ${p.by}</div></div>
+      <div class="amt paid">+ ${AED(p.credit)}</div></div>`;}).join('');
+  }
+  const balances=payCustomers.map(c=>({c,bal:custBalance(c.id)})).filter(x=>x.bal>0.001).sort((a,b)=>b.bal-a.bal);
+  const bEl=document.getElementById('payBalances');
+  if(!balances.length){bEl.innerHTML='<div class="s-empty">All settled.</div>';}
+  else{
+    bEl.innerHTML=balances.map(({c,bal})=>`<div class="row-item" style="cursor:pointer" onclick="openPayModal('${c.id}')">
+      <div class="av">${c.name.split(' ').map(w=>w[0]).join('').slice(0,2)}</div>
+      <div class="meta"><div class="nm">${c.name}</div><div class="sm">${c.co}</div></div>
+      <div class="amt due">${AED(bal)}</div></div>`).join('');
+  }
+  renderLedgerTable(ledgerSel.value);
+
+  document.getElementById('payPending').textContent=AED(balances.reduce((s,x)=>s+x.bal,0));
+  document.getElementById('payCollToday').textContent=AED(todays.reduce((s,p)=>s+p.credit,0)||3540);
+}
+
+function renderLedgerTable(custId){
+  const entries=ledgerOf(custId);let run=0;
+  const head=`<thead><tr><th>Date</th><th>Type</th><th>Description</th><th>Ref</th><th class="r">Debit</th><th class="r">Credit</th><th class="r">Balance</th></tr></thead>`;
+  const tCls={order:'lt-order',stmt:'lt-stmt',pay:'lt-pay',disc:'lt-disc'};
+  const tLabel={order:'order',stmt:'statement',pay:'payment',disc:'discount'};
+  const body=entries.map(e=>{run+=e.debit-e.credit;return `<tr>
+    <td style="white-space:nowrap">${new Date(e.date).toLocaleDateString('en-GB',{day:'2-digit',month:'short'})}</td>
+    <td><span class="ledger-type ${tCls[e.type]||''}">${tLabel[e.type]||e.type}</span></td>
+    <td>${e.desc}${e.mode?` <span class="mode-pill">${e.mode}</span>`:''}<div style="font-size:11px;color:var(--muted);margin-top:2px">by ${e.by}</div></td>
+    <td style="color:var(--muted);font-size:12px">${e.ref||'—'}</td>
+    <td class="r ${e.debit?'ledger-debit':''}">${e.debit?AED(e.debit):'—'}</td>
+    <td class="r ${e.credit?'ledger-credit':''}">${e.credit?AED(e.credit):'—'}</td>
+    <td class="r" style="font-weight:700">${AED(run)}</td>
+  </tr>`;}).join('');
+  document.getElementById('ledgerTable').innerHTML=head+'<tbody>'+(entries.length?body:'<tr><td colspan="7" style="text-align:center;color:var(--muted);padding:22px">No entries.</td></tr>')+'</tbody>';
+}
+
+function openPayModal(custId){
+  const pfCust=document.getElementById('pfCust');
+  pfCust.innerHTML=payCustomers.map(c=>`<option value="${c.id}">${c.name} — ${c.co}</option>`).join('');
+  if(custId)pfCust.value=custId;
+  document.getElementById('pfAmt').value='';
+  document.getElementById('pfDate').value=new Date().toISOString().slice(0,10);
+  document.getElementById('pfMode').selectedIndex=0;
+  document.getElementById('pfRef').value='';
+  document.getElementById('pfNotes').value='';
+  updatePayCustInfo();updatePayPreview();
+  document.getElementById('payModal').classList.add('open');
+  setTimeout(()=>document.getElementById('pfAmt').focus(),60);
+}
+function closePayModal(){document.getElementById('payModal').classList.remove('open');}
+document.getElementById('payModal').addEventListener('click',e=>{if(e.target.id==='payModal')closePayModal();});
+
+document.getElementById('pfMode').addEventListener('change',()=>{
+  const m=document.getElementById('pfMode').value;
+  const labels={cash:'Reference (optional)',card:'Last 4 digits / approval code',bank:'Bank transaction reference *',cheque:'Cheque number *',online:'Transaction ID *'};
+  document.getElementById('pfRefLabel').textContent=labels[m];
+});
+
+function updatePayCustInfo(){
+  const id=document.getElementById('pfCust').value;
+  const c=payCustomers.find(x=>x.id===id);
+  const bal=custBalance(id);
+  const lastPay=LEDGER.filter(e=>e.cust===id&&e.type==='pay').slice(-1)[0];
+  document.getElementById('pfInfo').innerHTML=`
+    <div class="pi-bal"><span class="k">Balance due</span><span class="v ${bal<=0?'zero':''}">${bal>0?AED(bal):AED(0)}</span></div>
+    <div class="pi-meta">${c.mob}<br>${lastPay?'Last paid '+new Date(lastPay.date).toLocaleDateString('en-GB',{day:'2-digit',month:'short'})+' · '+AED(lastPay.credit):'No prior payments'}</div>`;
+  const q=document.getElementById('pfQuick');
+  const half=Math.round(bal/2);
+  const opts=bal>0?[['Half',half],['Full',Math.round(bal)],['500',500],['1000',1000]]:[['100',100],['500',500],['1000',1000]];
+  q.innerHTML=opts.map(([l,v])=>`<button onclick="document.getElementById('pfAmt').value=${v};updatePayPreview()">${l} · AED ${v.toLocaleString('en-AE')}</button>`).join('');
+  updatePayPreview();
+}
+
+function updatePayPreview(){
+  const id=document.getElementById('pfCust').value;
+  const amt=parseFloat(document.getElementById('pfAmt').value)||0;
+  const bal=custBalance(id);
+  const after=bal-amt;
+  const p=document.getElementById('pfPreview');
+  if(amt<=0){p.classList.remove('show');return;}
+  let outcome,cls;
+  if(after>0.001){outcome='Remaining balance';cls='due';}
+  else if(Math.abs(after)<0.001){outcome='Fully settled';cls='set';}
+  else{outcome='Customer credit (overpaid)';cls='adv';}
+  p.classList.add('show');
+  p.innerHTML=`
+    <div class="row"><span>Balance before</span><span class="num">${AED(bal)}</span></div>
+    <div class="row"><span>Payment</span><span class="num" style="color:var(--green)">– ${AED(amt)}</span></div>
+    <div class="row grand"><span>${outcome}</span><span class="v ${cls} num">${AED(Math.abs(after))}</span></div>`;
+}
+
+function savePayment(){
+  const id=document.getElementById('pfCust').value;
+  const amt=parseFloat(document.getElementById('pfAmt').value);
+  if(isNaN(amt)||amt<=0){toast('Enter a valid amount');return;}
+  const mode=document.getElementById('pfMode').value;
+  const ref=document.getElementById('pfRef').value.trim();
+  if((mode==='bank'||mode==='cheque'||mode==='online')&&!ref){toast('Reference number is required for '+mode);return;}
+  const date=document.getElementById('pfDate').value||new Date().toISOString().slice(0,10);
+  const notes=document.getElementById('pfNotes').value.trim();
+  const balBefore=custBalance(id);
+  const after=balBefore-amt;
+  const payRef='PAY-'+String(PAY_NEXT++).padStart(5,'0');
+  LEDGER.push({date,cust:id,type:'pay',ref:payRef,desc:notes||'Payment received',debit:0,credit:amt,mode,by:CURRENT_USER});
+  const c=payCustomers.find(x=>x.id===id);
+  closePayModal();renderPaymentsScreen();
+  let msg;
+  if(after>0.001)msg=`${c.name.split(' ')[0]}: ${AED(amt)} received · ${AED(after)} still due`;
+  else if(Math.abs(after)<0.001)msg=`${c.name.split(' ')[0]}: ${AED(amt)} received · settled ✓`;
+  else msg=`${c.name.split(' ')[0]}: ${AED(amt)} received · ${AED(Math.abs(after))} credit balance`;
+  toast(msg);
+}
+
+/* ---------- MENU management ---------- */
+let menuFilter='all';
+const mealTagCls={breakfast:'mt-b',lunch:'mt-l',dinner:'mt-d'};
+document.getElementById('menuFilter').addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;
+  document.querySelectorAll('#menuFilter button').forEach(x=>x.classList.remove('on'));b.classList.add('on');menuFilter=b.dataset.f;renderMenu();});
+function renderMenu(){
+  const q=(document.getElementById('menuSearch').value||'').toLowerCase();
+  const rows=MENU_ITEMS.filter(i=>menuFilter==='all'||i.meal===menuFilter).filter(i=>!q||i.name.toLowerCase().includes(q));
+  const head=`<thead><tr><th>Dish</th><th>Meal</th><th>Category</th><th class="r">Price (AED)</th><th>Available</th><th></th></tr></thead>`;
+  const body=rows.map(i=>`<tr style="${i.available?'':'opacity:.55'}">
+    <td style="font-weight:600">${i.name}</td>
+    <td><span class="meal-tag ${mealTagCls[i.meal]}">${i.meal}</span></td>
+    <td style="color:var(--muted)">${i.cat||'—'}</td>
+    <td class="r"><input class="price-edit" type="number" inputmode="decimal" value="${i.price}" onchange="editPrice(${i.id},this.value)" onclick="this.select()"></td>
+    <td><button class="tg ${i.available?'on':''}" onclick="toggleAvail(${i.id})" aria-label="toggle availability"></button></td>
+    <td><button class="icon-btn" onclick="delItem(${i.id})" aria-label="delete"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14"/></svg></button></td>
+  </tr>`).join('');
+  document.getElementById('menuTable').innerHTML=head+'<tbody>'+(rows.length?body:'<tr><td colspan="6" style="text-align:center;color:var(--muted);padding:26px">No items.</td></tr>')+'</tbody>';
+}
+function editPrice(id,val){const it=MENU_ITEMS.find(x=>x.id===id);const p=parseFloat(val);if(isNaN(p)||p<0){renderMenu();return;}it.price=p;renderItemGrid();toast(`${it.name} → AED ${p} · saved & live everywhere ✓`);}
+function toggleAvail(id){const it=MENU_ITEMS.find(x=>x.id===id);it.available=!it.available;renderMenu();renderItemGrid();toast(`${it.name} ${it.available?'available':'hidden from orders'} ✓`);}
+function delItem(id){const it=MENU_ITEMS.find(x=>x.id===id);const i=MENU_ITEMS.indexOf(it);MENU_ITEMS.splice(i,1);renderMenu();renderItemGrid();toast(`${it.name} removed`);}
+function openMenuModal(){['miName','miCat','miPrice'].forEach(x=>document.getElementById(x).value='');document.getElementById('miMeal').selectedIndex=0;document.getElementById('miAvail').selectedIndex=0;document.getElementById('menuModal').classList.add('open');setTimeout(()=>document.getElementById('miName').focus(),60);}
+function closeMenuModal(){document.getElementById('menuModal').classList.remove('open');}
+document.getElementById('menuModal').addEventListener('click',e=>{if(e.target.id==='menuModal')closeMenuModal();});
+function saveMenuItem(){
+  const name=document.getElementById('miName').value.trim();
+  const price=parseFloat(document.getElementById('miPrice').value);
+  if(!name){toast('Dish name is required');return;}
+  if(isNaN(price)||price<0){toast('Enter a valid price');return;}
+  MENU_ITEMS.push({id:++MENU_ID,name,meal:document.getElementById('miMeal').value,cat:document.getElementById('miCat').value.trim()||'—',price,available:document.getElementById('miAvail').value==='yes'});
+  closeMenuModal();renderMenu();renderItemGrid();
+  toast(`${name} added to menu ✓`);
+}
+
+/* ---------- CUSTOMERS screen + Add modal ---------- */
+let custFilter='all';
+document.getElementById('custFilter').addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;
+  document.querySelectorAll('#custFilter button').forEach(x=>x.classList.remove('on'));b.classList.add('on');custFilter=b.dataset.f;renderCustomers();});
+function typeCls(t){return t==='Fixed Menu'?'t-fixed':t==='Hybrid'?'t-hybrid':'';}
+function renderCustomers(){
+  const q=(document.getElementById('custSearch').value||'').toLowerCase();
+  const list=CUSTOMERS.filter(c=>c.id!=='walkin')
+    .filter(c=>custFilter==='all'||c.type===custFilter)
+    .filter(c=>!q||(c.name+c.co+c.mob).toLowerCase().includes(q));
+  const el=document.getElementById('custList');
+  if(!list.length){el.innerHTML='<div class="panel empty">No customers match.</div>';return;}
+  el.innerHTML=list.map(c=>`
+    <div class="cust-card">
+      <div class="cc-top">
+        <div class="cc-id">
+          <div class="cc-av">${c.name.split(' ').map(w=>w[0]).join('').slice(0,2).toUpperCase()}</div>
+          <div style="min-width:0"><div class="cc-nm">${c.name}</div><div class="cc-co">${c.co} · ${c.emp}</div></div>
+        </div>
+        <span class="type-pill ${typeCls(c.type)}">${c.type}</span>
+      </div>
+      <div class="cc-meta"><span>📱 <b>${c.mob}</b></span><span>📍 ${c.loc}</span></div>
+      <div class="cc-foot">
+        <span class="cc-bal" style="color:${c.bal>0?'var(--red)':'var(--green)'}">${c.bal>0?AED(c.bal)+' due':'Settled'}</span>
+        <button class="link-edit" onclick="toast('Edit ${c.name.split(' ')[0]} — full profile in build')">Edit</button>
+      </div>
+    </div>`).join('').replace(/📱/g,'<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="#7C7063" stroke-width="2" style="vertical-align:-1px"><rect x="7" y="2" width="10" height="20" rx="2"/><path d="M11 18h2"/></svg>').replace(/📍/g,'<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="#E76F2A" stroke-width="2" style="vertical-align:-1px"><path d="M12 21s7-6.3 7-11a7 7 0 1 0-14 0c0 4.7 7 11 7 11Z"/><circle cx="12" cy="10" r="2.5"/></svg>');
+}
+
+let modalFromOrder=false;
+function openCustModal(fromOrder){
+  modalFromOrder=fromOrder;
+  ['cfName','cfCo','cfEmp','cfMob','cfWa','cfEmail','cfLoc','cfNotes'].forEach(id=>document.getElementById(id).value='');
+  document.getElementById('cfType').selectedIndex=0;document.getElementById('cfBill').selectedIndex=0;
+  document.getElementById('custModal').classList.add('open');
+  setTimeout(()=>document.getElementById('cfName').focus(),60);
+}
+function closeCustModal(){document.getElementById('custModal').classList.remove('open');}
+document.getElementById('custModal').addEventListener('click',e=>{if(e.target.id==='custModal')closeCustModal();});
+function saveCustomer(){
+  const name=document.getElementById('cfName').value.trim();
+  const mob=document.getElementById('cfMob').value.trim();
+  if(!name){toast('Customer name is required');document.getElementById('cfName').focus();return;}
+  if(!mob){toast('Mobile number is required');document.getElementById('cfMob').focus();return;}
+  const id='c'+Date.now();
+  CUSTOMERS.splice(CUSTOMERS.length-1,0,{ // keep Walk-in last
+    id,name,co:document.getElementById('cfCo').value.trim()||'—',
+    emp:document.getElementById('cfEmp').value.trim()||'—',mob,
+    loc:document.getElementById('cfLoc').value.trim()||'—',
+    type:document.getElementById('cfType').value,status:'Active',bal:0
+  });
+  closeCustModal();
+  renderCustDropdown(modalFromOrder?id:undefined);
+  renderCustomers();
+  toast(`${name.split(' ')[0]} added ✓${modalFromOrder?' — selected for this order':''}`);
+}
+</script>
+</body>
+</html>
