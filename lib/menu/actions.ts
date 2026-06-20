@@ -6,7 +6,7 @@ import { requireAuth } from '@/lib/auth'
 import { createAdminClient } from '@/lib/supabase/admin'
 import type { Enums } from '@/lib/supabase/types'
 
-const WRITE_ROLES: Enums<'user_role'>[] = ['owner', 'manager']
+const WRITE_ROLES: Enums<'user_role'>[] = ['owner', 'manager', 'data_entry']
 
 const MenuItemSchema = z.object({
   name: z.string().min(1, 'Name is required').transform(v => v.trim()),

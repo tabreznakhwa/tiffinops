@@ -2,7 +2,7 @@
 
 import { useState, useMemo, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
-import { Plus, Edit2 } from 'lucide-react'
+import { Plus, Edit2, Search, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { MenuItemModal } from './menu-item-modal'
 import { toggleMenuItemAvailability } from '@/lib/menu/actions'
@@ -133,6 +133,7 @@ export function MenuModule({
 }) {
   const router = useRouter()
   const [activeTab, setActiveTab] = useState<TabValue>('all')
+  const [search, setSearch] = useState('')
   const [addOpen, setAddOpen] = useState(false)
   const [editingItem, setEditingItem] = useState<MenuItem | null>(null)
   const [isPending, startTransition] = useTransition()
@@ -163,8 +164,17 @@ export function MenuModule({
     [items]
   )
 
-  // Items to render (filtered by tab)
-  const visibleItems = activeTab === 'all' ? items : items.filter(i => i.meal_period === activeTab)
+  // Items to render (filtered by tab + search)
+  const visibleItems = useMemo(() => {
+    const base = activeTab === 'all' ? items : items.filter(i => i.meal_period === activeTab)
+    if (!search.trim()) return base
+    const q = search.toLowerCase()
+    return base.filter(i =>
+      i.name.toLowerCase().includes(q) ||
+      (i.category ?? '').toLowerCase().includes(q) ||
+      (i.description ?? '').toLowerCase().includes(q)
+    )
+  }, [items, activeTab, search])
 
   const totalAvailable = items.filter(i => i.is_available).length
 
@@ -205,6 +215,35 @@ export function MenuModule({
         )}
       </div>
 
+      {/* Search */}
+      <div className="relative mb-4">
+        <Search
+          size={15}
+          className="absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none"
+          style={{ color: 'var(--color-muted)' }}
+        />
+        <input
+          type="text"
+          value={search}
+          onChange={e => setSearch(e.target.value)}
+          placeholder="Search by name, category or description…"
+          className="w-full h-9 pl-9 pr-8 rounded-[10px] text-sm outline-none"
+          style={{
+            background: 'var(--color-surface)',
+            border: '1px solid var(--color-border)',
+            color: 'var(--color-ink)',
+          }}
+        />
+        {search && (
+          <button
+            onClick={() => setSearch('')}
+            className="absolute right-2.5 top-1/2 -translate-y-1/2"
+          >
+            <X size={13} style={{ color: 'var(--color-muted)' }} />
+          </button>
+        )}
+      </div>
+
       {/* Period tabs */}
       <div className="flex gap-1.5 mb-5 overflow-x-auto pb-0.5">
         {([
@@ -236,6 +275,17 @@ export function MenuModule({
               Click <strong>Add Item</strong> to add your first menu item.
             </p>
           )}
+        </div>
+      ) : visibleItems.length === 0 ? (
+        <div className="py-16 text-center" style={{ color: 'var(--color-muted)' }}>
+          <p className="font-semibold text-[15px]">No items match &ldquo;{search}&rdquo;</p>
+          <button
+            onClick={() => setSearch('')}
+            className="text-sm mt-1 font-semibold"
+            style={{ color: 'var(--color-saffron)' }}
+          >
+            Clear search
+          </button>
         </div>
       ) : activeTab === 'all' ? (
         /* All view — grouped by period */

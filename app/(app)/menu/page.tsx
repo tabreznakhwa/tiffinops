@@ -2,7 +2,7 @@ import { requireAuth } from '@/lib/auth'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { MenuModule } from '@/components/menu/menu-module'
 
-const WRITE_ROLES = ['owner', 'manager']
+const WRITE_ROLES = ['owner', 'manager', 'data_entry']
 
 export default async function MenuPage() {
   const user = await requireAuth()
