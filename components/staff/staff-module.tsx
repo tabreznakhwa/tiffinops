@@ -263,6 +263,13 @@ function StaffRow({ user, isCurrentUser }: { user: User; isCurrentUser: boolean 
   const statusCfg = STATUS_CONFIG[user.status] ?? STATUS_CONFIG.inactive
   const isOwner   = user.role === 'owner'
 
+  // Next.js 16 / React 19 can throw an RSC re-render error even without revalidatePath.
+  // When that happens the DB write already succeeded — navigate to show fresh data.
+  function isRscRenderError(err: unknown): boolean {
+    const msg = err instanceof Error ? err.message : String(err)
+    return msg.includes('Server Components render')
+  }
+
   async function changeRole(newRole: UserRole) {
     if (busy) return
     setBusy(true)
@@ -271,6 +278,7 @@ function StaffRow({ user, isCurrentUser }: { user: User; isCurrentUser: boolean 
       const result = await updateStaffRole(user.id, newRole)
       if (result?.error) { setRoleError(result.error); setBusy(false); return }
     } catch (err) {
+      if (isRscRenderError(err)) { window.location.assign('/staff'); return }
       setRoleError(err instanceof Error ? err.message : 'Something went wrong')
       setBusy(false)
       return
@@ -287,6 +295,7 @@ function StaffRow({ user, isCurrentUser }: { user: User; isCurrentUser: boolean 
       const result = await updateStaffStatus(user.id, next)
       if (result?.error) { setStatusError(result.error); setBusy(false); return }
     } catch (err) {
+      if (isRscRenderError(err)) { window.location.assign('/staff'); return }
       setStatusError(err instanceof Error ? err.message : 'Something went wrong')
       setBusy(false)
       return
@@ -306,6 +315,7 @@ function StaffRow({ user, isCurrentUser }: { user: User; isCurrentUser: boolean 
       })
       if (result?.error) { setPermError(result.error); setBusy(false); return }
     } catch (err) {
+      if (isRscRenderError(err)) { window.location.assign('/staff'); return }
       setPermError(err instanceof Error ? err.message : 'Something went wrong')
       setBusy(false)
       return
