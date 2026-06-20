@@ -1,7 +1,6 @@
 'use client'
 
 import { useState, useTransition } from 'react'
-import { useRouter } from 'next/navigation'
 import { Plus, X, Mail, Shield } from 'lucide-react'
 import {
   inviteStaff,
@@ -107,7 +106,6 @@ function PermToggle({
 // ── Invite modal ──────────────────────────────────────────────────────────────
 
 function InviteModal({ onClose }: { onClose: () => void }) {
-  const router = useRouter()
   const [fullName, setFullName] = useState('')
   const [email, setEmail]       = useState('')
   const [role, setRole]         = useState<UserRole>('data_entry')
@@ -123,7 +121,7 @@ function InviteModal({ onClose }: { onClose: () => void }) {
     setLoading(false)
     if (result.error) { setError(result.error); return }
     setSent(true)
-    router.refresh()
+    window.location.reload()
   }
 
   return (
@@ -267,7 +265,6 @@ function InviteModal({ onClose }: { onClose: () => void }) {
 // ── Staff row ─────────────────────────────────────────────────────────────────
 
 function StaffRow({ user, isCurrentUser }: { user: User; isCurrentUser: boolean }) {
-  const router = useRouter()
   const [, startTransition] = useTransition()
   const [roleError, setRoleError]   = useState('')
   const [statusError, setStatusError] = useState('')
@@ -283,9 +280,10 @@ function StaffRow({ user, isCurrentUser }: { user: User; isCurrentUser: boolean 
       try {
         const result = await updateStaffRole(user.id, newRole)
         if (result.error) { setRoleError(result.error); return }
-        router.refresh()
+        window.location.reload()
       } catch (err) {
         if (isNextError(err)) throw err
+        console.error('[changeRole error]', err)
         setRoleError(err instanceof Error ? err.message : 'Something went wrong. Please refresh and try again.')
       }
     })
@@ -298,9 +296,10 @@ function StaffRow({ user, isCurrentUser }: { user: User; isCurrentUser: boolean 
       try {
         const result = await updateStaffStatus(user.id, next)
         if (result.error) { setStatusError(result.error); return }
-        router.refresh()
+        window.location.reload()
       } catch (err) {
         if (isNextError(err)) throw err
+        console.error('[toggleStatus error]', err)
         setStatusError(err instanceof Error ? err.message : 'Something went wrong. Please refresh and try again.')
       }
     })
@@ -316,9 +315,10 @@ function StaffRow({ user, isCurrentUser }: { user: User; isCurrentUser: boolean 
           can_export_reports: field === 'can_export_reports' ? val : user.can_export_reports,
         })
         if (result.error) { setPermError(result.error); return }
-        router.refresh()
+        window.location.reload()
       } catch (err) {
         if (isNextError(err)) throw err
+        console.error('[changePerm error]', err)
         setPermError(err instanceof Error ? err.message : 'Something went wrong. Please refresh and try again.')
       }
     })
