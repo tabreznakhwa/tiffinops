@@ -270,7 +270,11 @@ function StaffRow({ user, isCurrentUser }: { user: User; isCurrentUser: boolean 
     try {
       const result = await updateStaffRole(user.id, newRole)
       if (result?.error) { setRoleError(result.error); setBusy(false); return }
-    } catch { /* ignore */ }
+    } catch (err) {
+      setRoleError(err instanceof Error ? err.message : 'Something went wrong')
+      setBusy(false)
+      return
+    }
     window.location.reload()
   }
 
@@ -282,7 +286,11 @@ function StaffRow({ user, isCurrentUser }: { user: User; isCurrentUser: boolean 
     try {
       const result = await updateStaffStatus(user.id, next)
       if (result?.error) { setStatusError(result.error); setBusy(false); return }
-    } catch { /* ignore */ }
+    } catch (err) {
+      setStatusError(err instanceof Error ? err.message : 'Something went wrong')
+      setBusy(false)
+      return
+    }
     window.location.reload()
   }
 
@@ -297,7 +305,11 @@ function StaffRow({ user, isCurrentUser }: { user: User; isCurrentUser: boolean 
         can_export_reports: field === 'can_export_reports' ? val : user.can_export_reports,
       })
       if (result?.error) { setPermError(result.error); setBusy(false); return }
-    } catch { /* ignore */ }
+    } catch (err) {
+      setPermError(err instanceof Error ? err.message : 'Something went wrong')
+      setBusy(false)
+      return
+    }
     window.location.reload()
   }
 
