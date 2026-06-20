@@ -1,6 +1,6 @@
 'use server'
 
-import { revalidatePath } from 'next/cache'
+import { redirect } from 'next/navigation'
 import { z } from 'zod'
 import { requireAuth } from '@/lib/auth'
 import { createAdminClient } from '@/lib/supabase/admin'
@@ -58,7 +58,6 @@ export async function inviteStaff(input: {
     return { error: insertErr.message }
   }
 
-  revalidatePath('/staff')
   return {}
 }
 
@@ -85,8 +84,7 @@ export async function updateStaffRole(
     .neq('role', 'owner') // never touch the owner row
 
   if (error) return { error: error.message }
-  revalidatePath('/staff')
-  return {}
+  redirect('/staff')
 }
 
 export async function updateStaffStatus(
@@ -105,8 +103,7 @@ export async function updateStaffStatus(
     .neq('role', 'owner')
 
   if (error) return { error: error.message }
-  revalidatePath('/staff')
-  return {}
+  redirect('/staff')
 }
 
 export async function updateStaffPermissions(
@@ -131,8 +128,7 @@ export async function updateStaffPermissions(
     .neq('role', 'owner')
 
   if (error) return { error: error.message }
-  revalidatePath('/staff')
-  return {}
+  redirect('/staff')
 }
 
 export { ASSIGNABLE_ROLES }
