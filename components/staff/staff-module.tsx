@@ -268,9 +268,13 @@ function StaffRow({ user, isCurrentUser }: { user: User; isCurrentUser: boolean 
   function changeRole(newRole: UserRole) {
     setRoleError('')
     startTransition(async () => {
-      const result = await updateStaffRole(user.id, newRole)
-      if (result.error) { setRoleError(result.error); return }
-      router.refresh()
+      try {
+        const result = await updateStaffRole(user.id, newRole)
+        if (result.error) { setRoleError(result.error); return }
+        router.refresh()
+      } catch {
+        setRoleError('Something went wrong. Please refresh and try again.')
+      }
     })
   }
 
@@ -278,22 +282,30 @@ function StaffRow({ user, isCurrentUser }: { user: User; isCurrentUser: boolean 
     setStatusError('')
     const next: UserStatus = user.status === 'active' ? 'inactive' : 'active'
     startTransition(async () => {
-      const result = await updateStaffStatus(user.id, next)
-      if (result.error) { setStatusError(result.error); return }
-      router.refresh()
+      try {
+        const result = await updateStaffStatus(user.id, next)
+        if (result.error) { setStatusError(result.error); return }
+        router.refresh()
+      } catch {
+        setStatusError('Something went wrong. Please refresh and try again.')
+      }
     })
   }
 
   function changePerm(field: 'can_record_payment' | 'can_see_financials' | 'can_export_reports', val: boolean | null) {
     setPermError('')
     startTransition(async () => {
-      const result = await updateStaffPermissions(user.id, {
-        can_record_payment: field === 'can_record_payment' ? val : user.can_record_payment,
-        can_see_financials: field === 'can_see_financials' ? val : user.can_see_financials,
-        can_export_reports: field === 'can_export_reports' ? val : user.can_export_reports,
-      })
-      if (result.error) { setPermError(result.error); return }
-      router.refresh()
+      try {
+        const result = await updateStaffPermissions(user.id, {
+          can_record_payment: field === 'can_record_payment' ? val : user.can_record_payment,
+          can_see_financials: field === 'can_see_financials' ? val : user.can_see_financials,
+          can_export_reports: field === 'can_export_reports' ? val : user.can_export_reports,
+        })
+        if (result.error) { setPermError(result.error); return }
+        router.refresh()
+      } catch {
+        setPermError('Something went wrong. Please refresh and try again.')
+      }
     })
   }
 
