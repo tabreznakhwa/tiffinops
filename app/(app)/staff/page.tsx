@@ -4,12 +4,26 @@ import { StaffModule } from '@/components/staff/staff-module'
 
 export default async function StaffPage() {
   await requireRole(['owner'])
-  const admin = createAdminClient()
 
-  const { data: users } = await admin
+  let users: Awaited<ReturnType<typeof fetchUsers>> = []
+  try {
+    users = await fetchUsers()
+  } catch (err) {
+    console.error('[StaffPage] users query failed:', err)
+  }
+
+  return <StaffModule users={users} />
+}
+
+async function fetchUsers() {
+  const admin = createAdminClient()
+  const { data, error } = await admin
     .from('users')
     .select('*')
     .order('created_at', { ascending: true })
-
-  return <StaffModule users={users ?? []} />
+  if (error) {
+    console.error('[StaffPage] supabase error:', error)
+    return []
+  }
+  return data ?? []
 }

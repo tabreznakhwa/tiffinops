@@ -20,7 +20,7 @@ export type AppSettings = {
   updated_at: string
 }
 
-const FALLBACK: AppSettings = {
+export const FALLBACK: AppSettings = {
   id: 1,
   business_name: 'Apna Chulha Restaurant LLC',
   currency: 'AED',
