@@ -2,13 +2,19 @@
 
 import { useState } from 'react'
 import { Plus, X, Mail, Shield } from 'lucide-react'
-import {
-  inviteStaff,
-  updateStaffRole,
-  updateStaffStatus,
-  updateStaffPermissions,
-} from '@/lib/staff/actions'
+import { inviteStaff } from '@/lib/staff/actions'
 import type { Tables, Enums } from '@/lib/supabase/types'
+
+async function staffApi(body: Record<string, unknown>): Promise<{ error?: string }> {
+  const res = await fetch('/api/staff/update', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+  const json = await res.json()
+  if (!res.ok) return { error: json.error ?? 'Request failed' }
+  return {}
+}
 
 type User       = Tables<'users'>
 type UserRole   = Enums<'user_role'>
@@ -263,26 +269,12 @@ function StaffRow({ user, isCurrentUser }: { user: User; isCurrentUser: boolean 
   const statusCfg = STATUS_CONFIG[user.status] ?? STATUS_CONFIG.inactive
   const isOwner   = user.role === 'owner'
 
-  // Next.js 16 / React 19 can throw an RSC re-render error even without revalidatePath.
-  // When that happens the DB write already succeeded — navigate to show fresh data.
-  function isRscRenderError(err: unknown): boolean {
-    const msg = err instanceof Error ? err.message : String(err)
-    return msg.includes('Server Components render')
-  }
-
   async function changeRole(newRole: UserRole) {
     if (busy) return
     setBusy(true)
     setRoleError(null)
-    try {
-      const result = await updateStaffRole(user.id, newRole)
-      if (result?.error) { setRoleError(result.error); setBusy(false); return }
-    } catch (err) {
-      if (isRscRenderError(err)) { window.location.assign('/staff'); return }
-      setRoleError(err instanceof Error ? err.message : 'Something went wrong')
-      setBusy(false)
-      return
-    }
+    const result = await staffApi({ action: 'role', id: user.id, role: newRole })
+    if (result.error) { setRoleError(result.error); setBusy(false); return }
     window.location.assign('/staff')
   }
 
@@ -291,15 +283,8 @@ function StaffRow({ user, isCurrentUser }: { user: User; isCurrentUser: boolean 
     setBusy(true)
     setStatusError(null)
     const next: UserStatus = user.status === 'active' ? 'inactive' : 'active'
-    try {
-      const result = await updateStaffStatus(user.id, next)
-      if (result?.error) { setStatusError(result.error); setBusy(false); return }
-    } catch (err) {
-      if (isRscRenderError(err)) { window.location.assign('/staff'); return }
-      setStatusError(err instanceof Error ? err.message : 'Something went wrong')
-      setBusy(false)
-      return
-    }
+    const result = await staffApi({ action: 'status', id: user.id, status: next })
+    if (result.error) { setStatusError(result.error); setBusy(false); return }
     window.location.assign('/staff')
   }
 
@@ -307,19 +292,14 @@ function StaffRow({ user, isCurrentUser }: { user: User; isCurrentUser: boolean 
     if (busy) return
     setBusy(true)
     setPermError(null)
-    try {
-      const result = await updateStaffPermissions(user.id, {
-        can_record_payment: field === 'can_record_payment' ? val : user.can_record_payment,
-        can_see_financials: field === 'can_see_financials' ? val : user.can_see_financials,
-        can_export_reports: field === 'can_export_reports' ? val : user.can_export_reports,
-      })
-      if (result?.error) { setPermError(result.error); setBusy(false); return }
-    } catch (err) {
-      if (isRscRenderError(err)) { window.location.assign('/staff'); return }
-      setPermError(err instanceof Error ? err.message : 'Something went wrong')
-      setBusy(false)
-      return
-    }
+    const result = await staffApi({
+      action:              'permissions',
+      id:                  user.id,
+      can_record_payment:  field === 'can_record_payment' ? val : user.can_record_payment,
+      can_see_financials:  field === 'can_see_financials' ? val : user.can_see_financials,
+      can_export_reports:  field === 'can_export_reports' ? val : user.can_export_reports,
+    })
+    if (result.error) { setPermError(result.error); setBusy(false); return }
     window.location.assign('/staff')
   }
 

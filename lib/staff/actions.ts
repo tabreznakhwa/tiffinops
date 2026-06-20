@@ -7,8 +7,7 @@ import type { Enums } from '@/lib/supabase/types'
 
 export type StaffActionResult = { error?: string }
 
-type UserRole   = Enums<'user_role'>
-type UserStatus = Enums<'user_status'>
+type UserRole = Enums<'user_role'>
 
 // Roles that can be assigned to invited staff (owner is reserved)
 const ASSIGNABLE_ROLES: UserRole[] = ['manager', 'accounts', 'data_entry', 'packer', 'viewer']
@@ -43,7 +42,7 @@ export async function inviteStaff(input: {
     return { error: inviteErr.message ?? 'Failed to send invite' }
   }
 
-  // Pre-insert the users row so the trigger ON CONFLICT DO NOTHING preserves role + active status
+  // Pre-insert so the auth trigger's ON CONFLICT DO NOTHING preserves role + status
   const { error: insertErr } = await admin.from('users').insert({
     id:         inviteData.user.id,
     email:      parsed.data.email,
@@ -55,76 +54,6 @@ export async function inviteStaff(input: {
     return { error: insertErr.message }
   }
 
-  return {}
-}
-
-const RoleSchema = z.object({
-  role: z.enum(['manager', 'accounts', 'data_entry', 'packer', 'viewer']),
-})
-
-export async function updateStaffRole(
-  id: string,
-  role: UserRole
-): Promise<StaffActionResult> {
-  const caller = await requireAuth()
-  if (caller.role !== 'owner') return { error: 'Only the owner can change roles' }
-  if (id === caller.id)        return { error: 'You cannot change your own role' }
-
-  const parsed = RoleSchema.safeParse({ role })
-  if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? 'Invalid role' }
-
-  const admin = createAdminClient()
-  // Use rpc to bypass PostgREST RLS policy check with service role
-  const { error } = await admin.rpc('admin_update_user_role', {
-    p_id:   id,
-    p_role: parsed.data.role,
-  })
-
-  if (error) return { error: error.message }
-  return {}
-}
-
-export async function updateStaffStatus(
-  id: string,
-  status: UserStatus
-): Promise<StaffActionResult> {
-  const caller = await requireAuth()
-  if (caller.role !== 'owner') return { error: 'Only the owner can change account status' }
-  if (id === caller.id)        return { error: 'You cannot deactivate your own account' }
-
-  const admin = createAdminClient()
-  const { error } = await admin.rpc('admin_update_user_status', {
-    p_id:     id,
-    p_status: status,
-  })
-
-  if (error) return { error: error.message }
-  return {}
-}
-
-export async function updateStaffPermissions(
-  id: string,
-  perms: {
-    can_record_payment:  boolean | null
-    can_see_financials:  boolean | null
-    can_export_reports:  boolean | null
-  }
-): Promise<StaffActionResult> {
-  const caller = await requireAuth()
-  if (!['owner', 'manager'].includes(caller.role)) {
-    return { error: 'Only owner or manager can change permissions' }
-  }
-  if (id === caller.id) return { error: 'Use your own profile to change your permissions' }
-
-  const admin = createAdminClient()
-  const { error } = await admin.rpc('admin_update_user_permissions', {
-    p_id:                 id,
-    p_can_record_payment: perms.can_record_payment,
-    p_can_see_financials: perms.can_see_financials,
-    p_can_export_reports: perms.can_export_reports,
-  })
-
-  if (error) return { error: error.message }
   return {}
 }
 
