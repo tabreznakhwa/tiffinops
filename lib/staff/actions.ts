@@ -32,7 +32,6 @@ export async function inviteStaff(input: {
 
   const admin = createAdminClient()
 
-  // Send Supabase invite email
   const { data: inviteData, error: inviteErr } = await admin.auth.admin.inviteUserByEmail(
     parsed.data.email,
     { data: { full_name: parsed.data.full_name } }
@@ -75,13 +74,15 @@ export async function updateStaffRole(
   if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? 'Invalid role' }
 
   const admin = createAdminClient()
-  const { error } = await admin
+  const { data, error } = await admin
     .from('users')
     .update({ role: parsed.data.role })
     .eq('id', id)
     .neq('role', 'owner')
+    .select('id, role')
 
   if (error) return { error: error.message }
+  if (!data || data.length === 0) return { error: 'User not found or the database blocked the update' }
   return {}
 }
 
@@ -94,13 +95,15 @@ export async function updateStaffStatus(
   if (id === caller.id)        return { error: 'You cannot deactivate your own account' }
 
   const admin = createAdminClient()
-  const { error } = await admin
+  const { data, error } = await admin
     .from('users')
     .update({ status })
     .eq('id', id)
     .neq('role', 'owner')
+    .select('id, status')
 
   if (error) return { error: error.message }
+  if (!data || data.length === 0) return { error: 'User not found or the database blocked the update' }
   return {}
 }
 
@@ -119,13 +122,15 @@ export async function updateStaffPermissions(
   if (id === caller.id) return { error: 'Use your own profile to change your permissions' }
 
   const admin = createAdminClient()
-  const { error } = await admin
+  const { data, error } = await admin
     .from('users')
     .update(perms)
     .eq('id', id)
     .neq('role', 'owner')
+    .select('id')
 
   if (error) return { error: error.message }
+  if (!data || data.length === 0) return { error: 'User not found or the database blocked the update' }
   return {}
 }
 
