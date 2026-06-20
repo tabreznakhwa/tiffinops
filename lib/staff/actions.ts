@@ -1,6 +1,5 @@
 'use server'
 
-import { redirect } from 'next/navigation'
 import { z } from 'zod'
 import { requireAuth } from '@/lib/auth'
 import { createAdminClient } from '@/lib/supabase/admin'
@@ -84,7 +83,7 @@ export async function updateStaffRole(
     .neq('role', 'owner') // never touch the owner row
 
   if (error) return { error: error.message }
-  redirect('/staff')
+  return {}
 }
 
 export async function updateStaffStatus(
@@ -103,7 +102,7 @@ export async function updateStaffStatus(
     .neq('role', 'owner')
 
   if (error) return { error: error.message }
-  redirect('/staff')
+  return {}
 }
 
 export async function updateStaffPermissions(
@@ -128,7 +127,7 @@ export async function updateStaffPermissions(
     .neq('role', 'owner')
 
   if (error) return { error: error.message }
-  redirect('/staff')
+  return {}
 }
 
 export { ASSIGNABLE_ROLES }

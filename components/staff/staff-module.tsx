@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useTransition } from 'react'
+import { useState } from 'react'
 import { Plus, X, Mail, Shield } from 'lucide-react'
 import {
   inviteStaff,
@@ -13,18 +13,6 @@ import type { Tables, Enums } from '@/lib/supabase/types'
 type User       = Tables<'users'>
 type UserRole   = Enums<'user_role'>
 type UserStatus = Enums<'user_status'>
-
-// Re-throw Next.js redirect/not-found errors — they must not be swallowed by try-catch
-function isNextError(err: unknown): boolean {
-  return (
-    err != null &&
-    typeof err === 'object' &&
-    'digest' in err &&
-    typeof (err as { digest: unknown }).digest === 'string' &&
-    ((err as { digest: string }).digest.startsWith('NEXT_REDIRECT') ||
-      (err as { digest: string }).digest.startsWith('NEXT_NOT_FOUND'))
-  )
-}
 
 // ── Role config ───────────────────────────────────────────────────────────────
 
@@ -265,63 +253,52 @@ function InviteModal({ onClose }: { onClose: () => void }) {
 // ── Staff row ─────────────────────────────────────────────────────────────────
 
 function StaffRow({ user, isCurrentUser }: { user: User; isCurrentUser: boolean }) {
-  const [, startTransition] = useTransition()
-  const [roleError, setRoleError]   = useState('')
-  const [statusError, setStatusError] = useState('')
-  const [permError, setPermError]   = useState('')
+  const [roleError, setRoleError]     = useState<string | null>(null)
+  const [statusError, setStatusError] = useState<string | null>(null)
+  const [permError, setPermError]     = useState<string | null>(null)
+  const [busy, setBusy]               = useState(false)
 
-  const roleCfg   = ROLE_CONFIG[user.role]
-  const statusCfg = STATUS_CONFIG[user.status]
+  // Fallback so undefined role/status never crashes the render
+  const roleCfg   = ROLE_CONFIG[user.role]   ?? ROLE_CONFIG.viewer
+  const statusCfg = STATUS_CONFIG[user.status] ?? STATUS_CONFIG.inactive
   const isOwner   = user.role === 'owner'
 
-  function changeRole(newRole: UserRole) {
-    setRoleError('')
-    startTransition(async () => {
-      try {
-        const result = await updateStaffRole(user.id, newRole)
-        if (result.error) { setRoleError(result.error); return }
-        window.location.reload()
-      } catch (err) {
-        if (isNextError(err)) throw err
-        console.error('[changeRole error]', err)
-        setRoleError(err instanceof Error ? err.message : 'Something went wrong. Please refresh and try again.')
-      }
-    })
+  async function changeRole(newRole: UserRole) {
+    if (busy) return
+    setBusy(true)
+    setRoleError(null)
+    try {
+      const result = await updateStaffRole(user.id, newRole)
+      if (result?.error) { setRoleError(result.error); setBusy(false); return }
+    } catch { /* ignore */ }
+    window.location.reload()
   }
 
-  function toggleStatus() {
-    setStatusError('')
+  async function toggleStatus() {
+    if (busy) return
+    setBusy(true)
+    setStatusError(null)
     const next: UserStatus = user.status === 'active' ? 'inactive' : 'active'
-    startTransition(async () => {
-      try {
-        const result = await updateStaffStatus(user.id, next)
-        if (result.error) { setStatusError(result.error); return }
-        window.location.reload()
-      } catch (err) {
-        if (isNextError(err)) throw err
-        console.error('[toggleStatus error]', err)
-        setStatusError(err instanceof Error ? err.message : 'Something went wrong. Please refresh and try again.')
-      }
-    })
+    try {
+      const result = await updateStaffStatus(user.id, next)
+      if (result?.error) { setStatusError(result.error); setBusy(false); return }
+    } catch { /* ignore */ }
+    window.location.reload()
   }
 
-  function changePerm(field: 'can_record_payment' | 'can_see_financials' | 'can_export_reports', val: boolean | null) {
-    setPermError('')
-    startTransition(async () => {
-      try {
-        const result = await updateStaffPermissions(user.id, {
-          can_record_payment: field === 'can_record_payment' ? val : user.can_record_payment,
-          can_see_financials: field === 'can_see_financials' ? val : user.can_see_financials,
-          can_export_reports: field === 'can_export_reports' ? val : user.can_export_reports,
-        })
-        if (result.error) { setPermError(result.error); return }
-        window.location.reload()
-      } catch (err) {
-        if (isNextError(err)) throw err
-        console.error('[changePerm error]', err)
-        setPermError(err instanceof Error ? err.message : 'Something went wrong. Please refresh and try again.')
-      }
-    })
+  async function changePerm(field: 'can_record_payment' | 'can_see_financials' | 'can_export_reports', val: boolean | null) {
+    if (busy) return
+    setBusy(true)
+    setPermError(null)
+    try {
+      const result = await updateStaffPermissions(user.id, {
+        can_record_payment: field === 'can_record_payment' ? val : user.can_record_payment,
+        can_see_financials: field === 'can_see_financials' ? val : user.can_see_financials,
+        can_export_reports: field === 'can_export_reports' ? val : user.can_export_reports,
+      })
+      if (result?.error) { setPermError(result.error); setBusy(false); return }
+    } catch { /* ignore */ }
+    window.location.reload()
   }
 
   return (
@@ -355,14 +332,15 @@ function StaffRow({ user, isCurrentUser }: { user: User; isCurrentUser: boolean 
         {!isOwner && !isCurrentUser && (
           <button
             onClick={toggleStatus}
-            className="flex-shrink-0 text-xs font-semibold px-2.5 py-1 rounded-[7px]"
+            disabled={busy}
+            className="flex-shrink-0 text-xs font-semibold px-2.5 py-1 rounded-[7px] disabled:opacity-50"
             style={{
               background: user.status === 'active' ? 'var(--color-red-soft)' : 'var(--color-green-soft)',
               color:      user.status === 'active' ? 'var(--color-red)'      : 'var(--color-green)',
               border:     `1px solid ${user.status === 'active' ? '#FECACA' : '#A7DFB8'}`,
             }}
           >
-            {user.status === 'active' ? 'Deactivate' : 'Activate'}
+            {busy ? '…' : user.status === 'active' ? 'Deactivate' : 'Activate'}
           </button>
         )}
       </div>
@@ -389,7 +367,8 @@ function StaffRow({ user, isCurrentUser }: { user: User; isCurrentUser: boolean 
                 <button
                   key={r}
                   onClick={() => changeRole(r)}
-                  className="text-[11px] font-bold px-2.5 py-1 rounded-[7px]"
+                  disabled={busy}
+                  className="text-[11px] font-bold px-2.5 py-1 rounded-[7px] disabled:opacity-50"
                   style={{
                     background: on ? cfg.bg : 'var(--color-cream)',
                     color:      on ? cfg.color : 'var(--color-muted)',
@@ -421,7 +400,7 @@ function StaffRow({ user, isCurrentUser }: { user: User; isCurrentUser: boolean 
                 label="Record Payments"
                 value={user.can_record_payment}
                 onChange={v => changePerm('can_record_payment', v)}
-                disabled={isCurrentUser}
+                disabled={isCurrentUser || busy}
               />
             </div>
             <div className="flex items-center gap-1.5">
@@ -430,7 +409,7 @@ function StaffRow({ user, isCurrentUser }: { user: User; isCurrentUser: boolean 
                 label="See Financials"
                 value={user.can_see_financials}
                 onChange={v => changePerm('can_see_financials', v)}
-                disabled={isCurrentUser}
+                disabled={isCurrentUser || busy}
               />
             </div>
             <div className="flex items-center gap-1.5">
@@ -439,7 +418,7 @@ function StaffRow({ user, isCurrentUser }: { user: User; isCurrentUser: boolean 
                 label="Export Reports"
                 value={user.can_export_reports}
                 onChange={v => changePerm('can_export_reports', v)}
-                disabled={isCurrentUser}
+                disabled={isCurrentUser || busy}
               />
             </div>
           </div>
