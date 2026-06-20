@@ -109,7 +109,7 @@ function InviteModal({ onClose }: { onClose: () => void }) {
     setLoading(false)
     if (result.error) { setError(result.error); return }
     setSent(true)
-    window.location.reload()
+    window.location.assign('/staff')
   }
 
   return (
@@ -275,7 +275,7 @@ function StaffRow({ user, isCurrentUser }: { user: User; isCurrentUser: boolean 
       setBusy(false)
       return
     }
-    window.location.reload()
+    window.location.assign('/staff')
   }
 
   async function toggleStatus() {
@@ -291,7 +291,7 @@ function StaffRow({ user, isCurrentUser }: { user: User; isCurrentUser: boolean 
       setBusy(false)
       return
     }
-    window.location.reload()
+    window.location.assign('/staff')
   }
 
   async function changePerm(field: 'can_record_payment' | 'can_see_financials' | 'can_export_reports', val: boolean | null) {
@@ -310,7 +310,7 @@ function StaffRow({ user, isCurrentUser }: { user: User; isCurrentUser: boolean 
       setBusy(false)
       return
     }
-    window.location.reload()
+    window.location.assign('/staff')
   }
 
   return (

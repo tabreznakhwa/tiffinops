@@ -1,6 +1,5 @@
 'use server'
 
-import { revalidatePath } from 'next/cache'
 import { z } from 'zod'
 import { requireAuth } from '@/lib/auth'
 import { createAdminClient } from '@/lib/supabase/admin'
@@ -39,7 +38,6 @@ export async function inviteStaff(input: {
     { data: { full_name: parsed.data.full_name } }
   )
   if (inviteErr) {
-    // Common: user already exists
     if (inviteErr.message?.toLowerCase().includes('already')) {
       return { error: 'A user with this email already exists' }
     }
@@ -58,7 +56,6 @@ export async function inviteStaff(input: {
     return { error: insertErr.message }
   }
 
-  revalidatePath('/staff')
   return {}
 }
 
@@ -82,10 +79,9 @@ export async function updateStaffRole(
     .from('users')
     .update({ role: parsed.data.role })
     .eq('id', id)
-    .neq('role', 'owner') // never touch the owner row
+    .neq('role', 'owner')
 
   if (error) return { error: error.message }
-  revalidatePath('/staff')
   return {}
 }
 
@@ -105,7 +101,6 @@ export async function updateStaffStatus(
     .neq('role', 'owner')
 
   if (error) return { error: error.message }
-  revalidatePath('/staff')
   return {}
 }
 
@@ -131,7 +126,6 @@ export async function updateStaffPermissions(
     .neq('role', 'owner')
 
   if (error) return { error: error.message }
-  revalidatePath('/staff')
   return {}
 }
 
