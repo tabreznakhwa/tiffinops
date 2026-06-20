@@ -276,6 +276,7 @@ export function NewOrderForm({
   const [mealPeriod, setMealPeriod] = useState<MealPeriod>(defaultMealPeriod)
   const [orderDate, setOrderDate] = useState(todayDubai)
   const [quantities, setQuantities] = useState<Record<string, number>>({})
+  const [menuSearch, setMenuSearch] = useState('')
   const [discount, setDiscount] = useState('')
   const [deliveryCharge, setDeliveryCharge] = useState('')
   const [notes, setNotes] = useState('')
@@ -287,10 +288,16 @@ export function NewOrderForm({
   } | null>(null)
   const [isPending, startTransition] = useTransition()
 
-  const periodItems = useMemo(
-    () => menuItems.filter((i) => i.meal_period === mealPeriod && i.is_available),
-    [menuItems, mealPeriod]
-  )
+  const periodItems = useMemo(() => {
+    const base = menuItems.filter((i) => i.meal_period === mealPeriod && i.is_available)
+    if (!menuSearch.trim()) return base
+    const q = menuSearch.toLowerCase()
+    return base.filter(
+      (i) =>
+        i.name.toLowerCase().includes(q) ||
+        (i.category ?? '').toLowerCase().includes(q)
+    )
+  }, [menuItems, mealPeriod, menuSearch])
 
   const cartItems = useMemo(
     () =>
@@ -322,6 +329,7 @@ export function NewOrderForm({
 
   function handleChangePeriod(p: MealPeriod) {
     setMealPeriod(p)
+    setMenuSearch('')
   }
 
   function handleReset() {
@@ -329,6 +337,7 @@ export function NewOrderForm({
     setMealPeriod(defaultMealPeriod)
     setOrderDate(todayDubai)
     setQuantities({})
+    setMenuSearch('')
     setDiscount('')
     setDeliveryCharge('')
     setNotes('')
@@ -486,16 +495,58 @@ export function NewOrderForm({
           boxShadow: 'var(--shadow-card)',
         }}
       >
-        <div className="px-4 pt-4 pb-2">
+        <div className="px-4 pt-4 pb-3">
           <p
-            className="text-[11px] font-bold uppercase tracking-wide"
+            className="text-[11px] font-bold uppercase tracking-wide mb-2.5"
             style={{ color: 'var(--color-muted)' }}
           >
             Items ({PERIODS.find((p) => p.value === mealPeriod)?.label})
           </p>
+          {/* Menu search */}
+          <div className="relative">
+            <Search
+              size={14}
+              className="absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none"
+              style={{ color: 'var(--color-muted)' }}
+            />
+            <input
+              type="text"
+              value={menuSearch}
+              onChange={(e) => setMenuSearch(e.target.value)}
+              placeholder="Search items…"
+              className="w-full h-9 pl-9 pr-8 rounded-[10px] text-sm outline-none"
+              style={{
+                background: 'var(--color-cream)',
+                border: '1px solid var(--color-border)',
+                color: 'var(--color-ink)',
+              }}
+            />
+            {menuSearch && (
+              <button
+                type="button"
+                onClick={() => setMenuSearch('')}
+                className="absolute right-2.5 top-1/2 -translate-y-1/2"
+              >
+                <X size={13} style={{ color: 'var(--color-muted)' }} />
+              </button>
+            )}
+          </div>
         </div>
 
         {periodItems.length === 0 ? (
+          menuSearch ? (
+            <p className="px-4 pb-4 text-sm" style={{ color: 'var(--color-muted)' }}>
+              No items match &ldquo;{menuSearch}&rdquo;.{' '}
+              <button
+                type="button"
+                onClick={() => setMenuSearch('')}
+                className="font-semibold"
+                style={{ color: 'var(--color-saffron)' }}
+              >
+                Clear search
+              </button>
+            </p>
+          ) : (
           <p
             className="px-4 pb-4 text-sm"
             style={{ color: 'var(--color-muted)' }}
@@ -505,6 +556,7 @@ export function NewOrderForm({
               Add items in Menu
             </Link>
           </p>
+          )
         ) : (
           <div>
             {periodItems.map((item, idx) => {
