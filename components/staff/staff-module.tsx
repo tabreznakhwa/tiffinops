@@ -15,6 +15,18 @@ type User       = Tables<'users'>
 type UserRole   = Enums<'user_role'>
 type UserStatus = Enums<'user_status'>
 
+// Re-throw Next.js redirect/not-found errors — they must not be swallowed by try-catch
+function isNextError(err: unknown): boolean {
+  return (
+    err != null &&
+    typeof err === 'object' &&
+    'digest' in err &&
+    typeof (err as { digest: unknown }).digest === 'string' &&
+    ((err as { digest: string }).digest.startsWith('NEXT_REDIRECT') ||
+      (err as { digest: string }).digest.startsWith('NEXT_NOT_FOUND'))
+  )
+}
+
 // ── Role config ───────────────────────────────────────────────────────────────
 
 const ROLE_CONFIG: Record<UserRole, { label: string; desc: string; bg: string; color: string }> = {
@@ -272,8 +284,9 @@ function StaffRow({ user, isCurrentUser }: { user: User; isCurrentUser: boolean 
         const result = await updateStaffRole(user.id, newRole)
         if (result.error) { setRoleError(result.error); return }
         router.refresh()
-      } catch {
-        setRoleError('Something went wrong. Please refresh and try again.')
+      } catch (err) {
+        if (isNextError(err)) throw err
+        setRoleError(err instanceof Error ? err.message : 'Something went wrong. Please refresh and try again.')
       }
     })
   }
@@ -286,8 +299,9 @@ function StaffRow({ user, isCurrentUser }: { user: User; isCurrentUser: boolean 
         const result = await updateStaffStatus(user.id, next)
         if (result.error) { setStatusError(result.error); return }
         router.refresh()
-      } catch {
-        setStatusError('Something went wrong. Please refresh and try again.')
+      } catch (err) {
+        if (isNextError(err)) throw err
+        setStatusError(err instanceof Error ? err.message : 'Something went wrong. Please refresh and try again.')
       }
     })
   }
@@ -303,8 +317,9 @@ function StaffRow({ user, isCurrentUser }: { user: User; isCurrentUser: boolean 
         })
         if (result.error) { setPermError(result.error); return }
         router.refresh()
-      } catch {
-        setPermError('Something went wrong. Please refresh and try again.')
+      } catch (err) {
+        if (isNextError(err)) throw err
+        setPermError(err instanceof Error ? err.message : 'Something went wrong. Please refresh and try again.')
       }
     })
   }
