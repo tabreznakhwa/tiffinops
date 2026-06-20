@@ -8,15 +8,18 @@ import { SettingsProvider } from '@/components/settings/settings-context'
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const user = await requireAuth()
 
-  const [{ count }, settings] = await Promise.all([
-    createClient().then(supabase =>
-      supabase
-        .from('approval_requests')
-        .select('*', { count: 'exact', head: true })
-        .eq('status', 'pending')
-    ),
+  const [approvalResult, settings] = await Promise.all([
+    createClient()
+      .then(supabase =>
+        supabase
+          .from('approval_requests')
+          .select('*', { count: 'exact', head: true })
+          .eq('status', 'pending')
+      )
+      .catch(() => ({ count: 0 as number | null })),
     getSettings(),
   ])
+  const count = approvalResult?.count ?? 0
 
   return (
     <SettingsProvider
