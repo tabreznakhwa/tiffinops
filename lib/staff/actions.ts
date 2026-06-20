@@ -74,15 +74,13 @@ export async function updateStaffRole(
   if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? 'Invalid role' }
 
   const admin = createAdminClient()
-  const { data, error } = await admin
-    .from('users')
-    .update({ role: parsed.data.role })
-    .eq('id', id)
-    .neq('role', 'owner')
-    .select('id, role')
+  // Use rpc to bypass PostgREST RLS policy check with service role
+  const { error } = await admin.rpc('admin_update_user_role', {
+    p_id:   id,
+    p_role: parsed.data.role,
+  })
 
   if (error) return { error: error.message }
-  if (!data || data.length === 0) return { error: 'User not found or the database blocked the update' }
   return {}
 }
 
@@ -95,15 +93,12 @@ export async function updateStaffStatus(
   if (id === caller.id)        return { error: 'You cannot deactivate your own account' }
 
   const admin = createAdminClient()
-  const { data, error } = await admin
-    .from('users')
-    .update({ status })
-    .eq('id', id)
-    .neq('role', 'owner')
-    .select('id, status')
+  const { error } = await admin.rpc('admin_update_user_status', {
+    p_id:     id,
+    p_status: status,
+  })
 
   if (error) return { error: error.message }
-  if (!data || data.length === 0) return { error: 'User not found or the database blocked the update' }
   return {}
 }
 
@@ -122,15 +117,14 @@ export async function updateStaffPermissions(
   if (id === caller.id) return { error: 'Use your own profile to change your permissions' }
 
   const admin = createAdminClient()
-  const { data, error } = await admin
-    .from('users')
-    .update(perms)
-    .eq('id', id)
-    .neq('role', 'owner')
-    .select('id')
+  const { error } = await admin.rpc('admin_update_user_permissions', {
+    p_id:                 id,
+    p_can_record_payment: perms.can_record_payment,
+    p_can_see_financials: perms.can_see_financials,
+    p_can_export_reports: perms.can_export_reports,
+  })
 
   if (error) return { error: error.message }
-  if (!data || data.length === 0) return { error: 'User not found or the database blocked the update' }
   return {}
 }
 
