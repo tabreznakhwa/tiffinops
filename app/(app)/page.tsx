@@ -6,6 +6,23 @@ import type { DashboardData } from '@/components/dashboard/dashboard-module'
 
 export const dynamic = 'force-dynamic'
 
+// Supabase default row limit is 1,000. Use this for any query over a large table.
+async function fetchAllPages<T>(
+  buildQuery: (range: { from: number; to: number }) => PromiseLike<{ data: T[] | null }>
+): Promise<T[]> {
+  const PAGE = 1000
+  const results: T[] = []
+  let offset = 0
+  while (true) {
+    const { data } = await buildQuery({ from: offset, to: offset + PAGE - 1 })
+    const batch = data ?? []
+    results.push(...batch)
+    if (batch.length < PAGE) break
+    offset += PAGE
+  }
+  return results
+}
+
 export default async function DashboardPage() {
   const user  = await requireAuth()
   const admin = createAdminClient()
@@ -24,8 +41,9 @@ export default async function DashboardPage() {
   const lastMonthStart = `${lastMonthStr}-01`
   const lastMonthEnd   = monthStart
 
-  const ACTIVE_ORDER_STATUSES = '(cancelled,voided,draft)'
+  const EXCLUDE_STATUSES = '(cancelled,voided,draft)'
 
+  // ── Small queries (always < 1,000 rows) ────────────────────────────────────
   const [
     { data: todayPayments },
     { data: monthPayments },
@@ -37,84 +55,65 @@ export default async function DashboardPage() {
     { count: pendingApprovals },
     { data: recentPayments },
     { data: pay30d },
-    // Order-based queries
     { data: todayOrderAmounts },
-    { data: monthOrderAmounts },
-    { data: lastMonthOrderAmounts },
-    { data: unpaidOrders },
-    { data: billed30dRows },
     { data: draftInvoices },
     { data: issuedInvoices },
   ] = await Promise.all([
-    // Payments — today
     admin.from('payments').select('amount').is('voided_at', null).eq('payment_date', todayStr),
-
-    // Payments — this month
     admin.from('payments').select('amount').is('voided_at', null)
       .gte('payment_date', monthStart).lt('payment_date', monthEnd),
-
-    // Payments — last month
     admin.from('payments').select('amount').is('voided_at', null)
       .gte('payment_date', lastMonthStart).lt('payment_date', lastMonthEnd),
-
-    // All customers
     admin.from('customers').select('id, status, customer_type, full_name, customer_code'),
-
-    // New customers this month
     admin.from('customers').select('id').gte('created_at', monthStart + 'T00:00:00Z'),
-
-    // Active subscriptions
     admin.from('customer_subscriptions')
       .select('customer_id, agreed_monthly_price, customers(full_name, customer_code)')
       .eq('status', 'active'),
-
-    // Today's orders (count + meal breakdown)
     admin.from('orders').select('id, meal_period')
-      .eq('order_date', todayStr).not('order_status', 'in', ACTIVE_ORDER_STATUSES),
-
-    // Pending approvals count
+      .eq('order_date', todayStr).not('order_status', 'in', EXCLUDE_STATUSES),
     admin.from('approval_requests').select('*', { count: 'exact', head: true }).eq('status', 'pending'),
-
-    // Recent 8 payments
     admin.from('payments')
       .select('id, payment_number, payment_date, amount, mode, voided_at, customers(full_name, customer_code)')
       .order('created_at', { ascending: false }).limit(8),
-
-    // Payments — last 30 days by day (chart)
     admin.from('payments').select('payment_date, amount')
       .is('voided_at', null).gte('payment_date', d30Start).lte('payment_date', todayStr),
-
-    // Orders billed today
+    // Today is always < 1,000 orders
     admin.from('orders').select('total_amount')
-      .eq('order_date', todayStr).not('order_status', 'in', ACTIVE_ORDER_STATUSES),
-
-    // Orders billed this month
-    admin.from('orders').select('total_amount')
-      .gte('order_date', monthStart).lt('order_date', monthEnd)
-      .not('order_status', 'in', ACTIVE_ORDER_STATUSES),
-
-    // Orders billed last month (for MoM)
-    admin.from('orders').select('total_amount')
-      .gte('order_date', lastMonthStart).lt('order_date', lastMonthEnd)
-      .not('order_status', 'in', ACTIVE_ORDER_STATUSES),
-
-    // All unpaid / partial orders with customer info (for outstanding balance + top debtors)
-    admin.from('orders')
-      .select('customer_id, total_amount, customers(full_name, customer_code)')
-      .in('payment_status', ['unpaid', 'partial'])
-      .not('order_status', 'in', ACTIVE_ORDER_STATUSES),
-
-    // Orders billed — last 30 days by day (chart)
-    admin.from('orders').select('order_date, total_amount')
-      .gte('order_date', d30Start).lte('order_date', todayStr)
-      .not('order_status', 'in', ACTIVE_ORDER_STATUSES),
-
-    // Draft invoices (pending issuance)
+      .eq('order_date', todayStr).not('order_status', 'in', EXCLUDE_STATUSES),
     admin.from('invoices').select('total_amount').eq('status', 'draft'),
+    admin.from('invoices').select('total_amount').in('status', ['issued', 'overdue', 'partial']),
+  ])
 
-    // Issued invoices outstanding (issued + overdue + partial)
-    admin.from('invoices').select('total_amount')
-      .in('status', ['issued', 'overdue', 'partial']),
+  // ── Large order queries — paginated to bypass 1,000-row limit ──────────────
+  const [monthOrderRows, lastMonthOrderRows, unpaidOrderRows, billed30dRows] = await Promise.all([
+    fetchAllPages(({ from, to }) =>
+      admin.from('orders').select('total_amount')
+        .gte('order_date', monthStart).lt('order_date', monthEnd)
+        .not('order_status', 'in', EXCLUDE_STATUSES)
+        .range(from, to) as any
+    ) as Promise<{ total_amount: string }[]>,
+
+    fetchAllPages(({ from, to }) =>
+      admin.from('orders').select('total_amount')
+        .gte('order_date', lastMonthStart).lt('order_date', lastMonthEnd)
+        .not('order_status', 'in', EXCLUDE_STATUSES)
+        .range(from, to) as any
+    ) as Promise<{ total_amount: string }[]>,
+
+    fetchAllPages(({ from, to }) =>
+      admin.from('orders')
+        .select('customer_id, total_amount, customers(full_name, customer_code)')
+        .in('payment_status', ['unpaid', 'partial'])
+        .not('order_status', 'in', EXCLUDE_STATUSES)
+        .range(from, to) as any
+    ) as Promise<{ customer_id: string; total_amount: string; customers: { full_name: string; customer_code: string } | null }[]>,
+
+    fetchAllPages(({ from, to }) =>
+      admin.from('orders').select('order_date, total_amount')
+        .gte('order_date', d30Start).lte('order_date', todayStr)
+        .not('order_status', 'in', EXCLUDE_STATUSES)
+        .range(from, to) as any
+    ) as Promise<{ order_date: string; total_amount: string }[]>,
   ])
 
   // ── Payment KPIs ───────────────────────────────────────────────────────────
@@ -125,32 +124,30 @@ export default async function DashboardPage() {
   const activeCount   = (allCustomers   ?? []).filter(c => c.status === 'active').length
   const pausedCount   = (allCustomers   ?? []).filter(c => c.status === 'paused').length
 
-  // ── Order KPIs ─────────────────────────────────────────────────────────────
-  const todayBilled      = (todayOrderAmounts   ?? []).reduce((s, o) => s + parseFloat(String(o.total_amount)), 0)
-  const monthBilled      = (monthOrderAmounts   ?? []).reduce((s, o) => s + parseFloat(String(o.total_amount)), 0)
-  const lastMonthBilled  = (lastMonthOrderAmounts ?? []).reduce((s, o) => s + parseFloat(String(o.total_amount)), 0)
-  const totalOutstandingOrders = (unpaidOrders ?? []).reduce((s, o) => s + parseFloat(String(o.total_amount)), 0)
+  // ── Order KPIs (paginated) ─────────────────────────────────────────────────
+  const todayBilled     = (todayOrderAmounts ?? []).reduce((s, o) => s + parseFloat(String(o.total_amount)), 0)
+  const monthBilled     = monthOrderRows.reduce((s, o) => s + parseFloat(String(o.total_amount)), 0)
+  const lastMonthBilled = lastMonthOrderRows.reduce((s, o) => s + parseFloat(String(o.total_amount)), 0)
+  const totalOutstandingOrders = unpaidOrderRows.reduce((s, o) => s + parseFloat(String(o.total_amount)), 0)
 
   // Top debtors — aggregate unpaid orders by customer
-  type UnpaidRow = { customer_id: string; total_amount: string; customers: { full_name: string; customer_code: string } | null }
   const debtorMap = new Map<string, { full_name: string; customer_code: string; outstanding: number }>()
-  for (const o of (unpaidOrders ?? []) as unknown as UnpaidRow[]) {
-    const key = o.customer_id
+  for (const o of unpaidOrderRows) {
     const cust = o.customers
     if (!cust) continue
-    const existing = debtorMap.get(key)
+    const existing = debtorMap.get(o.customer_id)
     const amt = parseFloat(String(o.total_amount))
     if (existing) {
       existing.outstanding += amt
     } else {
-      debtorMap.set(key, { full_name: cust.full_name, customer_code: cust.customer_code, outstanding: amt })
+      debtorMap.set(o.customer_id, { full_name: cust.full_name, customer_code: cust.customer_code, outstanding: amt })
     }
   }
   const topDebtors = [...debtorMap.values()]
     .sort((a, b) => b.outstanding - a.outstanding)
     .slice(0, 5)
 
-  // ── Subscription outstanding (legacy) ─────────────────────────────────────
+  // ── Subscription outstanding ───────────────────────────────────────────────
   const { data: monthPayWithCust } = await admin.from('payments')
     .select('customer_id, amount').is('voided_at', null)
     .gte('payment_date', monthStart).lt('payment_date', monthEnd)
@@ -174,15 +171,13 @@ export default async function DashboardPage() {
   const subOutstanding = balanceRows.reduce((s, r) => s + r.balance, 0)
 
   // ── Charts ─────────────────────────────────────────────────────────────────
-  // Payments chart (last 30d)
   const payDayMap = new Map<string, number>()
   for (const p of pay30d ?? []) {
     payDayMap.set(p.payment_date, (payDayMap.get(p.payment_date) ?? 0) + parseFloat(String(p.amount)))
   }
 
-  // Orders chart (last 30d) — used when payments are 0
   const billedDayMap = new Map<string, number>()
-  for (const o of billed30dRows ?? []) {
+  for (const o of billed30dRows) {
     billedDayMap.set(o.order_date, (billedDayMap.get(o.order_date) ?? 0) + parseFloat(String(o.total_amount)))
   }
 
@@ -210,42 +205,35 @@ export default async function DashboardPage() {
   }
 
   // ── Invoice KPIs ───────────────────────────────────────────────────────────
-  const draftInvoiceCount  = (draftInvoices ?? []).length
-  const draftInvoiceTotal  = (draftInvoices ?? []).reduce((s, i) => s + parseFloat(String(i.total_amount)), 0)
-  const issuedOutstanding  = (issuedInvoices ?? []).reduce((s, i) => s + parseFloat(String(i.total_amount)), 0)
+  const draftInvoiceCount = (draftInvoices ?? []).length
+  const draftInvoiceTotal = (draftInvoices ?? []).reduce((s, i) => s + parseFloat(String(i.total_amount)), 0)
+  const issuedOutstanding = (issuedInvoices ?? []).reduce((s, i) => s + parseFloat(String(i.total_amount)), 0)
 
   const dashData: DashboardData = {
     userName:            user.full_name.split(' ')[0],
-    // Payments
     todayRevenue,
     monthRevenue,
     lastMonthRevenue:    lastMonthRev,
-    // Orders (billed)
     todayBilled,
     monthBilled,
     lastMonthBilled,
     totalOutstandingOrders,
     billed30d,
     topDebtors,
-    // Invoices
     draftInvoiceCount,
     draftInvoiceTotal,
     issuedOutstanding,
-    // Subscriptions
     mrr,
     activeSubscriptions: subs.length,
     totalOutstanding:    subOutstanding,
     topBalances:         balanceRows.slice(0, 5),
-    // Customers
     activeCustomers:     activeCount,
     pausedCustomers:     pausedCount,
     totalCustomers:      (allCustomers ?? []).length,
     newCustomersMonth:   newCustomers?.length ?? 0,
-    // Operations
     ordersToday:         orders.length,
     ordersByPeriod:      byPeriod,
     pendingApprovals:    pendingApprovals ?? 0,
-    // Chart
     rev30d,
     recentPayments:      ((recentPayments ?? []) as unknown as PayRow[]).slice(0, 6),
   }
