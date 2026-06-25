@@ -24,3 +24,7 @@ Thumbs.db
 # IDE
 .vscode/
 .idea/
+
+# Customer data — never commit raw data files
+*.xlsx
+*.csv
