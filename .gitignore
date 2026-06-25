@@ -25,6 +25,9 @@ Thumbs.db
 .vscode/
 .idea/
 
+# Claude Code internals — never commit
+.claude/
+
 # Customer data — never commit raw data files
 *.xlsx
 *.csv
