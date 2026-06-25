@@ -4,6 +4,8 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { DashboardModule } from '@/components/dashboard/dashboard-module'
 import type { DashboardData } from '@/components/dashboard/dashboard-module'
 
+export const dynamic = 'force-dynamic'
+
 export default async function DashboardPage() {
   const user  = await requireAuth()
   const admin = createAdminClient()
