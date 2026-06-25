@@ -19,7 +19,35 @@
       "Bash(dir /s /b \"C:\\\\Users\\\\tabre\\\\.claude\\\\plugins\\\\cache\\\\ui-ux-pro-max-skill\\\\ui-ux-pro-max\\\\2.5.0\\\\\" 2>/dev/null)",
       "Bash(dir /s /b \"C:\\\\Users\\\\tabre\\\\.claude\\\\plugins\\\\cache\\\\ui-ux-pro-max-skill\\\\ui-ux-pro-max\\\\2.5.0\")",
       "Bash(npx create-next-app@latest fixops --typescript --tailwind --eslint --app --src-dir --import-alias \"@/*\" --no-turbopack --yes)",
-      "Bash(npx supabase *)"
+      "Bash(npx supabase *)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://localhost:3000)",
+      "Bash(mkdir -p \"C:\\\\Users\\\\tabre\\\\fixops\\\\src\\\\app\\\\\\(dashboard\\)\\\\work-orders\\\\new\")",
+      "Bash(mkdir -p \"C:\\\\Users\\\\tabre\\\\fixops\\\\src\\\\app\\\\api\\\\work-orders\")",
+      "Bash(mkdir -p \"C:\\\\Users\\\\tabre\\\\fixops\\\\src\\\\app\\\\\\(dashboard\\)\\\\finance\\\\ledger\" \"C:\\\\Users\\\\tabre\\\\fixops\\\\src\\\\app\\\\\\(dashboard\\)\\\\payroll\" \"C:\\\\Users\\\\tabre\\\\fixops\\\\src\\\\app\\\\\\(dashboard\\)\\\\reports\" \"C:\\\\Users\\\\tabre\\\\fixops\\\\src\\\\app\\\\\\(dashboard\\)\\\\complaints\\\\[id]\" \"C:\\\\Users\\\\tabre\\\\fixops\\\\src\\\\app\\\\\\(dashboard\\)\\\\work-orders\\\\[id]\" \"C:\\\\Users\\\\tabre\\\\fixops\\\\src\\\\app\\\\\\(dashboard\\)\\\\finance\\\\invoices\\\\new\" \"C:\\\\Users\\\\tabre\\\\fixops\\\\src\\\\app\\\\\\(dashboard\\)\\\\staff\\\\new\" \"C:\\\\Users\\\\tabre\\\\fixops\\\\src\\\\app\\\\\\(dashboard\\)\\\\amc\\\\new\")",
+      "Bash(mkdir -p \"C:\\\\Users\\\\tabre\\\\fixops\\\\src\\\\app\\\\api\\\\complaints\\\\[id]\" \"C:\\\\Users\\\\tabre\\\\fixops\\\\src\\\\app\\\\api\\\\work-orders\\\\[id]\")",
+      "Bash(xargs grep -l \"invoice\\\\|payment\\\\|receivable\\\\|ledger\")",
+      "Bash(mkdir -p \"C:/Users/tabre/fixops/src/app/api/invoices/[id]\" \"C:/Users/tabre/fixops/src/app/api/payments/[id]\" \"C:/Users/tabre/fixops/src/app/\\(dashboard\\)/finance/invoices/new\" \"C:/Users/tabre/fixops/src/app/\\(dashboard\\)/finance/invoices/[id]\" \"C:/Users/tabre/fixops/src/app/\\(dashboard\\)/finance/payments/new\" 2>/dev/null; echo \"dirs created\")",
+      "Bash(mkdir -p \"C:/Users/tabre/fixops/src/app/api/payments/[id]\"; echo \"done\")",
+      "Bash(mkdir -p /c/Users/tabre/fixops/src/app/\\\\\\(dashboard\\\\\\)/finance/payments/new)",
+      "Bash(mkdir -p \"C:/Users/tabre/fixops/src/app/api/invoices/[id]\" \"C:/Users/tabre/fixops/src/app/api/payments/[id]\" \"C:/Users/tabre/fixops/src/app/api/reports/export\" && echo \"dirs created\")",
+      "Bash(mkdir -p \"C:/Users/tabre/fixops/src/app/\\(dashboard\\)/finance/invoices/new\" \"C:/Users/tabre/fixops/src/app/\\(dashboard\\)/finance/invoices/[id]\" \"C:/Users/tabre/fixops/src/app/\\(dashboard\\)/finance/payments/new\" \"C:/Users/tabre/fixops/src/app/\\(dashboard\\)/reports\" && echo \"page dirs created\")",
+      "Bash(mkdir -p C:/Users/tabre/fixops/src/app/api/amc/\\\\[id\\\\])",
+      "Bash(mkdir -p C:/Users/tabre/fixops/src/app/api/inventory/\\\\[id\\\\])",
+      "Bash(mkdir -p C:/Users/tabre/fixops/src/app/api/suppliers/\\\\[id\\\\])",
+      "Bash(mkdir -p C:/Users/tabre/fixops/src/app/\\\\\\(dashboard\\\\\\)/amc/new)",
+      "Bash(mkdir -p \"C:/Users/tabre/fixops/src/app/\\(dashboard\\)/amc/[id]\")",
+      "Bash(echo \"Exit: $?\")"
+    ],
+    "additionalDirectories": [
+      "C:\\Users\\tabre\\fixops\\src\\app\\(dashboard)\\work-orders",
+      "C:\\Users\\tabre\\fixops\\src\\app\\api",
+      "C:\\Users\\tabre\\fixops\\src\\app\\(dashboard)\\finance\\ledger",
+      "C:\\Users\\tabre\\fixops\\src\\app\\api\\complaints",
+      "C:\\Users\\tabre\\fixops\\src\\app\\api\\invoices",
+      "C:\\Users\\tabre\\fixops\\src\\app\\api\\payments\\[id]",
+      "C:\\Users\\tabre\\fixops\\src\\app\\(dashboard)\\finance\\payments\\new",
+      "C:\\Users\\tabre\\fixops\\src\\app\\api\\invoices\\[id]",
+      "C:\\Users\\tabre\\fixops\\src\\app\\(dashboard)\\finance\\invoices\\new"
     ]
   }
 }

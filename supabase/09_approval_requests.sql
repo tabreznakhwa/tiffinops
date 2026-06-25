@@ -35,14 +35,17 @@ create table if not exists public.approval_requests (
 -- RLS
 alter table public.approval_requests enable row level security;
 
+drop policy if exists "owners and managers can read approval_requests" on public.approval_requests;
 create policy "owners and managers can read approval_requests"
   on public.approval_requests for select
   using (public.has_role(array['owner','manager']::user_role[]));
 
+drop policy if exists "active users can request approval" on public.approval_requests;
 create policy "active users can request approval"
   on public.approval_requests for insert
   with check (public.is_active_user() and requested_by = auth.uid());
 
+drop policy if exists "owners and managers can resolve approval_requests" on public.approval_requests;
 create policy "owners and managers can resolve approval_requests"
   on public.approval_requests for update
   using (public.has_role(array['owner','manager']::user_role[]));
