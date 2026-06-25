@@ -24,6 +24,10 @@ export type DashboardData = {
   totalOutstandingOrders: number
   billed30d: { date: string; amount: number }[]
   topDebtors: { full_name: string; customer_code: string; outstanding: number }[]
+  // Invoices
+  draftInvoiceCount: number
+  draftInvoiceTotal: number
+  issuedOutstanding: number
   // Subscriptions
   mrr: number
   activeSubscriptions: number
@@ -191,6 +195,20 @@ export function DashboardModule({ data }: { data: DashboardData }) {
         <KPI label="Total Collected" value={`${currency} ${d.monthRevenue.toFixed(2)}`} color={C.green}
           sub={momPayPct !== null ? `${momPayPct > 0 ? '+' : ''}${momPayPct.toFixed(1)}% vs last month` : 'this month'}
           href="/payments" />
+      </div>
+
+      {/* ── Invoice KPIs ── */}
+      <SectionLabel>Invoices</SectionLabel>
+      <div className="grid gap-3 mb-2" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(155px, 1fr))' }}>
+        <KPI label="Draft Invoices" value={String(d.draftInvoiceCount)}
+          sub={`${currency} ${d.draftInvoiceTotal.toFixed(2)} pending issuance`}
+          color={C.gold} href="/invoices" badge="Action" />
+        <KPI label="Invoiced & Outstanding" value={`${currency} ${d.issuedOutstanding.toFixed(2)}`}
+          sub="issued but not yet paid" color={C.ember} href="/invoices" />
+        <KPI label="Total Collected" value={`${currency} ${d.monthRevenue.toFixed(2)}`}
+          sub="payments received this month" color={C.green} href="/payments" />
+        <KPI label="Total Outstanding (Orders)" value={`${currency} ${d.totalOutstandingOrders.toFixed(2)}`}
+          sub="unpaid orders (pre-invoice)" color={C.muted} href="/bills" />
       </div>
 
       {/* ── Operations KPIs ── */}

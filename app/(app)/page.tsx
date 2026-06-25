@@ -41,6 +41,8 @@ export default async function DashboardPage() {
     { data: lastMonthOrderAmounts },
     { data: unpaidOrders },
     { data: billed30dRows },
+    { data: draftInvoices },
+    { data: issuedInvoices },
   ] = await Promise.all([
     // Payments — today
     admin.from('payments').select('amount').is('voided_at', null).eq('payment_date', todayStr),
@@ -104,6 +106,13 @@ export default async function DashboardPage() {
     admin.from('orders').select('order_date, total_amount')
       .gte('order_date', d30Start).lte('order_date', todayStr)
       .not('order_status', 'in', ACTIVE_ORDER_STATUSES),
+
+    // Draft invoices (pending issuance)
+    admin.from('invoices').select('total_amount').eq('status', 'draft'),
+
+    // Issued invoices outstanding (issued + overdue + partial)
+    admin.from('invoices').select('total_amount')
+      .in('status', ['issued', 'overdue', 'partial']),
   ])
 
   // ── Payment KPIs ───────────────────────────────────────────────────────────
@@ -198,6 +207,11 @@ export default async function DashboardPage() {
     customers: { full_name: string; customer_code: string } | null
   }
 
+  // ── Invoice KPIs ───────────────────────────────────────────────────────────
+  const draftInvoiceCount  = (draftInvoices ?? []).length
+  const draftInvoiceTotal  = (draftInvoices ?? []).reduce((s, i) => s + parseFloat(String(i.total_amount)), 0)
+  const issuedOutstanding  = (issuedInvoices ?? []).reduce((s, i) => s + parseFloat(String(i.total_amount)), 0)
+
   const dashData: DashboardData = {
     userName:            user.full_name.split(' ')[0],
     // Payments
@@ -211,6 +225,10 @@ export default async function DashboardPage() {
     totalOutstandingOrders,
     billed30d,
     topDebtors,
+    // Invoices
+    draftInvoiceCount,
+    draftInvoiceTotal,
+    issuedOutstanding,
     // Subscriptions
     mrr,
     activeSubscriptions: subs.length,
