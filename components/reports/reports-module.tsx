@@ -685,6 +685,16 @@ export function ReportsModule({ data, initialTab }: { data: ReportData; initialT
             {data.range.days} day{data.range.days !== 1 ? 's' : ''}
           </span>
           <button
+            onClick={() => window.open('/print/outstanding', '_blank')}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-[8px] text-xs font-bold"
+            style={{ background: '#C0392B', color: '#fff' }}
+          >
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+              <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
+            </svg>
+            Outstanding Report
+          </button>
+          <button
             onClick={() => window.open(`/print/reports?from=${from}&to=${to}`, '_blank')}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-[8px] text-xs font-bold"
             style={{ background: '#8B2E1F', color: '#fff' }}
