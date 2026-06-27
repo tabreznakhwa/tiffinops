@@ -3,8 +3,9 @@
 import { Fragment, useState, useMemo, useTransition } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
-import { Plus, Search, AlertTriangle } from 'lucide-react'
+import { Plus, Search, AlertTriangle, Pencil } from 'lucide-react'
 import { voidOrder } from '@/lib/orders/voidOrder'
+import { updateOrder } from '@/lib/orders/actions'
 import { useAppSettings } from '@/components/settings/settings-context'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -15,6 +16,9 @@ export type OrderRow = {
   customer_id: string
   order_date: string
   meal_period: string
+  subtotal: string
+  discount_amount: string
+  delivery_charge: string
   total_amount: string
   order_status: string
   payment_status: string
@@ -160,6 +164,16 @@ export function OrdersModule({
   const [voidError, setVoidError]     = useState('')
   const [isPending, startTransition]  = useTransition()
 
+  // Edit state
+  const [editingId, setEditingId]         = useState<string | null>(null)
+  const [editStatus, setEditStatus]       = useState('')
+  const [editPayStatus, setEditPayStatus] = useState('')
+  const [editNotes, setEditNotes]         = useState('')
+  const [editDiscount, setEditDiscount]   = useState('')
+  const [editDelivery, setEditDelivery]   = useState('')
+  const [editError, setEditError]         = useState('')
+  const [isEditPending, startEditTrans]   = useTransition()
+
   // ── Filter logic ──────────────────────────────────────────────────────────
 
   const filtered = useMemo(() => {
@@ -240,6 +254,44 @@ export function OrdersModule({
       }
       setVoidingId(null)
       setVoidReason('')
+      router.refresh()
+    })
+  }
+
+  // ── Edit handlers ─────────────────────────────────────────────────────────
+
+  function handleEditClick(order: OrderRow) {
+    setVoidingId(null)
+    setEditingId(order.id)
+    setEditStatus(order.order_status)
+    setEditPayStatus(order.payment_status)
+    setEditNotes(order.notes ?? '')
+    setEditDiscount(parseFloat(String(order.discount_amount || '0')).toFixed(2))
+    setEditDelivery(parseFloat(String(order.delivery_charge || '0')).toFixed(2))
+    setEditError('')
+  }
+
+  function handleEditCancel() {
+    setEditingId(null)
+    setEditError('')
+  }
+
+  function handleEditSave(order: OrderRow) {
+    setEditError('')
+    startEditTrans(async () => {
+      const result = await updateOrder({
+        order_id:        order.id,
+        order_status:    editStatus as Parameters<typeof updateOrder>[0]['order_status'],
+        payment_status:  editPayStatus as Parameters<typeof updateOrder>[0]['payment_status'],
+        notes:           editNotes || null,
+        discount_amount: parseFloat(editDiscount) || 0,
+        delivery_charge: parseFloat(editDelivery) || 0,
+      })
+      if (result.error) {
+        setEditError(result.error)
+        return
+      }
+      setEditingId(null)
       router.refresh()
     })
   }
@@ -468,13 +520,15 @@ export function OrdersModule({
                     .map((i) => i.item_name_snapshot)
                     .join(', ')
 
+                  const isEditing = editingId === order.id
+
                   return (
                     <Fragment key={order.id}>
                       <tr
                         style={{
                           borderTop: idx > 0 ? '1px solid var(--color-border)' : undefined,
                           opacity: isVoided ? 0.6 : 1,
-                          background: isVoiding ? 'var(--color-cream)' : undefined,
+                          background: isVoiding || isEditing ? 'var(--color-cream)' : undefined,
                         }}
                       >
                         {/* # */}
@@ -553,20 +607,168 @@ export function OrdersModule({
 
                         {/* Actions */}
                         <td className="px-3 py-3">
-                          {isOwner && !isVoided && !isVoiding && (
-                            <button
-                              onClick={() => handleVoidClick(order.id)}
-                              className="text-[11px] font-semibold px-2 py-1 rounded-[6px] transition-colors"
-                              style={{
-                                color: 'var(--color-red)',
-                                background: 'var(--color-red-soft)',
-                              }}
-                            >
-                              Void
-                            </button>
-                          )}
+                          <div className="flex items-center gap-1.5">
+                            {!isVoided && !isVoiding && !isEditing && (
+                              <button
+                                onClick={() => handleEditClick(order)}
+                                className="flex items-center gap-1 text-[11px] font-semibold px-2 py-1 rounded-[6px] transition-colors"
+                                style={{
+                                  color: 'var(--color-saffron)',
+                                  background: 'var(--color-saffron-soft)',
+                                }}
+                              >
+                                <Pencil size={10} />
+                                Edit
+                              </button>
+                            )}
+                            {isOwner && !isVoided && !isVoiding && !isEditing && (
+                              <button
+                                onClick={() => handleVoidClick(order.id)}
+                                className="text-[11px] font-semibold px-2 py-1 rounded-[6px] transition-colors"
+                                style={{
+                                  color: 'var(--color-red)',
+                                  background: 'var(--color-red-soft)',
+                                }}
+                              >
+                                Void
+                              </button>
+                            )}
+                          </div>
                         </td>
                       </tr>
+
+                      {/* Inline edit panel */}
+                      {isEditing && (
+                        <tr style={{ borderTop: '1px solid var(--color-border)' }}>
+                          <td colSpan={8} className="px-4 pb-4 pt-2">
+                            <div
+                              className="rounded-[10px] p-3 space-y-3"
+                              style={{
+                                background: 'var(--color-surface)',
+                                border: '1px solid var(--color-border)',
+                              }}
+                            >
+                              <p className="text-xs font-bold uppercase tracking-wide" style={{ color: 'var(--color-muted)' }}>
+                                Edit Order {order.order_number}
+                              </p>
+
+                              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                                {/* Order Status */}
+                                <div>
+                                  <label className="block text-[10px] font-bold uppercase tracking-wide mb-1" style={{ color: 'var(--color-muted)' }}>
+                                    Order Status
+                                  </label>
+                                  <select
+                                    value={editStatus}
+                                    onChange={(e) => setEditStatus(e.target.value)}
+                                    className="w-full rounded-[8px] px-2 py-1.5 text-xs focus:outline-none"
+                                    style={{ border: '1px solid var(--color-border)', background: 'var(--color-cream)', color: 'var(--color-ink)' }}
+                                  >
+                                    {['draft','confirmed','preparing','out_for_delivery','delivered','cancelled'].map(s => (
+                                      <option key={s} value={s}>{ORDER_STATUS_CONFIG[s]?.label ?? s}</option>
+                                    ))}
+                                  </select>
+                                </div>
+
+                                {/* Payment Status */}
+                                <div>
+                                  <label className="block text-[10px] font-bold uppercase tracking-wide mb-1" style={{ color: 'var(--color-muted)' }}>
+                                    Payment Status
+                                  </label>
+                                  <select
+                                    value={editPayStatus}
+                                    onChange={(e) => setEditPayStatus(e.target.value)}
+                                    className="w-full rounded-[8px] px-2 py-1.5 text-xs focus:outline-none"
+                                    style={{ border: '1px solid var(--color-border)', background: 'var(--color-cream)', color: 'var(--color-ink)' }}
+                                  >
+                                    {['unpaid','partial','paid','refunded','written_off'].map(s => (
+                                      <option key={s} value={s}>{PAYMENT_STATUS_CONFIG[s]?.label ?? s}</option>
+                                    ))}
+                                  </select>
+                                </div>
+
+                                {/* Discount */}
+                                <div>
+                                  <label className="block text-[10px] font-bold uppercase tracking-wide mb-1" style={{ color: 'var(--color-muted)' }}>
+                                    Discount ({currency})
+                                  </label>
+                                  <input
+                                    type="number"
+                                    min="0"
+                                    step="0.01"
+                                    value={editDiscount}
+                                    onChange={(e) => setEditDiscount(e.target.value)}
+                                    className="w-full rounded-[8px] px-2 py-1.5 text-xs text-right num focus:outline-none"
+                                    style={{ border: '1px solid var(--color-border)', background: 'var(--color-cream)', color: 'var(--color-ink)' }}
+                                  />
+                                </div>
+
+                                {/* Delivery */}
+                                <div>
+                                  <label className="block text-[10px] font-bold uppercase tracking-wide mb-1" style={{ color: 'var(--color-muted)' }}>
+                                    Delivery ({currency})
+                                  </label>
+                                  <input
+                                    type="number"
+                                    min="0"
+                                    step="0.01"
+                                    value={editDelivery}
+                                    onChange={(e) => setEditDelivery(e.target.value)}
+                                    className="w-full rounded-[8px] px-2 py-1.5 text-xs text-right num focus:outline-none"
+                                    style={{ border: '1px solid var(--color-border)', background: 'var(--color-cream)', color: 'var(--color-ink)' }}
+                                  />
+                                </div>
+                              </div>
+
+                              {/* New total preview */}
+                              <p className="text-xs" style={{ color: 'var(--color-muted)' }}>
+                                Subtotal: <span className="num font-semibold" style={{ color: 'var(--color-ink)' }}>{currency} {parseFloat(String(order.subtotal || order.total_amount)).toFixed(2)}</span>
+                                {'  ·  '}New total: <span className="num font-bold" style={{ color: 'var(--color-ember)' }}>
+                                  {currency} {(Math.max(0, parseFloat(String(order.subtotal || order.total_amount))) - (parseFloat(editDiscount) || 0) + (parseFloat(editDelivery) || 0)).toFixed(2)}
+                                </span>
+                              </p>
+
+                              {/* Notes */}
+                              <div>
+                                <label className="block text-[10px] font-bold uppercase tracking-wide mb-1" style={{ color: 'var(--color-muted)' }}>
+                                  Notes
+                                </label>
+                                <textarea
+                                  value={editNotes}
+                                  onChange={(e) => setEditNotes(e.target.value)}
+                                  rows={2}
+                                  placeholder="Delivery instructions, spice level…"
+                                  className="w-full rounded-[8px] px-2.5 py-2 text-xs resize-none focus:outline-none"
+                                  style={{ border: '1px solid var(--color-border)', background: 'var(--color-cream)', color: 'var(--color-ink)' }}
+                                />
+                              </div>
+
+                              {editError && (
+                                <p className="text-xs font-semibold" style={{ color: 'var(--color-red)' }}>{editError}</p>
+                              )}
+
+                              <div className="flex gap-2">
+                                <button
+                                  onClick={handleEditCancel}
+                                  disabled={isEditPending}
+                                  className="flex-1 py-1.5 rounded-[7px] text-xs font-semibold"
+                                  style={{ background: 'var(--color-cream)', border: '1px solid var(--color-border)', color: 'var(--color-muted)' }}
+                                >
+                                  Cancel
+                                </button>
+                                <button
+                                  onClick={() => handleEditSave(order)}
+                                  disabled={isEditPending}
+                                  className="flex-1 py-1.5 rounded-[7px] text-xs font-bold disabled:opacity-50"
+                                  style={{ background: 'var(--color-saffron)', color: '#fff' }}
+                                >
+                                  {isEditPending ? 'Saving…' : 'Save Changes'}
+                                </button>
+                              </div>
+                            </div>
+                          </td>
+                        </tr>
+                      )}
 
                       {/* Inline void confirmation row */}
                       {isVoiding && (

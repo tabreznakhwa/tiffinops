@@ -93,3 +93,59 @@ export async function createOrder(input: CreateOrderInput): Promise<OrderActionR
 
   return { order_number: orderNumber as string, order_id: order.id }
 }
+
+// ── Update order ───────────────────────────────────────────────────────────────
+
+const UpdateOrderSchema = z.object({
+  order_id:       z.string().uuid(),
+  order_status:   z.enum(['draft', 'confirmed', 'preparing', 'out_for_delivery', 'delivered', 'cancelled']),
+  payment_status: z.enum(['unpaid', 'partial', 'paid', 'refunded', 'written_off']),
+  notes:          z.string().nullable().optional(),
+  discount_amount: z.coerce.number().min(0).default(0),
+  delivery_charge: z.coerce.number().min(0).default(0),
+})
+
+export type UpdateOrderInput = z.infer<typeof UpdateOrderSchema>
+export type UpdateOrderResult = { error?: string }
+
+export async function updateOrder(input: UpdateOrderInput): Promise<UpdateOrderResult> {
+  const user = await requireAuth()
+  if (!WRITE_ROLES.includes(user.role)) return { error: 'Insufficient permissions' }
+
+  const parsed = UpdateOrderSchema.safeParse(input)
+  if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? 'Validation error' }
+
+  const { order_id, order_status, payment_status, notes, discount_amount, delivery_charge } = parsed.data
+
+  const admin = createAdminClient()
+
+  const { data: order, error: fetchErr } = await admin
+    .from('orders')
+    .select('subtotal, customer_id')
+    .eq('id', order_id)
+    .single()
+
+  if (fetchErr || !order) return { error: 'Order not found' }
+
+  const subtotal    = parseFloat(String(order.subtotal))
+  const totalAmount = subtotal - discount_amount + delivery_charge
+
+  const { error: updateErr } = await admin
+    .from('orders')
+    .update({
+      order_status,
+      payment_status,
+      notes:           notes || null,
+      discount_amount: discount_amount.toFixed(2),
+      delivery_charge: delivery_charge.toFixed(2),
+      total_amount:    totalAmount.toFixed(2),
+    })
+    .eq('id', order_id)
+
+  if (updateErr) return { error: updateErr.message }
+
+  revalidatePath('/orders')
+  revalidatePath(`/customers/${order.customer_id}`)
+
+  return {}
+}
