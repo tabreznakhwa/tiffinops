@@ -94,7 +94,7 @@ export async function createOrder(input: CreateOrderInput): Promise<OrderActionR
   return { order_number: orderNumber as string, order_id: order.id }
 }
 
-// ── Update order ───────────────────────────────────────────────────────────────
+// ── Update order (status / notes / discount only) ─────────────────────────────
 
 const UpdateOrderSchema = z.object({
   order_id:       z.string().uuid(),
@@ -148,4 +148,88 @@ export async function updateOrder(input: UpdateOrderInput): Promise<UpdateOrderR
   revalidatePath(`/customers/${order.customer_id}`)
 
   return {}
+}
+
+// ── Full order update (customer, date, items, all fields) ──────────────────────
+
+const UpdateOrderFullSchema = z.object({
+  order_id:        z.string().uuid(),
+  customer_id:     z.string().uuid('Invalid customer'),
+  order_date:      z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Invalid date'),
+  meal_period:     z.enum(['breakfast', 'lunch', 'dinner']),
+  items:           z.array(OrderItemSchema).min(1, 'Add at least one item'),
+  discount_amount: z.string().default('0'),
+  delivery_charge: z.string().default('0'),
+  notes:           z.string().nullable().optional(),
+  order_status:    z.enum(['draft', 'confirmed', 'preparing', 'out_for_delivery', 'delivered', 'cancelled']).optional(),
+  payment_status:  z.enum(['unpaid', 'partial', 'paid', 'refunded', 'written_off']).optional(),
+})
+
+export type UpdateOrderFullInput = z.infer<typeof UpdateOrderFullSchema>
+
+export async function updateOrderFull(input: UpdateOrderFullInput): Promise<OrderActionResult> {
+  const user = await requireAuth()
+  if (!WRITE_ROLES.includes(user.role)) return { error: 'Insufficient permissions' }
+
+  const parsed = UpdateOrderFullSchema.safeParse(input)
+  if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? 'Validation error' }
+
+  const {
+    order_id, customer_id, order_date, meal_period, items,
+    discount_amount, delivery_charge, notes, order_status, payment_status,
+  } = parsed.data
+
+  const subtotal    = items.reduce((s, i) => s + i.quantity * parseFloat(i.unit_price), 0)
+  const discountAmt = Math.max(0, parseFloat(discount_amount) || 0)
+  const deliveryAmt = Math.max(0, parseFloat(delivery_charge) || 0)
+  const totalAmount = subtotal - discountAmt + deliveryAmt
+
+  const admin = createAdminClient()
+
+  const { data: existing, error: fetchErr } = await admin
+    .from('orders')
+    .select('customer_id, order_status')
+    .eq('id', order_id)
+    .single()
+
+  if (fetchErr || !existing) return { error: 'Order not found' }
+  if (existing.order_status === 'voided') return { error: 'Cannot edit a voided order' }
+
+  const { error: updateErr } = await admin.from('orders').update({
+    customer_id,
+    order_date,
+    meal_period,
+    subtotal:        subtotal.toFixed(2),
+    discount_amount: discountAmt.toFixed(2),
+    delivery_charge: deliveryAmt.toFixed(2),
+    total_amount:    totalAmount.toFixed(2),
+    notes:           notes || null,
+    ...(order_status   ? { order_status }   : {}),
+    ...(payment_status ? { payment_status } : {}),
+  }).eq('id', order_id)
+  if (updateErr) return { error: updateErr.message }
+
+  // Replace all order items
+  const { error: deleteErr } = await admin.from('order_items').delete().eq('order_id', order_id)
+  if (deleteErr) return { error: deleteErr.message }
+
+  const { error: itemsErr } = await admin.from('order_items').insert(
+    items.map((item) => ({
+      order_id,
+      menu_item_id:        item.menu_item_id,
+      item_name_snapshot:  item.item_name_snapshot,
+      quantity:            item.quantity.toString(),
+      unit_price:          item.unit_price,
+      total_price:         (item.quantity * parseFloat(item.unit_price)).toFixed(2),
+    }))
+  )
+  if (itemsErr) return { error: itemsErr.message }
+
+  revalidatePath('/orders')
+  revalidatePath(`/customers/${customer_id}`)
+  if (existing.customer_id !== customer_id) {
+    revalidatePath(`/customers/${existing.customer_id}`)
+  }
+
+  return { order_id }
 }
