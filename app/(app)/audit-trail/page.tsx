@@ -1,3 +1,5 @@
+export const dynamic = 'force-dynamic'
+
 import { formatInTimeZone } from 'date-fns-tz'
 import { redirect } from 'next/navigation'
 import { requireAuth } from '@/lib/auth'

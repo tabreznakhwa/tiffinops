@@ -1,3 +1,5 @@
+export const dynamic = 'force-dynamic'
+
 import { requireAuth } from '@/lib/auth'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { MenuModule } from '@/components/menu/menu-module'

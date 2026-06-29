@@ -1,3 +1,5 @@
+export const dynamic = 'force-dynamic'
+
 import { formatInTimeZone } from 'date-fns-tz'
 import { requireAuth } from '@/lib/auth'
 import { createAdminClient } from '@/lib/supabase/admin'

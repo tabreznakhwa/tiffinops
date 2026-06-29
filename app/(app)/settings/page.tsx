@@ -1,3 +1,5 @@
+export const dynamic = 'force-dynamic'
+
 import { redirect } from 'next/navigation'
 import { requireAuth } from '@/lib/auth'
 import { getSettings } from '@/lib/settings/getSettings'

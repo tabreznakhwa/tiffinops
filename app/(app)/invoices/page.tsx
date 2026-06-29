@@ -5,6 +5,8 @@ import { nextMonth } from '@/lib/invoices/generateMonthlyInvoices'
 import { formatInTimeZone } from 'date-fns-tz'
 import type { Enums } from '@/lib/supabase/types'
 
+export const dynamic = 'force-dynamic'
+
 export type InvoiceWithCustomer = {
   id: string
   invoice_number: string
