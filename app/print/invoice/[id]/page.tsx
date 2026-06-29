@@ -69,7 +69,7 @@ export default async function PrintInvoicePage({
       .single(),
     admin
       .from('invoice_items')
-      .select('id, description, quantity, unit_price, total_price, order_id, orders(order_date, meal_period)')
+      .select('id, description, quantity, unit_price, total_price, order_id')
       .eq('invoice_id', id)
       .order('id'),
     ]),
@@ -111,22 +111,20 @@ export default async function PrintInvoicePage({
 
   const MEAL_ORDER: Record<string, number> = { breakfast: 0, lunch: 1, dinner: 2 }
 
-  const lineItems = ((items ?? []) as {
-    id: string
-    description: string
-    quantity: string
-    unit_price: string
-    total_price: string
-    order_id: string | null
-    orders: { order_date: string; meal_period: string } | null
-  }[]).sort((a, b) => {
-    const oa = a.orders
-    const ob = b.orders
-    if (!oa && !ob) return 0
-    if (!oa) return 1
-    if (!ob) return -1
-    if (oa.order_date !== ob.order_date) return oa.order_date.localeCompare(ob.order_date)
-    return (MEAL_ORDER[oa.meal_period] ?? 0) - (MEAL_ORDER[ob.meal_period] ?? 0)
+  // Parse date and meal from description: "7 Jun 2026 – Dinner – items..."
+  function parseSortKey(desc: string): { date: string; meal: number } {
+    const parts = desc.split(' – ')
+    const d = parts[0] ? new Date(parts[0] + ' UTC') : null
+    const dateStr = d && !isNaN(d.getTime()) ? d.toISOString().split('T')[0] : ''
+    const meal = MEAL_ORDER[parts[1]?.toLowerCase() ?? ''] ?? 99
+    return { date: dateStr, meal }
+  }
+
+  const lineItems = (items ?? []).slice().sort((a, b) => {
+    const ka = parseSortKey(a.description ?? '')
+    const kb = parseSortKey(b.description ?? '')
+    if (ka.date !== kb.date) return ka.date.localeCompare(kb.date)
+    return ka.meal - kb.meal
   })
 
   return (
