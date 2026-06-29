@@ -69,7 +69,7 @@ export default async function PrintInvoicePage({
       .single(),
     admin
       .from('invoice_items')
-      .select('id, description, quantity, unit_price, total_price, order_id')
+      .select('id, description, quantity, unit_price, total_price, order_id, orders(order_date, meal_period)')
       .eq('invoice_id', id)
       .order('id'),
     ]),
@@ -109,14 +109,25 @@ export default async function PrintInvoicePage({
     return null
   })()
 
-  const lineItems = (items ?? []) as {
+  const MEAL_ORDER: Record<string, number> = { breakfast: 0, lunch: 1, dinner: 2 }
+
+  const lineItems = ((items ?? []) as {
     id: string
     description: string
     quantity: string
     unit_price: string
     total_price: string
     order_id: string | null
-  }[]
+    orders: { order_date: string; meal_period: string } | null
+  }[]).sort((a, b) => {
+    const oa = a.orders
+    const ob = b.orders
+    if (!oa && !ob) return 0
+    if (!oa) return 1
+    if (!ob) return -1
+    if (oa.order_date !== ob.order_date) return oa.order_date.localeCompare(ob.order_date)
+    return (MEAL_ORDER[oa.meal_period] ?? 0) - (MEAL_ORDER[ob.meal_period] ?? 0)
+  })
 
   return (
     <div

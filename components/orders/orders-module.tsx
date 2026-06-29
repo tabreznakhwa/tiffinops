@@ -558,7 +558,7 @@ export function OrdersModule({
                         {/* Actions */}
                         <td className="px-3 py-3">
                           <div className="flex items-center gap-1.5">
-                            {!isVoided && !isVoiding && (
+                            {!isVoided && !isVoiding && order.order_date === todayStr() && (
                               <Link
                                 href={`/orders/${order.id}/edit`}
                                 className="flex items-center gap-1 text-[11px] font-semibold px-2 py-1 rounded-[6px] transition-colors"

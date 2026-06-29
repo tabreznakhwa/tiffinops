@@ -56,7 +56,7 @@ export function BillsModule({
       (b) =>
         b.fullName.toLowerCase().includes(q) ||
         b.customerCode.toLowerCase().includes(q) ||
-        b.mobileNumber.includes(q)
+        (b.mobileNumber ?? '').includes(q)
     )
   }, [bills, query])
 

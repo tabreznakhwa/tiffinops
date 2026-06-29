@@ -2,10 +2,12 @@
 
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { ArrowLeft, ChevronLeft, ChevronRight, Printer } from 'lucide-react'
+import { useTransition, useState } from 'react'
+import { ArrowLeft, ChevronLeft, ChevronRight, Printer, FileText } from 'lucide-react'
 import { extractVAT } from '@/lib/settings/getSettings'
 import { useAppSettings } from '@/components/settings/settings-context'
 import { formatMonthDisplay, shiftMonth, formatBillDate } from '@/lib/bills/utils'
+import { createInvoice } from '@/lib/invoices/actions'
 import type { Tables, Enums } from '@/lib/supabase/types'
 
 type Customer = Tables<'customers'>
@@ -69,6 +71,51 @@ export function CustomerBill({
 
   const printUrl = `/print/bill?customer_id=${customer.id}&month=${activeMonth}`
 
+  const [isExtracting, startExtract] = useTransition()
+  const [extractError, setExtractError] = useState('')
+
+  function handleExtractInvoice() {
+    setExtractError('')
+    const sortedDates = [...orders].map(o => o.order_date).sort()
+    const billingStart = sortedDates[0]
+    const billingEnd = sortedDates[sortedDates.length - 1]
+    const due = new Date()
+    due.setDate(due.getDate() + 30)
+    const dueDate = due.toISOString().split('T')[0]
+
+    const items = orders.map(order => {
+      const itemsList = order.order_items.map(i => {
+        const qty = parseFloat(i.quantity)
+        return `${i.item_name_snapshot} ×${Number.isInteger(qty) ? qty : qty.toFixed(1)}`
+      }).join(', ')
+      const dateLabel = new Date(order.order_date + 'T00:00:00Z').toLocaleDateString('en-GB', {
+        day: 'numeric', month: 'short', year: 'numeric',
+      })
+      return {
+        description: `${dateLabel} – ${PERIOD_LABELS[order.meal_period]} – ${itemsList}`,
+        quantity: 1,
+        unit_price: parseFloat(String(order.total_amount)),
+        order_id: order.id,
+      }
+    })
+
+    startExtract(async () => {
+      const result = await createInvoice({
+        customer_id: customer.id,
+        invoice_type: 'a_la_carte_cycle',
+        billing_period_start: billingStart,
+        billing_period_end: billingEnd,
+        due_date: dueDate,
+        items,
+      })
+      if (result.error) {
+        setExtractError(result.error)
+      } else if (result.invoice_id) {
+        window.open(`/print/invoice/${result.invoice_id}`, '_blank')
+      }
+    })
+  }
+
   return (
     <div>
       {/* Back */}
@@ -100,14 +147,36 @@ export function CustomerBill({
             {PLAN_LABELS[customer.customer_type]} · {customer.mobile_number}
           </p>
         </div>
-        <button
-          onClick={() => window.open(printUrl, '_blank', 'noopener,noreferrer')}
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-[10px] text-sm font-semibold flex-shrink-0 mt-1 transition-colors hover:bg-cream"
-          style={{ color: 'var(--color-saffron)', border: '1px solid var(--color-border)' }}
-        >
-          <Printer size={14} />
-          Print Bill
-        </button>
+        <div className="flex flex-col items-end gap-1">
+          <div className="flex gap-2">
+            <button
+              onClick={() => window.open(printUrl, '_blank', 'noopener,noreferrer')}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-[10px] text-sm font-semibold flex-shrink-0 transition-colors hover:bg-cream"
+              style={{ color: 'var(--color-saffron)', border: '1px solid var(--color-border)' }}
+            >
+              <Printer size={14} />
+              Print Bill
+            </button>
+            <button
+              onClick={handleExtractInvoice}
+              disabled={isExtracting || orders.length === 0}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-[10px] text-sm font-semibold flex-shrink-0 transition-colors"
+              style={{
+                background: 'var(--color-saffron)',
+                color: '#fff',
+                opacity: isExtracting || orders.length === 0 ? 0.6 : 1,
+              }}
+            >
+              <FileText size={14} />
+              {isExtracting ? 'Extracting…' : 'Extract Invoice'}
+            </button>
+          </div>
+          {extractError && (
+            <p className="text-xs font-semibold" style={{ color: 'var(--color-red)' }}>
+              {extractError}
+            </p>
+          )}
+        </div>
       </div>
 
       {/* Month navigator */}

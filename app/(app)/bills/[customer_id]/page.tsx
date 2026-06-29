@@ -42,7 +42,6 @@ export default async function CustomerBillPage({
       .gte('order_date', monthToRange(activeMonth).start)
       .lt('order_date', monthToRange(activeMonth).end)
       .not('order_status', 'in', '(cancelled,voided,draft)')
-      .eq('is_credit', true)
       .order('order_date', { ascending: true })
       .order('created_at', { ascending: true }),
   ])

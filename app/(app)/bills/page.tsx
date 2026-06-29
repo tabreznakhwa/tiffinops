@@ -4,6 +4,8 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { BillsModule } from '@/components/bills/bills-module'
 import { monthToRange } from '@/lib/bills/utils'
 
+export const dynamic = 'force-dynamic'
+
 export default async function BillsPage({
   searchParams,
 }: {
@@ -18,16 +20,34 @@ export default async function BillsPage({
   const { start, end } = monthToRange(activeMonth)
   const admin = createAdminClient()
 
-  // Fetch all credit orders for the month with customer info
-  const { data: orders } = await admin
-    .from('orders')
-    .select('customer_id, total_amount, customers(id, full_name, customer_code, customer_type, mobile_number, area)')
-    .gte('order_date', start)
-    .lt('order_date', end)
-    .not('order_status', 'in', '(cancelled,voided,draft)')
-    .eq('is_credit', true)
+  // Fetch customers and paginate through orders (Supabase caps at 1000 rows/request)
+  const PAGE_SIZE = 1000
+  const allOrdersRaw: { customer_id: string; total_amount: string }[] = []
+  let from = 0
+  const [{ data: allCustomers }] = await Promise.all([
+    admin.from('customers').select('id, full_name, customer_code, customer_type, mobile_number, area'),
+    (async () => {
+      while (true) {
+        const { data } = await admin
+          .from('orders')
+          .select('customer_id, total_amount')
+          .gte('order_date', start)
+          .lt('order_date', end)
+          .not('order_status', 'in', '(cancelled,voided,draft)')
+          .range(from, from + PAGE_SIZE - 1)
+        if (!data || data.length === 0) break
+        allOrdersRaw.push(...data)
+        if (data.length < PAGE_SIZE) break
+        from += PAGE_SIZE
+      }
+    })(),
+  ])
+  const orders = allOrdersRaw
 
-  // Aggregate per customer in JS
+  // Build a lookup map of ALL customers
+  const customerMap = new Map((allCustomers ?? []).map(c => [c.id, c]))
+
+  // Aggregate orders per customer
   type BillRow = {
     customerId: string
     fullName: string
@@ -41,10 +61,8 @@ export default async function BillsPage({
 
   const map = new Map<string, BillRow>()
   for (const o of orders ?? []) {
-    const c = o.customers as {
-      id: string; full_name: string; customer_code: string
-      customer_type: string; mobile_number: string; area: string | null
-    } | null
+    if (!o.customer_id) continue
+    const c = customerMap.get(o.customer_id)
     if (!c) continue
     if (!map.has(o.customer_id)) {
       map.set(o.customer_id, {
@@ -52,7 +70,7 @@ export default async function BillsPage({
         fullName: c.full_name,
         customerCode: c.customer_code,
         customerType: c.customer_type,
-        mobileNumber: c.mobile_number,
+        mobileNumber: c.mobile_number ?? '',
         area: c.area,
         orderCount: 0,
         total: 0,
