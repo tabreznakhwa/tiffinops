@@ -3,7 +3,7 @@
 import { useState, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { ChevronLeft, ChevronRight, Search, FileText } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Search, FileText, Calendar, CalendarRange } from 'lucide-react'
 import { formatMonthDisplay, shiftMonth } from '@/lib/bills/utils'
 import { extractVAT } from '@/lib/settings/getSettings'
 import { useAppSettings } from '@/components/settings/settings-context'
@@ -35,16 +35,41 @@ export function BillsModule({
   bills,
   activeMonth,
   currentMonth,
+  rangeFrom = '',
+  rangeTo = '',
 }: {
   bills: BillRow[]
   activeMonth: string
   currentMonth: string
+  rangeFrom?: string
+  rangeTo?: string
 }) {
   const router = useRouter()
   const { currency, vatRate } = useAppSettings()
   const [query, setQuery] = useState('')
 
+  const isRangeMode = !!(rangeFrom && rangeTo)
   const isCurrentMonth = activeMonth === currentMonth
+
+  const [fromInput, setFromInput] = useState(rangeFrom || '')
+  const [toInput, setToInput] = useState(rangeTo || '')
+
+  function applyRange() {
+    if (!fromInput || !toInput) return
+    router.push(`/bills?from=${fromInput}&to=${toInput}`)
+  }
+
+  function switchToMonth() {
+    router.push(`/bills?month=${currentMonth}`)
+  }
+
+  function switchToRange() {
+    const today = new Date().toISOString().split('T')[0]
+    const firstOfMonth = today.substring(0, 7) + '-01'
+    setFromInput(firstOfMonth)
+    setToInput(today)
+    router.push(`/bills?from=${firstOfMonth}&to=${today}`)
+  }
 
   const grandTotal = bills.reduce((s, b) => s + b.total, 0)
   const { vatAmount } = extractVAT(grandTotal, vatRate)
@@ -82,49 +107,125 @@ export function BillsModule({
         </h1>
       </div>
 
-      {/* Month navigator */}
-      <div
-        className="flex items-center justify-between gap-2 mb-5 rounded-[14px] px-3 py-2.5"
-        style={{
-          background: 'var(--color-surface)',
-          border: '1px solid var(--color-border)',
-          boxShadow: 'var(--shadow-card)',
-        }}
-      >
+      {/* Mode toggle */}
+      <div className="flex gap-2 mb-3">
         <button
-          onClick={() => navigate(shiftMonth(activeMonth, -1))}
-          className="h-9 w-9 flex items-center justify-center rounded-full transition-colors hover:bg-cream flex-shrink-0"
-          style={{ color: 'var(--color-muted)' }}
+          onClick={switchToMonth}
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-[10px] text-xs font-bold transition-colors"
+          style={!isRangeMode
+            ? { background: 'var(--color-saffron)', color: '#fff' }
+            : { background: 'var(--color-surface)', color: 'var(--color-muted)', border: '1px solid var(--color-border)' }
+          }
         >
-          <ChevronLeft size={20} />
+          <Calendar size={13} />
+          Monthly
         </button>
-        <div className="text-center flex-1">
-          <p className="font-bold text-sm" style={{ color: 'var(--color-ink)' }}>
-            {formatMonthDisplay(activeMonth)}
-          </p>
-          {!isCurrentMonth && (
-            <button
-              onClick={() => navigate(currentMonth)}
-              className="text-xs font-bold mt-0.5"
-              style={{ color: 'var(--color-saffron)' }}
-            >
-              Back to Current Month
-            </button>
-          )}
-          {isCurrentMonth && (
-            <p className="text-xs mt-0.5" style={{ color: 'var(--color-muted)' }}>
-              Current month
-            </p>
-          )}
-        </div>
         <button
-          onClick={() => navigate(shiftMonth(activeMonth, 1))}
-          className="h-9 w-9 flex items-center justify-center rounded-full transition-colors hover:bg-cream flex-shrink-0"
-          style={{ color: 'var(--color-muted)' }}
+          onClick={switchToRange}
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-[10px] text-xs font-bold transition-colors"
+          style={isRangeMode
+            ? { background: 'var(--color-saffron)', color: '#fff' }
+            : { background: 'var(--color-surface)', color: 'var(--color-muted)', border: '1px solid var(--color-border)' }
+          }
         >
-          <ChevronRight size={20} />
+          <CalendarRange size={13} />
+          Date Range
         </button>
       </div>
+
+      {/* Month navigator */}
+      {!isRangeMode && (
+        <div
+          className="flex items-center justify-between gap-2 mb-5 rounded-[14px] px-3 py-2.5"
+          style={{
+            background: 'var(--color-surface)',
+            border: '1px solid var(--color-border)',
+            boxShadow: 'var(--shadow-card)',
+          }}
+        >
+          <button
+            onClick={() => navigate(shiftMonth(activeMonth, -1))}
+            className="h-9 w-9 flex items-center justify-center rounded-full transition-colors hover:bg-cream flex-shrink-0"
+            style={{ color: 'var(--color-muted)' }}
+          >
+            <ChevronLeft size={20} />
+          </button>
+          <div className="text-center flex-1">
+            <p className="font-bold text-sm" style={{ color: 'var(--color-ink)' }}>
+              {formatMonthDisplay(activeMonth)}
+            </p>
+            {!isCurrentMonth && (
+              <button
+                onClick={() => navigate(currentMonth)}
+                className="text-xs font-bold mt-0.5"
+                style={{ color: 'var(--color-saffron)' }}
+              >
+                Back to Current Month
+              </button>
+            )}
+            {isCurrentMonth && (
+              <p className="text-xs mt-0.5" style={{ color: 'var(--color-muted)' }}>
+                Current month
+              </p>
+            )}
+          </div>
+          <button
+            onClick={() => navigate(shiftMonth(activeMonth, 1))}
+            className="h-9 w-9 flex items-center justify-center rounded-full transition-colors hover:bg-cream flex-shrink-0"
+            style={{ color: 'var(--color-muted)' }}
+          >
+            <ChevronRight size={20} />
+          </button>
+        </div>
+      )}
+
+      {/* Date range picker */}
+      {isRangeMode && (
+        <div
+          className="flex flex-wrap items-end gap-3 mb-5 rounded-[14px] px-4 py-3.5"
+          style={{
+            background: 'var(--color-surface)',
+            border: '1px solid var(--color-border)',
+            boxShadow: 'var(--shadow-card)',
+          }}
+        >
+          <div className="flex flex-col gap-1">
+            <label className="text-[10px] font-bold uppercase tracking-wide" style={{ color: 'var(--color-muted)' }}>
+              From
+            </label>
+            <input
+              type="date"
+              value={fromInput}
+              onChange={(e) => setFromInput(e.target.value)}
+              className="rounded-[8px] px-2.5 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-saffron"
+              style={{ border: '1px solid var(--color-border)', color: 'var(--color-ink)', background: 'var(--color-cream)' }}
+            />
+          </div>
+          <div className="flex flex-col gap-1">
+            <label className="text-[10px] font-bold uppercase tracking-wide" style={{ color: 'var(--color-muted)' }}>
+              To
+            </label>
+            <input
+              type="date"
+              value={toInput}
+              onChange={(e) => setToInput(e.target.value)}
+              className="rounded-[8px] px-2.5 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-saffron"
+              style={{ border: '1px solid var(--color-border)', color: 'var(--color-ink)', background: 'var(--color-cream)' }}
+            />
+          </div>
+          <button
+            onClick={applyRange}
+            disabled={!fromInput || !toInput}
+            className="px-4 py-1.5 rounded-[8px] text-sm font-bold transition-opacity"
+            style={{ background: 'var(--color-saffron)', color: '#fff', opacity: !fromInput || !toInput ? 0.5 : 1 }}
+          >
+            Apply
+          </button>
+          <p className="text-xs self-center" style={{ color: 'var(--color-muted)' }}>
+            {rangeFrom} → {rangeTo}
+          </p>
+        </div>
+      )}
 
       {/* Summary strip */}
       {bills.length > 0 && (
@@ -197,10 +298,10 @@ export function BillsModule({
           style={{ border: '1px dashed var(--color-border)' }}
         >
           <p className="font-semibold text-sm" style={{ color: 'var(--color-muted)' }}>
-            No credit orders found for {formatMonthDisplay(activeMonth)}
+            No orders found for {isRangeMode ? `${rangeFrom} → ${rangeTo}` : formatMonthDisplay(activeMonth)}
           </p>
           <p className="text-xs mt-1" style={{ color: 'var(--color-muted)' }}>
-            Orders placed via New Order (credit / a-la-carte) will appear here.
+            Orders placed via New Order (a-la-carte) will appear here.
           </p>
         </div>
       ) : filtered.length === 0 ? (

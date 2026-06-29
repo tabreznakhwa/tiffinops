@@ -9,21 +9,43 @@ export const dynamic = 'force-dynamic'
 export default async function BillsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ month?: string }>
+  searchParams: Promise<{ month?: string; from?: string; to?: string }>
 }) {
   await requireAuth()
 
-  const { month } = await searchParams
+  const params = await searchParams
   const currentMonth = formatInTimeZone(new Date(), 'Asia/Dubai', 'yyyy-MM')
-  const activeMonth = month && /^\d{4}-\d{2}$/.test(month) ? month : currentMonth
 
-  const { start, end } = monthToRange(activeMonth)
+  const dateRe = /^\d{4}-\d{2}-\d{2}$/
+  const isCustomRange = params.from && params.to && dateRe.test(params.from) && dateRe.test(params.to)
+
+  let start: string
+  let end: string
+  let activeMonth: string
+  let rangeFrom = ''
+  let rangeTo = ''
+
+  if (isCustomRange) {
+    rangeFrom = params.from!
+    rangeTo = params.to!
+    start = rangeFrom
+    // end is exclusive — add 1 day to 'to'
+    const toDate = new Date(rangeTo + 'T00:00:00Z')
+    toDate.setUTCDate(toDate.getUTCDate() + 1)
+    end = toDate.toISOString().split('T')[0]
+    activeMonth = currentMonth // keep for fallback navigation
+  } else {
+    activeMonth = params.month && /^\d{4}-\d{2}$/.test(params.month) ? params.month : currentMonth
+    const range = monthToRange(activeMonth)
+    start = range.start
+    end = range.end
+  }
+
   const admin = createAdminClient()
 
-  // Fetch customers and paginate through orders (Supabase caps at 1000 rows/request)
   const PAGE_SIZE = 1000
   const allOrdersRaw: { customer_id: string; total_amount: string }[] = []
-  let from = 0
+  let offset = 0
   const [{ data: allCustomers }] = await Promise.all([
     admin.from('customers').select('id, full_name, customer_code, customer_type, mobile_number, area'),
     (async () => {
@@ -34,20 +56,17 @@ export default async function BillsPage({
           .gte('order_date', start)
           .lt('order_date', end)
           .not('order_status', 'in', '(cancelled,voided,draft)')
-          .range(from, from + PAGE_SIZE - 1)
+          .range(offset, offset + PAGE_SIZE - 1)
         if (!data || data.length === 0) break
         allOrdersRaw.push(...data)
         if (data.length < PAGE_SIZE) break
-        from += PAGE_SIZE
+        offset += PAGE_SIZE
       }
     })(),
   ])
-  const orders = allOrdersRaw
 
-  // Build a lookup map of ALL customers
   const customerMap = new Map((allCustomers ?? []).map(c => [c.id, c]))
 
-  // Aggregate orders per customer
   type BillRow = {
     customerId: string
     fullName: string
@@ -60,7 +79,7 @@ export default async function BillsPage({
   }
 
   const map = new Map<string, BillRow>()
-  for (const o of orders ?? []) {
+  for (const o of allOrdersRaw) {
     if (!o.customer_id) continue
     const c = customerMap.get(o.customer_id)
     if (!c) continue
@@ -88,6 +107,8 @@ export default async function BillsPage({
       bills={bills}
       activeMonth={activeMonth}
       currentMonth={currentMonth}
+      rangeFrom={rangeFrom}
+      rangeTo={rangeTo}
     />
   )
 }
