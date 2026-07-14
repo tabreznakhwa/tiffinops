@@ -23,9 +23,14 @@ async function fetchAllPages<T>(
   return results
 }
 
-export default async function DashboardPage() {
+export default async function DashboardPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ period?: string; from?: string; to?: string }>
+}) {
   const user  = await requireAuth()
   const admin = createAdminClient()
+  const sp    = await searchParams
 
   const now      = new Date()
   const todayStr = formatInTimeZone(now, 'Asia/Dubai', 'yyyy-MM-dd')
@@ -40,6 +45,44 @@ export default async function DashboardPage() {
   const lastMonthStr   = formatInTimeZone(new Date(y, m - 2, 1), 'Asia/Dubai', 'yyyy-MM')
   const lastMonthStart = `${lastMonthStr}-01`
   const lastMonthEnd   = monthStart
+
+  // ── Period filter ──────────────────────────────────────────────────────────
+  const dateRe = /^\d{4}-\d{2}-\d{2}$/
+  const rawPeriod = sp.period || 'today'
+  const isCustom = rawPeriod === 'custom' && sp.from && sp.to && dateRe.test(sp.from) && dateRe.test(sp.to)
+  const activePeriod = isCustom ? 'custom' : rawPeriod
+
+  let periodStart: string
+  let periodEnd: string  // exclusive upper bound
+  let periodLabel: string
+
+  if (isCustom) {
+    periodStart = sp.from!
+    const toDate = new Date(sp.to! + 'T00:00:00Z')
+    toDate.setUTCDate(toDate.getUTCDate() + 1)
+    periodEnd   = toDate.toISOString().split('T')[0]
+    periodLabel = `${sp.from} → ${sp.to}`
+  } else if (activePeriod === 'yesterday') {
+    const yest = new Date(now.getTime() - 86400000)
+    const yStr = yest.toISOString().split('T')[0]
+    periodStart = yStr
+    periodEnd   = todayStr
+    periodLabel = 'Yesterday'
+  } else if (activePeriod === 'last_month') {
+    periodStart = lastMonthStart
+    periodEnd   = monthStart
+    periodLabel = new Date(y, m - 2, 1).toLocaleDateString('en-GB', { month: 'long', year: 'numeric' })
+  } else if (activePeriod === 'this_month') {
+    periodStart = monthStart
+    periodEnd   = monthEnd
+    periodLabel = new Date(y, m - 1, 1).toLocaleDateString('en-GB', { month: 'long', year: 'numeric' })
+  } else {
+    // today (default)
+    periodStart = todayStr
+    const tomorrow = new Date(now.getTime() + 86400000)
+    periodEnd   = tomorrow.toISOString().split('T')[0]
+    periodLabel = 'Today'
+  }
 
   const EXCLUDE_STATUSES = '(cancelled,voided,draft)'
 
@@ -85,7 +128,7 @@ export default async function DashboardPage() {
   ])
 
   // ── Large order queries — paginated to bypass 1,000-row limit ──────────────
-  const [monthOrderRows, lastMonthOrderRows, unpaidOrderRows, billed30dRows] = await Promise.all([
+  const [monthOrderRows, lastMonthOrderRows, unpaidOrderRows, billed30dRows, periodOrderRows] = await Promise.all([
     fetchAllPages(({ from, to }) =>
       admin.from('orders').select('total_amount')
         .gte('order_date', monthStart).lt('order_date', monthEnd)
@@ -114,7 +157,21 @@ export default async function DashboardPage() {
         .not('order_status', 'in', EXCLUDE_STATUSES)
         .range(from, to) as any
     ) as Promise<{ order_date: string; total_amount: string }[]>,
+
+    fetchAllPages(({ from, to }) =>
+      admin.from('orders').select('total_amount')
+        .gte('order_date', periodStart).lt('order_date', periodEnd)
+        .not('order_status', 'in', EXCLUDE_STATUSES)
+        .range(from, to) as any
+    ) as Promise<{ total_amount: string }[]>,
   ])
+
+  // Period payments (always < 1,000 for single period)
+  const { data: periodPayRows } = await admin.from('payments').select('amount')
+    .is('voided_at', null).gte('payment_date', periodStart).lt('payment_date', periodEnd)
+
+  const periodBilled    = periodOrderRows.reduce((s, o) => s + parseFloat(String(o.total_amount)), 0)
+  const periodCollected = (periodPayRows ?? []).reduce((s, p) => s + parseFloat(String(p.amount)), 0)
 
   // ── Payment KPIs ───────────────────────────────────────────────────────────
   const todayRevenue  = (todayPayments  ?? []).reduce((s, p) => s + parseFloat(String(p.amount)), 0)
@@ -211,6 +268,12 @@ export default async function DashboardPage() {
 
   const dashData: DashboardData = {
     userName:            user.full_name.split(' ')[0],
+    activePeriod,
+    periodLabel,
+    periodBilled,
+    periodCollected,
+    periodFrom:          sp.from || '',
+    periodTo:            sp.to   || '',
     todayRevenue,
     monthRevenue,
     lastMonthRevenue:    lastMonthRev,

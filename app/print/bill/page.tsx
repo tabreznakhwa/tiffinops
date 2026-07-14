@@ -39,18 +39,40 @@ function Divider({ thick = false }: { thick?: boolean }) {
 export default async function PrintBillPage({
   searchParams,
 }: {
-  searchParams: Promise<{ customer_id?: string; month?: string }>
+  searchParams: Promise<{ customer_id?: string; month?: string; from?: string; to?: string }>
 }) {
   await requireAuth()
 
-  const { customer_id, month } = await searchParams
+  const { customer_id, month, from, to } = await searchParams
   if (!customer_id) notFound()
 
   const now = new Date()
   const currentMonth = formatInTimeZone(now, 'Asia/Dubai', 'yyyy-MM')
-  const activeMonth = month && /^\d{4}-\d{2}$/.test(month) ? month : currentMonth
   const printDate = formatInTimeZone(now, 'Asia/Dubai', 'yyyy-MM-dd')
-  const { start, end } = monthToRange(activeMonth)
+
+  const dateRe = /^\d{4}-\d{2}-\d{2}$/
+  const isCustomRange = from && to && dateRe.test(from) && dateRe.test(to)
+
+  let start: string
+  let end: string
+  let activeMonth: string
+  let rangeFrom = ''
+  let rangeTo = ''
+
+  if (isCustomRange) {
+    rangeFrom = from!
+    rangeTo = to!
+    start = rangeFrom
+    const toDate = new Date(rangeTo + 'T00:00:00Z')
+    toDate.setUTCDate(toDate.getUTCDate() + 1)
+    end = toDate.toISOString().split('T')[0]
+    activeMonth = currentMonth
+  } else {
+    activeMonth = month && /^\d{4}-\d{2}$/.test(month) ? month : currentMonth
+    const range = monthToRange(activeMonth)
+    start = range.start
+    end = range.end
+  }
 
   const admin = createAdminClient()
 
@@ -82,11 +104,14 @@ export default async function PrintBillPage({
   const { exclVAT, vatAmount } = extractVAT(grandTotal, vatRate)
 
   // Period end date for display
-  const [periodY, periodM] = activeMonth.split('-').map(Number)
-  const lastDay = new Date(periodY, periodM, 0)
-  const periodEndDisplay = formatLongDate(
-    `${periodY}-${String(periodM).padStart(2, '0')}-${String(lastDay.getDate()).padStart(2, '0')}`
-  )
+  const periodStartDisplay = isCustomRange ? formatLongDate(rangeFrom) : formatLongDate(start)
+  const periodEndDisplay = isCustomRange
+    ? formatLongDate(rangeTo)
+    : (() => {
+        const [periodY, periodM] = activeMonth.split('-').map(Number)
+        const lastDay = new Date(periodY, periodM, 0)
+        return formatLongDate(`${periodY}-${String(periodM).padStart(2, '0')}-${String(lastDay.getDate()).padStart(2, '0')}`)
+      })()
 
   const businessName = settings.business_name
 
@@ -138,7 +163,7 @@ export default async function PrintBillPage({
             Billing Period
           </p>
           <p style={{ fontSize: 12, fontWeight: 600, margin: 0 }}>
-            {formatLongDate(start)} –
+            {periodStartDisplay} –
           </p>
           <p style={{ fontSize: 12, fontWeight: 600, margin: 0 }}>
             {periodEndDisplay}
@@ -325,7 +350,7 @@ export default async function PrintBillPage({
 
       {/* ── Footer ── */}
       <div style={{ marginTop: 24, textAlign: 'center', fontSize: 10, color: '#7C7063', paddingTop: 12, borderTop: '1px solid #ECE2D3' }}>
-        {businessName} · {formatMonthDisplay(activeMonth)} · {customer.full_name} ({customer.customer_code})
+        {businessName} · {isCustomRange ? `${periodStartDisplay} – ${periodEndDisplay}` : formatMonthDisplay(activeMonth)} · {customer.full_name} ({customer.customer_code})
       </div>
     </div>
   )

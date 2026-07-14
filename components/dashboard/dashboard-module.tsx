@@ -1,7 +1,9 @@
 'use client'
 
+import { useState } from 'react'
 import Link from 'next/link'
 import Image from 'next/image'
+import { useRouter } from 'next/navigation'
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
   ResponsiveContainer, ReferenceLine,
@@ -13,6 +15,13 @@ import { useAppSettings } from '@/components/settings/settings-context'
 
 export type DashboardData = {
   userName: string
+  // Period filter
+  activePeriod: string
+  periodLabel: string
+  periodBilled: number
+  periodCollected: number
+  periodFrom: string
+  periodTo: string
   // Payments collected
   todayRevenue: number
   monthRevenue: number
@@ -128,6 +137,79 @@ function SectionLabel({ children }: { children: string }) {
 
 // ── Main Dashboard ────────────────────────────────────────────────────────────
 
+const PERIOD_OPTIONS = [
+  { key: 'today',      label: 'Today' },
+  { key: 'yesterday',  label: 'Yesterday' },
+  { key: 'this_month', label: 'This Month' },
+  { key: 'last_month', label: 'Last Month' },
+  { key: 'custom',     label: 'Custom' },
+]
+
+function PeriodFilter({ active, periodFrom, periodTo }: { active: string; periodFrom: string; periodTo: string }) {
+  const router = useRouter()
+  const [showCustom, setShowCustom] = useState(active === 'custom')
+  const [fromVal, setFromVal] = useState(periodFrom || '')
+  const [toVal, setToVal]     = useState(periodTo   || '')
+
+  function select(key: string) {
+    if (key === 'custom') {
+      setShowCustom(true)
+      return
+    }
+    setShowCustom(false)
+    router.push(`/?period=${key}`)
+  }
+
+  function applyCustom() {
+    if (!fromVal || !toVal) return
+    router.push(`/?period=custom&from=${fromVal}&to=${toVal}`)
+  }
+
+  return (
+    <div className="mb-3">
+      <div className="flex flex-wrap gap-1.5">
+        {PERIOD_OPTIONS.map(opt => (
+          <button
+            key={opt.key}
+            onClick={() => select(opt.key)}
+            className="px-3 py-1 rounded-[8px] text-xs font-bold transition-colors"
+            style={active === opt.key
+              ? { background: 'var(--color-saffron)', color: '#fff' }
+              : { background: 'var(--color-surface)', color: 'var(--color-muted)', border: '1px solid var(--color-border)' }
+            }
+          >
+            {opt.label}
+          </button>
+        ))}
+      </div>
+      {showCustom && (
+        <div className="flex flex-wrap items-end gap-2 mt-2">
+          <div className="flex flex-col gap-0.5">
+            <label className="text-[9px] font-bold uppercase tracking-wide" style={{ color: 'var(--color-muted)' }}>From</label>
+            <input type="date" value={fromVal} onChange={e => setFromVal(e.target.value)}
+              className="rounded-[7px] px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-saffron"
+              style={{ border: '1px solid var(--color-border)', color: 'var(--color-ink)', background: 'var(--color-cream)' }} />
+          </div>
+          <div className="flex flex-col gap-0.5">
+            <label className="text-[9px] font-bold uppercase tracking-wide" style={{ color: 'var(--color-muted)' }}>To</label>
+            <input type="date" value={toVal} onChange={e => setToVal(e.target.value)}
+              className="rounded-[7px] px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-saffron"
+              style={{ border: '1px solid var(--color-border)', color: 'var(--color-ink)', background: 'var(--color-cream)' }} />
+          </div>
+          <button
+            onClick={applyCustom}
+            disabled={!fromVal || !toVal}
+            className="px-3 py-1 rounded-[7px] text-xs font-bold"
+            style={{ background: 'var(--color-saffron)', color: '#fff', opacity: !fromVal || !toVal ? 0.5 : 1 }}
+          >
+            Apply
+          </button>
+        </div>
+      )}
+    </div>
+  )
+}
+
 export function DashboardModule({ data }: { data: DashboardData }) {
   const { currency } = useAppSettings()
   const d = data
@@ -185,16 +267,16 @@ export function DashboardModule({ data }: { data: DashboardData }) {
 
       {/* ── Billing KPIs (A La Carte orders) ── */}
       <SectionLabel>Orders Billed</SectionLabel>
+      <PeriodFilter active={d.activePeriod} periodFrom={d.periodFrom} periodTo={d.periodTo} />
       <div className="grid gap-3 mb-2" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(155px, 1fr))' }}>
-        <KPI label="Today Billed" value={`${currency} ${d.todayBilled.toFixed(2)}`} color={C.saffron}
-          badge="Today" href="/orders" />
-        <KPI label="Month Billed" value={`${currency} ${d.monthBilled.toFixed(2)}`} color={C.blue}
-          sub={momBilledLabel} href="/bills" />
+        <KPI label="Billed" value={`${currency} ${d.periodBilled.toFixed(2)}`} color={C.saffron}
+          badge={d.periodLabel} href="/orders" />
+        <KPI label="Collected" value={`${currency} ${d.periodCollected.toFixed(2)}`} color={C.green}
+          badge={d.periodLabel} href="/payments" />
         <KPI label="Total Outstanding" value={`${currency} ${d.totalOutstandingOrders.toFixed(2)}`} color={C.red}
           sub="unpaid orders across all customers" href="/bills" />
-        <KPI label="Total Collected" value={`${currency} ${d.monthRevenue.toFixed(2)}`} color={C.green}
-          sub={momPayPct !== null ? `${momPayPct > 0 ? '+' : ''}${momPayPct.toFixed(1)}% vs last month` : 'this month'}
-          href="/payments" />
+        <KPI label="Month Billed" value={`${currency} ${d.monthBilled.toFixed(2)}`} color={C.blue}
+          sub={momBilledLabel} href="/bills" />
       </div>
 
       {/* ── Invoice KPIs ── */}
