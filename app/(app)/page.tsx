@@ -128,7 +128,7 @@ export default async function DashboardPage({
   ])
 
   // ── Large order queries — paginated to bypass 1,000-row limit ──────────────
-  const [monthOrderRows, lastMonthOrderRows, unpaidOrderRows, billed30dRows, periodOrderRows] = await Promise.all([
+  const [monthOrderRows, lastMonthOrderRows, allOrderRows, billed30dRows, periodOrderRows, allPaymentRows] = await Promise.all([
     fetchAllPages(({ from, to }) =>
       admin.from('orders').select('total_amount')
         .gte('order_date', monthStart).lt('order_date', monthEnd)
@@ -143,10 +143,10 @@ export default async function DashboardPage({
         .range(from, to) as any
     ) as Promise<{ total_amount: string }[]>,
 
+    // All-time orders (for outstanding netting) — no payment_status filter
     fetchAllPages(({ from, to }) =>
       admin.from('orders')
         .select('customer_id, total_amount, customers(full_name, customer_code)')
-        .in('payment_status', ['unpaid', 'partial'])
         .not('order_status', 'in', EXCLUDE_STATUSES)
         .range(from, to) as any
     ) as Promise<{ customer_id: string; total_amount: string; customers: { full_name: string; customer_code: string } | null }[]>,
@@ -164,6 +164,14 @@ export default async function DashboardPage({
         .not('order_status', 'in', EXCLUDE_STATUSES)
         .range(from, to) as any
     ) as Promise<{ total_amount: string }[]>,
+
+    // All-time payments for outstanding netting
+    fetchAllPages(({ from, to }) =>
+      admin.from('payments')
+        .select('customer_id, amount')
+        .is('voided_at', null)
+        .range(from, to) as any
+    ) as Promise<{ customer_id: string; amount: string }[]>,
   ])
 
   // Period payments (always < 1,000 for single period)
@@ -185,21 +193,34 @@ export default async function DashboardPage({
   const todayBilled     = (todayOrderAmounts ?? []).reduce((s, o) => s + parseFloat(String(o.total_amount)), 0)
   const monthBilled     = monthOrderRows.reduce((s, o) => s + parseFloat(String(o.total_amount)), 0)
   const lastMonthBilled = lastMonthOrderRows.reduce((s, o) => s + parseFloat(String(o.total_amount)), 0)
-  const totalOutstandingOrders = unpaidOrderRows.reduce((s, o) => s + parseFloat(String(o.total_amount)), 0)
 
-  // Top debtors — aggregate unpaid orders by customer
-  const debtorMap = new Map<string, { full_name: string; customer_code: string; outstanding: number }>()
-  for (const o of unpaidOrderRows) {
+  // ── True outstanding: per-customer (all orders billed − all payments received) ──
+  const custOrderTotals = new Map<string, { total: number; full_name: string; customer_code: string }>()
+  for (const o of allOrderRows) {
     const cust = o.customers
-    if (!cust) continue
-    const existing = debtorMap.get(o.customer_id)
+    if (!cust || !o.customer_id) continue
     const amt = parseFloat(String(o.total_amount))
-    if (existing) {
-      existing.outstanding += amt
-    } else {
-      debtorMap.set(o.customer_id, { full_name: cust.full_name, customer_code: cust.customer_code, outstanding: amt })
+    const existing = custOrderTotals.get(o.customer_id)
+    if (existing) { existing.total += amt }
+    else { custOrderTotals.set(o.customer_id, { total: amt, full_name: cust.full_name, customer_code: cust.customer_code }) }
+  }
+
+  const custPayTotals = new Map<string, number>()
+  for (const p of allPaymentRows) {
+    custPayTotals.set(p.customer_id, (custPayTotals.get(p.customer_id) ?? 0) + parseFloat(String(p.amount)))
+  }
+
+  let totalOutstandingOrders = 0
+  const debtorMap = new Map<string, { full_name: string; customer_code: string; outstanding: number }>()
+  for (const [customerId, data] of custOrderTotals) {
+    const paid = custPayTotals.get(customerId) ?? 0
+    const outstanding = Math.max(0, data.total - paid)
+    if (outstanding > 0.01) {
+      totalOutstandingOrders += outstanding
+      debtorMap.set(customerId, { full_name: data.full_name, customer_code: data.customer_code, outstanding })
     }
   }
+
   const topDebtors = [...debtorMap.values()]
     .sort((a, b) => b.outstanding - a.outstanding)
     .slice(0, 5)
