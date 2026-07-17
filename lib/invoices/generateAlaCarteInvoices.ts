@@ -26,7 +26,10 @@ export async function generateAlaCarteInvoices(
   const admin = createAdminClient()
 
   const [y, m] = forMonth.split('-').map(Number)
-  const periodStart = `${forMonth}-01`
+  const prevYear  = m === 1 ? y - 1 : y
+  const prevMonth = m === 1 ? 12 : m - 1
+  const prevMonthStr = prevMonth < 10 ? `0${prevMonth}` : `${prevMonth}`
+  const periodStart = `${prevYear}-${prevMonthStr}-26`
   const periodEnd   = `${forMonth}-25`
 
   const monthLabel = new Date(y, m - 1, 1).toLocaleDateString('en-GB', {
