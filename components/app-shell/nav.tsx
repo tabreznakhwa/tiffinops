@@ -9,6 +9,7 @@ interface NavItem {
   label: string
   icon: React.ReactNode
   badge?: number
+  notForRoles?: string[]
 }
 
 const NAV_ITEMS: NavItem[] = [
@@ -55,6 +56,7 @@ const NAV_ITEMS: NavItem[] = [
   {
     href: '/',
     label: 'Dashboard',
+    notForRoles: ['data_entry'],
     icon: (
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
         <rect x="3" y="3" width="7" height="9" rx="1.5"/>
@@ -156,16 +158,12 @@ export function Nav({ pendingApprovals = 0, isOwner = false, userRole }: NavProp
   }
 
   return (
-    <nav
-      className="sticky z-30 flex gap-0.5 px-3 overflow-x-auto -webkit-overflow-scrolling-touch border-b"
-      style={{
-        top: 64,
-        background: 'var(--color-cream)',
-        borderColor: 'var(--color-border)',
-      }}
-    >
+    <div className="sticky z-30 border-b border-border bg-cream [top:64px] relative">
+      <nav className="flex gap-0.5 px-3 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
       {NAV_ITEMS.filter(item =>
-        userRole === 'packer' ? PACKER_ROUTES.has(item.href) : true
+        userRole === 'packer'
+          ? PACKER_ROUTES.has(item.href)
+          : !item.notForRoles?.includes(userRole ?? '')
       ).map((item) => {
         const active = isActive(item.href)
         const badge = item.href === '/approvals' && pendingApprovals > 0 ? pendingApprovals : 0
@@ -184,10 +182,7 @@ export function Nav({ pendingApprovals = 0, isOwner = false, userRole }: NavProp
             <span className="w-[17px] h-[17px] flex-shrink-0">{item.icon}</span>
             {item.label}
             {badge > 0 && (
-              <span
-                className="text-[10.5px] font-bold rounded-[9px] px-1.5 py-0.5 leading-[1.5]"
-                style={{ background: 'var(--color-red)', color: '#fff' }}
-              >
+              <span className="text-[10.5px] font-bold rounded-[9px] px-1.5 py-0.5 leading-[1.5] bg-red text-white">
                 {badge}
               </span>
             )}
@@ -255,6 +250,13 @@ export function Nav({ pendingApprovals = 0, isOwner = false, userRole }: NavProp
           </Link>
         </>
       )}
-    </nav>
+      </nav>
+      {/* Fade hint — visible on narrow screens to indicate more items exist */}
+      <div
+        className="absolute right-0 inset-y-0 w-10 pointer-events-none sm:hidden"
+        style={{ background: 'linear-gradient(to left, var(--color-cream) 20%, transparent)' }}
+        aria-hidden="true"
+      />
+    </div>
   )
 }
