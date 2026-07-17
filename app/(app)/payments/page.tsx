@@ -24,7 +24,7 @@ export default async function PaymentsPage() {
       .from('payments')
       .select(`
         id, payment_number, customer_id, payment_date, amount,
-        mode, reference_number, notes, voided_at, void_reason,
+        mode, reference_number, notes, is_advance, voided_at, void_reason,
         customers(id, full_name, customer_code, mobile_number, area)
       `)
       .order('payment_date', { ascending: false })

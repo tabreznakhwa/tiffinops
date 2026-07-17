@@ -556,6 +556,7 @@ export type Database = {
           mode: Database['public']['Enums']['payment_mode']
           reference_number: string | null
           notes: string | null
+          is_advance: boolean
           received_by: string
           created_at: string
           voided_at: string | null
@@ -572,6 +573,7 @@ export type Database = {
           mode: Database['public']['Enums']['payment_mode']
           reference_number?: string | null
           notes?: string | null
+          is_advance?: boolean
           received_by: string
           created_at?: string
           voided_at?: string | null
@@ -588,6 +590,7 @@ export type Database = {
           mode?: Database['public']['Enums']['payment_mode']
           reference_number?: string | null
           notes?: string | null
+          is_advance?: boolean
           received_by?: string
           created_at?: string
           voided_at?: string | null
@@ -740,6 +743,9 @@ export type Database = {
           bank_account_name: string
           bank_iban: string
           bank_name: string
+          cash_opening_balance: string
+          bank_opening_balance: string
+          opening_balance_date: string | null
           updated_at: string
         }
         Insert: {
@@ -759,6 +765,9 @@ export type Database = {
           bank_account_name?: string
           bank_iban?: string
           bank_name?: string
+          cash_opening_balance?: string
+          bank_opening_balance?: string
+          opening_balance_date?: string | null
           updated_at?: string
         }
         Update: {
@@ -778,6 +787,9 @@ export type Database = {
           bank_account_name?: string
           bank_iban?: string
           bank_name?: string
+          cash_opening_balance?: string
+          bank_opening_balance?: string
+          opening_balance_date?: string | null
           updated_at?: string
         }
         Relationships: []

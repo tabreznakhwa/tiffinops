@@ -132,9 +132,12 @@ export function SettingsModule({ settings }: { settings: AppSettings }) {
   const [vatPercent,      setVatPercent]      = useState(settings.vat_percent)
   const [currency,        setCurrency]        = useState(settings.currency)
 
-  const [bankAccountName, setBankAccountName] = useState(settings.bank_account_name)
-  const [bankIban,        setBankIban]        = useState(settings.bank_iban)
-  const [bankName,        setBankName]        = useState(settings.bank_name)
+  const [bankAccountName,     setBankAccountName]     = useState(settings.bank_account_name)
+  const [bankIban,            setBankIban]            = useState(settings.bank_iban)
+  const [bankName,            setBankName]            = useState(settings.bank_name)
+  const [cashOpeningBalance,  setCashOpeningBalance]  = useState(settings.cash_opening_balance ?? '0')
+  const [bankOpeningBalance,  setBankOpeningBalance]  = useState(settings.bank_opening_balance ?? '0')
+  const [openingBalanceDate,  setOpeningBalanceDate]  = useState(settings.opening_balance_date ?? '')
 
   const [invoicePrefix,   setInvoicePrefix]   = useState(settings.invoice_prefix)
   const [orderPrefix,     setOrderPrefix]     = useState(settings.order_prefix)
@@ -162,20 +165,23 @@ export function SettingsModule({ settings }: { settings: AppSettings }) {
 
     startTransition(async () => {
       const result = await updateSettings({
-        business_name:       businessName,
-        contact_phone:       contactPhone || null,
-        contact_email:       contactEmail || null,
+        business_name:         businessName,
+        contact_phone:         contactPhone || null,
+        contact_email:         contactEmail || null,
         country: country as 'UAE' | 'Saudi Arabia' | 'Bahrain' | 'Oman' | 'Kuwait' | 'Qatar',
-        vat_percent:         vatPercent,
+        vat_percent:           vatPercent,
         currency,
-        bank_account_name:   bankAccountName,
-        bank_iban:           bankIban,
-        bank_name:           bankName,
-        invoice_prefix:      invoicePrefix,
-        order_prefix:        orderPrefix,
-        payment_prefix:      paymentPrefix,
-        customer_prefix:     customerPrefix,
-        default_billing_day: billingDay,
+        bank_account_name:     bankAccountName,
+        bank_iban:             bankIban,
+        bank_name:             bankName,
+        invoice_prefix:        invoicePrefix,
+        order_prefix:          orderPrefix,
+        payment_prefix:        paymentPrefix,
+        customer_prefix:       customerPrefix,
+        default_billing_day:   billingDay,
+        cash_opening_balance:  cashOpeningBalance,
+        bank_opening_balance:  bankOpeningBalance,
+        opening_balance_date:  openingBalanceDate || null,
       })
 
       if (result.error) {
@@ -339,7 +345,59 @@ export function SettingsModule({ settings }: { settings: AppSettings }) {
           </Field>
         </Section>
 
-        {/* ── Section 4: Number Prefixes ────────────────────────────────────── */}
+        {/* ── Section 4: Opening Balances ──────────────────────────────────── */}
+        <Section title="Opening Balances" defaultOpen={false}>
+          <div
+            className="text-xs px-3 py-2 rounded-[8px]"
+            style={{
+              background: 'var(--color-blue-soft, #EFF6FF)',
+              color: 'var(--color-blue)',
+              border: '1px solid #BFDBFE',
+            }}
+          >
+            Set the starting balances for the Cash Book and Bank Book. These represent funds on hand before TiffinOps started tracking.
+          </div>
+
+          <Field label="Balance As Of Date" hint="The date these opening balances were recorded">
+            <input
+              type="date"
+              value={openingBalanceDate}
+              onChange={e => setOpeningBalanceDate(e.target.value)}
+              className={inputClass}
+              style={inputStyle}
+            />
+          </Field>
+
+          <div className="grid sm:grid-cols-2 gap-4">
+            <Field label="Cash Opening Balance" hint="Cash on hand before tracking started">
+              <input
+                type="number"
+                value={cashOpeningBalance}
+                onChange={e => setCashOpeningBalance(e.target.value)}
+                min="0"
+                step="0.01"
+                placeholder="0.00"
+                className={inputClass}
+                style={inputStyle}
+              />
+            </Field>
+
+            <Field label="Bank Opening Balance" hint="Bank balance before tracking started">
+              <input
+                type="number"
+                value={bankOpeningBalance}
+                onChange={e => setBankOpeningBalance(e.target.value)}
+                min="0"
+                step="0.01"
+                placeholder="0.00"
+                className={inputClass}
+                style={inputStyle}
+              />
+            </Field>
+          </div>
+        </Section>
+
+        {/* ── Section 5: Number Prefixes ────────────────────────────────────── */}
         <Section title="Number Prefixes" defaultOpen={false}>
           <div className="grid sm:grid-cols-2 gap-4">
             <Field label="Invoice Prefix *">

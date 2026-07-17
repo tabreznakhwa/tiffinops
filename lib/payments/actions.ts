@@ -19,6 +19,7 @@ const RecordPaymentSchema = z.object({
   reference_number: z.string().optional().transform(v => v?.trim() || null),
   payment_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Invalid date'),
   notes: z.string().optional().transform(v => v?.trim() || null),
+  is_advance: z.boolean().optional().default(false),
 })
 
 export async function recordPayment(input: {
@@ -28,6 +29,7 @@ export async function recordPayment(input: {
   reference_number?: string
   payment_date: string
   notes?: string
+  is_advance?: boolean
 }): Promise<PaymentActionResult> {
   const user = await requireAuth()
 
@@ -62,6 +64,7 @@ export async function recordPayment(input: {
     reference_number: parsed.data.reference_number,
     payment_date: parsed.data.payment_date,
     notes: parsed.data.notes,
+    is_advance: parsed.data.is_advance ?? false,
     received_by: user.id,
   })
 

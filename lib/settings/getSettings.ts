@@ -17,6 +17,9 @@ export type AppSettings = {
   bank_account_name: string
   bank_iban: string
   bank_name: string
+  cash_opening_balance: string
+  bank_opening_balance: string
+  opening_balance_date: string | null
   updated_at: string
 }
 
@@ -37,6 +40,9 @@ export const FALLBACK: AppSettings = {
   bank_account_name: 'Apna Chulha Restaurant LLC',
   bank_iban: 'AE330860000009271445425',
   bank_name: 'WIO BANK',
+  cash_opening_balance: '0',
+  bank_opening_balance: '0',
+  opening_balance_date: null,
   updated_at: new Date().toISOString(),
 }
 

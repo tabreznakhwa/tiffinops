@@ -26,6 +26,7 @@ export type BalanceSummary = {
     amount: string
     mode: string
     payment_date: string
+    is_advance: boolean
   }[]
 }
 
@@ -441,6 +442,11 @@ export function CustomerDetailView({
                     <span style={{ color: 'var(--color-muted)' }}>
                       {' · '}{p.payment_number}{' · '}{fmtDate(p.payment_date)}
                     </span>
+                    {p.is_advance && (
+                      <span className="ml-1.5 text-[10px] font-bold px-1.5 py-0.5 rounded-full align-middle" style={{ background: 'var(--color-purple-soft, #F5F3FF)', color: 'var(--color-purple, #7C3AED)' }}>
+                        ADV
+                      </span>
+                    )}
                   </div>
                   <span className="num font-semibold" style={{ color: 'var(--color-green)' }}>
                     {currency} {parseFloat(p.amount).toFixed(2)}
@@ -457,6 +463,25 @@ export function CustomerDetailView({
             </Link>
           </div>
         )}
+
+        {/* Ledger link */}
+        <div
+          className="mt-3 pt-3"
+          style={{ borderTop: '1px solid var(--color-border)' }}
+        >
+          <Link
+            href={`/customers/${customer.id}/ledger`}
+            className="inline-flex items-center gap-1.5 text-sm font-semibold transition-opacity hover:opacity-70"
+            style={{ color: 'var(--color-ink)' }}
+          >
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-4 h-4" aria-hidden="true">
+              <path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2"/>
+              <rect x="9" y="3" width="6" height="4" rx="1"/>
+              <path d="M9 12h6M9 16h4"/>
+            </svg>
+            View Full Ledger
+          </Link>
+        </div>
       </div>
 
       {/* Recent Orders */}

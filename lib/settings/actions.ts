@@ -10,20 +10,23 @@ export type SettingsActionResult = { error?: string }
 const GULF_COUNTRIES = ['UAE', 'Saudi Arabia', 'Bahrain', 'Oman', 'Kuwait', 'Qatar'] as const
 
 const SettingsSchema = z.object({
-  business_name:     z.string().min(1, 'Business name is required').max(120),
-  contact_phone:     z.string().max(30).nullable().optional(),
-  contact_email:     z.string().email('Enter a valid email address').max(120).nullable().optional(),
-  country:           z.enum(GULF_COUNTRIES, { message: 'Select a valid country' }),
-  vat_percent:       z.coerce.number().min(0, 'VAT cannot be negative').max(100, 'VAT cannot exceed 100%'),
-  currency:          z.string().min(1, 'Currency is required').max(10),
-  bank_account_name: z.string().max(120).optional().default(''),
-  bank_iban:         z.string().max(80).optional().default(''),
-  bank_name:         z.string().max(120).optional().default(''),
-  invoice_prefix:    z.string().min(1, 'Invoice prefix is required').max(20),
-  order_prefix:      z.string().min(1, 'Order prefix is required').max(20),
-  payment_prefix:    z.string().min(1, 'Payment prefix is required').max(20),
-  customer_prefix:   z.string().min(1, 'Customer prefix is required').max(20),
-  default_billing_day: z.coerce.number().int().min(1).max(28),
+  business_name:          z.string().min(1, 'Business name is required').max(120),
+  contact_phone:          z.string().max(30).nullable().optional(),
+  contact_email:          z.string().email('Enter a valid email address').max(120).nullable().optional(),
+  country:                z.enum(GULF_COUNTRIES, { message: 'Select a valid country' }),
+  vat_percent:            z.coerce.number().min(0, 'VAT cannot be negative').max(100, 'VAT cannot exceed 100%'),
+  currency:               z.string().min(1, 'Currency is required').max(10),
+  bank_account_name:      z.string().max(120).optional().default(''),
+  bank_iban:              z.string().max(80).optional().default(''),
+  bank_name:              z.string().max(120).optional().default(''),
+  invoice_prefix:         z.string().min(1, 'Invoice prefix is required').max(20),
+  order_prefix:           z.string().min(1, 'Order prefix is required').max(20),
+  payment_prefix:         z.string().min(1, 'Payment prefix is required').max(20),
+  customer_prefix:        z.string().min(1, 'Customer prefix is required').max(20),
+  default_billing_day:    z.coerce.number().int().min(1).max(28),
+  cash_opening_balance:   z.coerce.number().min(0).optional().default(0),
+  bank_opening_balance:   z.coerce.number().min(0).optional().default(0),
+  opening_balance_date:   z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional(),
 })
 
 export type UpdateSettingsInput = z.input<typeof SettingsSchema>
@@ -42,6 +45,9 @@ export async function updateSettings(input: UpdateSettingsInput): Promise<Settin
     bank_account_name,
     bank_iban,
     bank_name,
+    cash_opening_balance,
+    bank_opening_balance,
+    opening_balance_date,
     ...rest
   } = parsed.data
 
@@ -50,13 +56,16 @@ export async function updateSettings(input: UpdateSettingsInput): Promise<Settin
     .from('app_settings')
     .update({
       ...rest,
-      vat_percent:       String(vat_percent),
-      contact_phone:     contact_phone ?? null,
-      contact_email:     contact_email ?? null,
-      bank_account_name: bank_account_name ?? '',
-      bank_iban:         bank_iban ?? '',
-      bank_name:         bank_name ?? '',
-      updated_at:        new Date().toISOString(),
+      vat_percent:           String(vat_percent),
+      contact_phone:         contact_phone ?? null,
+      contact_email:         contact_email ?? null,
+      bank_account_name:     bank_account_name ?? '',
+      bank_iban:             bank_iban ?? '',
+      bank_name:             bank_name ?? '',
+      cash_opening_balance:  String(cash_opening_balance ?? 0),
+      bank_opening_balance:  String(bank_opening_balance ?? 0),
+      opening_balance_date:  opening_balance_date ?? null,
+      updated_at:            new Date().toISOString(),
     })
     .eq('id', 1)
 

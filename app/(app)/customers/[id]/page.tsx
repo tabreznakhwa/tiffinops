@@ -49,7 +49,7 @@ export default async function CustomerDetailPage({
     // All non-voided payments, newest first
     admin
       .from('payments')
-      .select('id, payment_number, amount, mode, payment_date')
+      .select('id, payment_number, amount, mode, payment_date, is_advance')
       .eq('customer_id', id)
       .is('voided_at', null)
       .order('payment_date', { ascending: false }),
@@ -102,6 +102,7 @@ export default async function CustomerDetailPage({
       amount: String(p.amount),
       mode: p.mode as string,
       payment_date: p.payment_date,
+      is_advance: (p as { is_advance?: boolean }).is_advance ?? false,
     })),
   }
 

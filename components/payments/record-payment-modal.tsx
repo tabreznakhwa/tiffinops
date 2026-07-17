@@ -56,6 +56,7 @@ export function RecordPaymentModal({
   const [reference, setReference]   = useState('')
   const [date, setDate]             = useState(todayDubai)
   const [notes, setNotes]           = useState('')
+  const [isAdvance, setIsAdvance]   = useState(false)
   const [loading, setLoading]       = useState(false)
   const [error, setError]           = useState('')
 
@@ -85,6 +86,7 @@ export function RecordPaymentModal({
       reference_number: reference.trim() || undefined,
       payment_date: date,
       notes: notes.trim() || undefined,
+      is_advance: isAdvance,
     })
 
     setLoading(false)
@@ -285,6 +287,38 @@ export function RecordPaymentModal({
               style={{ background: 'var(--color-cream)', border: '1px solid var(--color-border)', color: 'var(--color-ink)' }}
             />
           </div>
+
+          {/* Advance toggle */}
+          <button
+            type="button"
+            onClick={() => setIsAdvance(v => !v)}
+            className="flex items-center gap-3 w-full rounded-[10px] px-3 py-2.5 text-left transition-colors"
+            style={{
+              background: isAdvance ? 'var(--color-purple-soft, #F5F3FF)' : 'var(--color-cream)',
+              border: `1.5px solid ${isAdvance ? 'var(--color-purple, #7C3AED)' : 'var(--color-border)'}`,
+            }}
+          >
+            <span
+              className="flex-shrink-0 w-[18px] h-[18px] rounded-[5px] flex items-center justify-center transition-colors"
+              style={{
+                background: isAdvance ? 'var(--color-purple, #7C3AED)' : 'var(--color-border)',
+              }}
+            >
+              {isAdvance && (
+                <svg viewBox="0 0 12 12" fill="none" className="w-3 h-3">
+                  <path d="M2 6l3 3 5-5" stroke="#fff" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
+                </svg>
+              )}
+            </span>
+            <div className="flex-1">
+              <p className="text-sm font-semibold" style={{ color: isAdvance ? 'var(--color-purple, #7C3AED)' : 'var(--color-ink)' }}>
+                Mark as Advance Payment
+              </p>
+              <p className="text-xs" style={{ color: 'var(--color-muted)' }}>
+                Customer paid in advance before orders are billed
+              </p>
+            </div>
+          </button>
 
           {error && (
             <p className="text-sm font-semibold" style={{ color: 'var(--color-red)' }}>{error}</p>

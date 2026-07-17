@@ -20,6 +20,7 @@ export type PaymentRow = {
   mode: PaymentMode
   reference_number: string | null
   notes: string | null
+  is_advance: boolean
   voided_at: string | null
   void_reason: string | null
   customers: {
@@ -430,6 +431,11 @@ export function PaymentsModule({
                           <p className="text-xs mt-0.5 italic" style={{ color: 'var(--color-muted)' }}>
                             {pay.notes}
                           </p>
+                        )}
+                        {pay.is_advance && !isVoided && (
+                          <span className="inline-block mt-1 text-[10px] font-bold px-1.5 py-0.5 rounded-full" style={{ background: 'var(--color-purple-soft, #F5F3FF)', color: 'var(--color-purple, #7C3AED)' }}>
+                            ADVANCE
+                          </span>
                         )}
                         {isVoided && (
                           <p className="text-xs mt-1 font-semibold" style={{ color: 'var(--color-red)' }}>

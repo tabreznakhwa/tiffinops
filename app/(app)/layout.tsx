@@ -2,6 +2,7 @@ import { requireAuth } from '@/lib/auth'
 import { createClient } from '@/lib/supabase/server'
 import { Topbar } from '@/components/app-shell/topbar'
 import { Nav } from '@/components/app-shell/nav'
+import { Sidebar } from '@/components/app-shell/sidebar'
 import { getSettings, FALLBACK } from '@/lib/settings/getSettings'
 import { SettingsProvider } from '@/components/settings/settings-context'
 
@@ -37,10 +38,19 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     >
       <div className="flex flex-col min-h-screen">
         <Topbar user={user} />
-        <Nav pendingApprovals={count ?? 0} isOwner={user.role === 'owner'} userRole={user.role} />
-        <main className="flex-1 mx-auto w-full max-w-[1180px] px-4 py-5 pb-24">
-          {children}
-        </main>
+        <div className="flex flex-1 min-h-0">
+          {/* Desktop: vertical sidebar */}
+          <Sidebar pendingApprovals={count ?? 0} isOwner={user.role === 'owner'} userRole={user.role} />
+          <div className="flex flex-col flex-1 min-w-0">
+            {/* Mobile: horizontal scrollable nav */}
+            <div className="md:hidden">
+              <Nav pendingApprovals={count ?? 0} isOwner={user.role === 'owner'} userRole={user.role} />
+            </div>
+            <main className="flex-1 px-4 md:px-6 py-5 pb-24">
+              {children}
+            </main>
+          </div>
+        </div>
       </div>
     </SettingsProvider>
   )
