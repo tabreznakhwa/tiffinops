@@ -123,6 +123,7 @@ const NAV_SECTIONS: NavSection[] = [
       {
         href: '/cash-book',
         label: 'Cash Book',
+        notForRoles: ['data_entry'],
         icon: (
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
             <rect x="2" y="6" width="20" height="13" rx="2"/>
@@ -135,11 +136,23 @@ const NAV_SECTIONS: NavSection[] = [
       {
         href: '/bank-book',
         label: 'Bank Book',
+        notForRoles: ['data_entry'],
         icon: (
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
             <path d="M3 9l9-6 9 6H3Z"/>
             <path d="M3 9v11h18V9"/>
             <path d="M9 9v11M15 9v11M3 15h18"/>
+          </svg>
+        ),
+      },
+      {
+        href: '/outstanding',
+        label: 'Outstanding',
+        notForRoles: ['data_entry'],
+        icon: (
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+            <circle cx="12" cy="12" r="9"/>
+            <path d="M12 8v4M12 16h.01"/>
           </svg>
         ),
       },

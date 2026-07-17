@@ -377,7 +377,7 @@ export function DashboardModule({ data }: { data: DashboardData }) {
                     <p className="text-[10px]" style={{ color: 'var(--color-muted)' }}>{r.customer_code}</p>
                   </div>
                   <span className="num font-bold text-sm ml-3" style={{ color: C.red }}>
-                    {/* currency */} AED {r.outstanding.toFixed(2)}
+                    {currency} {r.outstanding.toFixed(2)}
                   </span>
                 </div>
               ))}
@@ -410,14 +410,14 @@ export function DashboardModule({ data }: { data: DashboardData }) {
                         <span style={{ color: 'var(--color-muted)' }}> · {r.customer_code}</span>
                       </span>
                       <span className="num font-bold" style={{ color: C.red }}>
-                        AED {r.balance.toFixed(2)} due
+                        {currency} {r.balance.toFixed(2)} due
                       </span>
                     </div>
                     <div className="h-1.5 rounded-full" style={{ background: 'var(--color-border)' }}>
                       <div className="h-full rounded-full" style={{ width: `${Math.min(100, pct)}%`, background: C.green }} />
                     </div>
                     <p className="text-[10px] mt-0.5" style={{ color: 'var(--color-muted)' }}>
-                      AED {r.monthPaid.toFixed(2)} paid of AED {r.monthlyCharge.toFixed(2)}
+                      {currency} {r.monthPaid.toFixed(2)} paid of {currency} {r.monthlyCharge.toFixed(2)}
                     </p>
                   </div>
                 )
@@ -468,7 +468,7 @@ export function DashboardModule({ data }: { data: DashboardData }) {
                       </p>
                     </div>
                     <span className="num font-bold text-xs flex-shrink-0" style={{ color: isVoided ? 'var(--color-muted)' : 'var(--color-ink)' }}>
-                      AED {parseFloat(String(p.amount)).toFixed(2)}
+                      {currency} {parseFloat(String(p.amount)).toFixed(2)}
                     </span>
                   </div>
                 )

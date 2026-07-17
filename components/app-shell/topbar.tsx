@@ -25,10 +25,7 @@ export function Topbar({ user }: TopbarProps) {
   }
 
   return (
-    <header
-      className="sticky top-0 z-40 flex items-center gap-3 px-4 py-3"
-      style={{ background: 'var(--color-ink)' }}
-    >
+    <header className="sticky top-0 z-40 flex items-center gap-3 px-4 py-3 bg-ink">
       {/* Logo */}
       <div style={{ position: 'relative', width: 110, height: 36, flexShrink: 0 }}>
         <Image
@@ -65,10 +62,7 @@ export function Topbar({ user }: TopbarProps) {
 
       {/* User chip */}
       <div className="flex items-center gap-2">
-        <div
-          className="w-[30px] h-[30px] rounded-full flex items-center justify-center font-bold text-[12px] text-white flex-shrink-0"
-          style={{ background: 'var(--color-ember)' }}
-        >
+        <div className="w-[30px] h-[30px] rounded-full flex items-center justify-center font-bold text-[12px] text-white flex-shrink-0 bg-ember">
           {initials}
         </div>
         <div className="hidden sm:flex flex-col leading-tight">

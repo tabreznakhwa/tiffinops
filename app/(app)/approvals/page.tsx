@@ -112,6 +112,10 @@ export default async function ApprovalsPage() {
   const orderMap   = new Map(orders.map(o => [o.id, o]))
   const userMap    = new Map(users.map(u => [u.id, u]))
 
+  // Fetch currency for display
+  const { data: settingsRow } = await admin.from('app_settings').select('currency').eq('id', 1).single()
+  const currency = (settingsRow as { currency?: string } | null)?.currency ?? 'AED'
+
   function fmtDate(iso: string) {
     return formatInTimeZone(new Date(iso), 'Asia/Dubai', 'd MMM yyyy')
   }
@@ -128,16 +132,24 @@ export default async function ApprovalsPage() {
     if (req.target_table === 'payment') {
       const p = paymentMap.get(req.target_id)
       if (p) {
-        target_label    = `${p.payment_number} · AED ${parseFloat(String(p.amount)).toFixed(2)}`
+        target_label    = `${p.payment_number} · ${currency} ${parseFloat(String(p.amount)).toFixed(2)}`
         target_customer = p.customers?.full_name ?? '—'
         target_date     = fmtDate(p.payment_date + 'T00:00:00Z')
       }
     } else if (req.target_table === 'order') {
       const o = orderMap.get(req.target_id)
       if (o) {
-        target_label    = `${o.order_number} · AED ${parseFloat(String(o.total_amount)).toFixed(2)}`
+        target_label    = `${o.order_number} · ${currency} ${parseFloat(String(o.total_amount)).toFixed(2)}`
         target_customer = o.customers?.full_name ?? '—'
         target_date     = fmtDate(o.order_date + 'T00:00:00Z')
+      }
+    } else if (req.target_table === 'invoice') {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const changes = req.proposed_changes as any
+      if (changes?.type === 'ala_carte_batch') {
+        target_label    = `A La Carte batch — ${changes.month} · ${changes.customer_count} customers · ${currency} ${Number(changes.total_amount).toFixed(2)}`
+        target_customer = `${changes.customer_count} customers`
+        target_date     = changes.month
       }
     }
 

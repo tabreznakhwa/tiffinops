@@ -93,6 +93,45 @@ export async function approveRequest(
 
       revalidatePath('/orders')
     }
+  } else if (req.request_type === 'edit' && req.target_table === 'invoice') {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const changes = req.proposed_changes as any
+    if (changes?.type === 'ala_carte_batch' && Array.isArray(changes.invoice_ids)) {
+      const today = new Date().toISOString().slice(0, 10)
+      const invoiceIds: string[] = changes.invoice_ids
+
+      const { data: invoices } = await admin
+        .from('invoices')
+        .select('id, invoice_number, customer_id, total_amount, status')
+        .in('id', invoiceIds)
+        .eq('status', 'draft')
+
+      for (const inv of invoices ?? []) {
+        const { error: issueErr } = await admin
+          .from('invoices')
+          .update({ status: 'issued' })
+          .eq('id', inv.id)
+        if (issueErr) return { error: `Failed to issue invoice ${inv.invoice_number}: ${issueErr.message}` }
+
+        const { error: ledgerErr } = await admin.from('ledger_entries').insert({
+          customer_id:     inv.customer_id,
+          entry_date:      today,
+          entry_type:      'invoice',
+          debit_amount:    parseFloat(String(inv.total_amount)).toFixed(2),
+          credit_amount:   '0.00',
+          description:     `Invoice ${inv.invoice_number}`,
+          reference_table: 'invoices',
+          reference_id:    inv.id,
+          created_by:      user.id,
+        })
+        if (ledgerErr) {
+          await admin.from('invoices').update({ status: 'draft' }).eq('id', inv.id)
+          return { error: `Ledger entry failed for ${inv.invoice_number}: ${ledgerErr.message}` }
+        }
+      }
+
+      revalidatePath('/invoices')
+    }
   }
 
   // Mark the request as approved
@@ -130,6 +169,27 @@ export async function rejectRequest(
   }
 
   const admin = createAdminClient()
+
+  // For ala_carte_batch rejections, cancel the draft invoices
+  const { data: reqData } = await admin
+    .from('approval_requests')
+    .select('proposed_changes, target_table, request_type')
+    .eq('id', id)
+    .eq('status', 'pending')
+    .single()
+
+  if (reqData?.request_type === 'edit' && reqData?.target_table === 'invoice') {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const changes = reqData.proposed_changes as any
+    if (changes?.type === 'ala_carte_batch' && Array.isArray(changes.invoice_ids)) {
+      await admin
+        .from('invoices')
+        .update({ status: 'cancelled', notes: `Rejected: ${resolution_note.trim()}` })
+        .in('id', changes.invoice_ids)
+        .eq('status', 'draft')
+      revalidatePath('/invoices')
+    }
+  }
 
   const { error } = await admin
     .from('approval_requests')

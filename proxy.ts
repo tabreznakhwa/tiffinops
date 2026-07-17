@@ -35,10 +35,6 @@ export async function proxy(request: NextRequest) {
 
   const { pathname } = request.nextUrl
 
-  // ── diagnostic ──────────────────────────────────────────────────────────────
-  console.log('[mw]', pathname, 'user:', user?.id ?? 'none')
-  // ────────────────────────────────────────────────────────────────────────────
-
   const isPublicPath =
     pathname.startsWith('/login') ||
     pathname.startsWith('/pending') ||
@@ -56,17 +52,13 @@ export async function proxy(request: NextRequest) {
   // proxy because is_active_user() creates a recursive RLS evaluation.
   let status: string | null = null
   try {
-    const serviceKeyPresent = !!process.env.SUPABASE_SERVICE_ROLE_KEY
-    console.log('[proxy] uid:', user.id, '| path:', pathname, '| service key present:', serviceKeyPresent)
-
     const admin = createAdminClient()
-    const { data, error } = await admin
+    const { data } = await admin
       .from('users')
       .select('status')
       .eq('id', user.id)
       .single()
 
-    console.log('[proxy] users query → data:', JSON.stringify(data), '| error:', error?.message ?? 'none')
     status = data?.status ?? null
   } catch (err) {
     // If SUPABASE_SERVICE_ROLE_KEY is missing or the query fails, fail safe:
@@ -74,8 +66,6 @@ export async function proxy(request: NextRequest) {
     console.error('[proxy] admin client threw:', err instanceof Error ? err.message : String(err))
     status = null
   }
-
-  console.log('[proxy] resolved status:', status, '→ isPending:', !status || status === 'pending')
 
   const isPending = !status || status === 'pending'
   const isInactive = status === 'inactive'
@@ -106,6 +96,6 @@ export async function proxy(request: NextRequest) {
 
 export const config = {
   matcher: [
-    '/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
+    '/((?!_next/static|_next/image|favicon.ico|api/cron/|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
   ],
 }
