@@ -2,7 +2,8 @@
 
 import { useState, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
-import { Plus, Search, AlertTriangle, FileSpreadsheet, Printer, X } from 'lucide-react'
+import { Plus, Search, AlertTriangle, FileSpreadsheet, Printer } from 'lucide-react'
+import { DatePresetPicker } from '@/components/ui/date-preset-picker'
 import { voidPayment } from '@/lib/payments/actions'
 import { requestApproval } from '@/lib/approvals/actions'
 import { RecordPaymentModal } from './record-payment-modal'
@@ -262,33 +263,11 @@ export function PaymentsModule({
             style={{ background: 'var(--color-surface)', border: '1px solid var(--color-border)', color: 'var(--color-ink)' }}
           />
         </div>
-        <div className="flex items-center gap-1.5">
-          <input
-            type="date"
-            value={fromDate}
-            onChange={e => setFromDate(e.target.value)}
-            className="rounded-[8px] px-2 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-saffron"
-            style={{ background: 'var(--color-surface)', border: '1px solid var(--color-border)', color: 'var(--color-ink)' }}
-          />
-          <span className="text-xs" style={{ color: 'var(--color-muted)' }}>to</span>
-          <input
-            type="date"
-            value={toDate}
-            onChange={e => setToDate(e.target.value)}
-            className="rounded-[8px] px-2 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-saffron"
-            style={{ background: 'var(--color-surface)', border: '1px solid var(--color-border)', color: 'var(--color-ink)' }}
-          />
-          {hasDateFilter && (
-            <button
-              onClick={() => { setFromDate(''); setToDate('') }}
-              className="flex items-center gap-0.5 px-2 py-1.5 rounded-[8px] text-xs font-bold"
-              style={{ background: 'var(--color-border)', color: 'var(--color-muted)' }}
-              title="Clear date filter"
-            >
-              <X size={11} /> Clear
-            </button>
-          )}
-        </div>
+        <DatePresetPicker
+          fromDate={fromDate}
+          toDate={toDate}
+          onChange={(from, to) => { setFromDate(from); setToDate(to) }}
+        />
         {voided.length > 0 && (
           <button
             onClick={() => setShowVoided(v => !v)}

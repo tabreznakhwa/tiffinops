@@ -2,7 +2,8 @@
 
 import { useState, useMemo, useTransition } from 'react'
 import Link from 'next/link'
-import { Plus, Search, Printer, X, ChevronDown } from 'lucide-react'
+import { Plus, Search, Printer, X } from 'lucide-react'
+import { DatePresetPicker } from '@/components/ui/date-preset-picker'
 import {
   createInvoice,
   issueInvoice,
@@ -961,6 +962,8 @@ export function InvoicesModule({
   const { currency } = useAppSettings()
   const [activeStatus, setActiveStatus] = useState<InvoiceStatus | 'all'>('all')
   const [search, setSearch] = useState('')
+  const [fromDate, setFromDate] = useState('')
+  const [toDate,   setToDate]   = useState('')
   const [showModal, setShowModal] = useState(false)
   const [showBulkModal, setShowBulkModal] = useState(false)
   const [cancelTarget, setCancelTarget] = useState<{ id: string; invoice_number: string } | null>(null)
@@ -976,6 +979,8 @@ export function InvoicesModule({
     if (activeStatus !== 'all') {
       result = result.filter((inv) => inv.status === activeStatus)
     }
+    if (fromDate) result = result.filter(inv => inv.invoice_date >= fromDate)
+    if (toDate)   result = result.filter(inv => inv.invoice_date <= toDate)
     const q = search.toLowerCase().trim()
     if (q) {
       result = result.filter(
@@ -986,7 +991,7 @@ export function InvoicesModule({
       )
     }
     return result
-  }, [invoices, activeStatus, search])
+  }, [invoices, activeStatus, search, fromDate, toDate])
 
   function handleIssue(id: string) {
     startTransition(async () => {
@@ -1066,8 +1071,9 @@ export function InvoicesModule({
         />
       </div>
 
-      {/* Search */}
-      <div className="relative mb-4">
+      {/* Search + date filter */}
+      <div className="flex flex-wrap items-center gap-2 mb-4">
+        <div className="relative flex-1 min-w-[200px]">
         <Search
           size={14}
           className="absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none"
@@ -1084,6 +1090,12 @@ export function InvoicesModule({
             border: '1px solid var(--color-border)',
             color: 'var(--color-ink)',
           }}
+        />
+        </div>
+        <DatePresetPicker
+          fromDate={fromDate}
+          toDate={toDate}
+          onChange={(from, to) => { setFromDate(from); setToDate(to) }}
         />
       </div>
 
