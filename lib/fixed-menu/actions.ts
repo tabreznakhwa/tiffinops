@@ -7,7 +7,8 @@ import { requireAuth } from '@/lib/auth'
 import { createAdminClient } from '@/lib/supabase/admin'
 import type { Enums } from '@/lib/supabase/types'
 
-const ADMIN_ROLES: Enums<'user_role'>[] = ['owner', 'manager']
+const ADMIN_ROLES:  Enums<'user_role'>[] = ['owner', 'manager']
+const CREATE_ROLES: Enums<'user_role'>[] = ['owner', 'manager', 'data_entry']
 
 export type FixedMenuActionResult = { error?: string }
 
@@ -33,7 +34,7 @@ type PlanInput = {
 
 export async function createPlan(input: PlanInput): Promise<FixedMenuActionResult> {
   const user = await requireAuth()
-  if (!ADMIN_ROLES.includes(user.role)) return { error: 'Owner or Manager role required' }
+  if (!CREATE_ROLES.includes(user.role)) return { error: 'Owner, Manager or Data Entry role required' }
 
   const parsed = PlanSchema.safeParse(input)
   if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? 'Invalid input' }
@@ -120,7 +121,7 @@ type SubscriptionInput = {
 
 export async function createSubscription(input: SubscriptionInput): Promise<FixedMenuActionResult> {
   const user = await requireAuth()
-  if (!ADMIN_ROLES.includes(user.role)) return { error: 'Owner or Manager role required' }
+  if (!CREATE_ROLES.includes(user.role)) return { error: 'Owner, Manager or Data Entry role required' }
 
   const parsed = SubscriptionSchema.safeParse(input)
   if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? 'Invalid input' }
