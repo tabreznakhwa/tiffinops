@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { X, Search } from 'lucide-react'
-import { createSubscription } from '@/lib/fixed-menu/actions'
+import { createSubscription, updateSubscription } from '@/lib/fixed-menu/actions'
 import { useAppSettings } from '@/components/settings/settings-context'
 import type { Tables } from '@/lib/supabase/types'
 
@@ -15,44 +15,62 @@ type Customer = {
   customer_type: string
 }
 
+export type EditableSubscription = {
+  id: string
+  customer_id: string
+  fixed_plan_id: string
+  start_date: string
+  agreed_monthly_price: string
+  notes: string | null
+  customers: Customer | null
+}
+
 const PERIOD_ICONS: Record<string, string> = {
   breakfast: '🌅', lunch: '☀️', dinner: '🌙',
 }
 
 function todayDubai() {
   const now = new Date()
-  const offset = 4 * 60 * 60 * 1000 // UTC+4
-  return new Date(now.getTime() + offset).toISOString().split('T')[0]
+  return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Dubai', year: 'numeric', month: '2-digit', day: '2-digit' }).format(now)
 }
 
 export function SubscribeModal({
   plans,
   customers,
+  subscription,
   onClose,
 }: {
   plans: Plan[]
   customers: Customer[]
+  subscription?: EditableSubscription
   onClose: () => void
 }) {
   const { currency } = useAppSettings()
+  const isEdit = !!subscription
   const activePlans = plans.filter(p => p.is_active)
 
   const [query, setQuery]                       = useState('')
   const [showList, setShowList]                 = useState(false)
-  const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null)
-  const [selectedPlan, setSelectedPlan]         = useState<Plan | null>(null)
-  const [startDate, setStartDate]               = useState(todayDubai)
-  const [price, setPrice]                       = useState('')
-  const [notes, setNotes]                       = useState('')
+  const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(
+    subscription?.customers ?? null
+  )
+  const [selectedPlan, setSelectedPlan]         = useState<Plan | null>(
+    plans.find(p => p.id === subscription?.fixed_plan_id) ?? null
+  )
+  const [startDate, setStartDate]               = useState(subscription?.start_date ?? todayDubai())
+  const [price, setPrice]                       = useState(
+    subscription ? parseFloat(String(subscription.agreed_monthly_price)).toFixed(2) : ''
+  )
+  const [notes, setNotes]                       = useState(subscription?.notes ?? '')
   const [loading, setLoading]                   = useState(false)
   const [error, setError]                       = useState('')
 
-  // Pre-fill price when plan changes
+  // Pre-fill price when plan changes (only if not edit mode or plan changed)
   useEffect(() => {
-    if (selectedPlan) {
+    if (selectedPlan && !isEdit) {
       setPrice(parseFloat(String(selectedPlan.default_monthly_price)).toFixed(2))
     }
-  }, [selectedPlan])
+  }, [selectedPlan, isEdit])
 
   const filteredCustomers = customers.filter(c => {
     if (!query.trim()) return true
@@ -76,13 +94,17 @@ export function SubscribeModal({
     setError('')
     setLoading(true)
 
-    const result = await createSubscription({
-      customer_id: selectedCustomer.id,
-      fixed_plan_id: selectedPlan.id,
-      start_date: startDate,
-      agreed_monthly_price: parseFloat(price),
-      notes: notes.trim() || undefined,
-    })
+    const input = {
+      customer_id:           selectedCustomer.id,
+      fixed_plan_id:         selectedPlan.id,
+      start_date:            startDate,
+      agreed_monthly_price:  parseFloat(price),
+      notes:                 notes.trim() || undefined,
+    }
+
+    const result = isEdit
+      ? await updateSubscription(subscription!.id, input)
+      : await createSubscription(input)
 
     setLoading(false)
     if (result.error) { setError(result.error); return }
@@ -111,20 +133,33 @@ export function SubscribeModal({
         </button>
 
         <p className="text-xs font-bold uppercase tracking-widest mb-0.5" style={{ color: 'var(--color-saffron)', letterSpacing: '.12em' }}>
-          New Subscription
+          {isEdit ? 'Edit Subscription' : 'New Subscription'}
         </p>
         <h2 className="font-display font-bold text-[20px] mb-5" style={{ color: 'var(--color-ink)' }}>
-          Subscribe Customer
+          {isEdit ? 'Update Subscription' : 'Subscribe Customer'}
         </h2>
 
         <form onSubmit={handleSubmit} className="space-y-4">
-          {/* Customer picker */}
+          {/* Customer — read-only when editing */}
           <div>
             <label className="block text-xs font-semibold mb-1.5" style={{ color: 'var(--color-muted)' }}>
-              Customer *
+              Customer {!isEdit && '*'}
             </label>
 
-            {selectedCustomer ? (
+            {isEdit ? (
+              // Fixed chip — customer can't be changed on edit
+              <div
+                className="rounded-[10px] px-3 py-2.5"
+                style={{ background: 'var(--color-cream)', border: '1px solid var(--color-border)' }}
+              >
+                <p className="text-sm font-semibold" style={{ color: 'var(--color-ink)' }}>
+                  {selectedCustomer?.full_name}
+                </p>
+                <p className="text-xs" style={{ color: 'var(--color-muted)' }}>
+                  {selectedCustomer?.customer_code} · {selectedCustomer?.mobile_number}
+                </p>
+              </div>
+            ) : selectedCustomer ? (
               <div
                 className="flex items-center justify-between rounded-[10px] px-3 py-2.5"
                 style={{ background: 'var(--color-saffron-soft)', border: '1.5px solid var(--color-saffron)' }}
@@ -137,22 +172,13 @@ export function SubscribeModal({
                     {selectedCustomer.customer_code} · {selectedCustomer.mobile_number}
                   </p>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => setSelectedCustomer(null)}
-                  className="text-xs font-bold"
-                  style={{ color: 'var(--color-ember)' }}
-                >
+                <button type="button" onClick={() => setSelectedCustomer(null)} className="text-xs font-bold" style={{ color: 'var(--color-ember)' }}>
                   Change
                 </button>
               </div>
             ) : (
               <div className="relative">
-                <Search
-                  size={13}
-                  className="absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none"
-                  style={{ color: 'var(--color-muted)' }}
-                />
+                <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" style={{ color: 'var(--color-muted)' }} />
                 <input
                   type="text"
                   value={query}
@@ -165,11 +191,7 @@ export function SubscribeModal({
                 {showList && filteredCustomers.length > 0 && (
                   <div
                     className="absolute z-10 w-full mt-1 rounded-[10px] overflow-auto shadow-lg"
-                    style={{
-                      background: 'var(--color-surface)',
-                      border: '1px solid var(--color-border)',
-                      maxHeight: 200,
-                    }}
+                    style={{ background: 'var(--color-surface)', border: '1px solid var(--color-border)', maxHeight: 200 }}
                   >
                     {filteredCustomers.slice(0, 8).map((c, i) => (
                       <button
@@ -179,12 +201,8 @@ export function SubscribeModal({
                         className="w-full flex flex-col px-3 py-2.5 text-left hover:bg-cream"
                         style={{ borderTop: i > 0 ? '1px solid var(--color-border)' : undefined }}
                       >
-                        <span className="text-sm font-semibold" style={{ color: 'var(--color-ink)' }}>
-                          {c.full_name}
-                        </span>
-                        <span className="text-xs" style={{ color: 'var(--color-muted)' }}>
-                          {c.customer_code} · {c.mobile_number}
-                        </span>
+                        <span className="text-sm font-semibold" style={{ color: 'var(--color-ink)' }}>{c.full_name}</span>
+                        <span className="text-xs" style={{ color: 'var(--color-muted)' }}>{c.customer_code} · {c.mobile_number}</span>
                       </button>
                     ))}
                   </div>
@@ -195,13 +213,9 @@ export function SubscribeModal({
 
           {/* Plan picker */}
           <div>
-            <label className="block text-xs font-semibold mb-1.5" style={{ color: 'var(--color-muted)' }}>
-              Plan *
-            </label>
+            <label className="block text-xs font-semibold mb-1.5" style={{ color: 'var(--color-muted)' }}>Plan *</label>
             {activePlans.length === 0 ? (
-              <p className="text-sm" style={{ color: 'var(--color-muted)' }}>
-                No active plans available. Create a plan first.
-              </p>
+              <p className="text-sm" style={{ color: 'var(--color-muted)' }}>No active plans available. Create a plan first.</p>
             ) : (
               <div className="space-y-2">
                 {activePlans.map(p => {
@@ -218,17 +232,12 @@ export function SubscribeModal({
                       }}
                     >
                       <div>
-                        <p className="text-sm font-semibold" style={{ color: 'var(--color-ink)' }}>
-                          {p.plan_name}
-                        </p>
+                        <p className="text-sm font-semibold" style={{ color: 'var(--color-ink)' }}>{p.plan_name}</p>
                         <p className="text-xs" style={{ color: 'var(--color-muted)' }}>
                           {p.meal_periods.map(mp => PERIOD_ICONS[mp] + ' ' + mp.charAt(0).toUpperCase() + mp.slice(1)).join(' · ')}
                         </p>
                       </div>
-                      <span
-                        className="text-sm font-bold num flex-shrink-0 ml-3"
-                        style={{ color: on ? 'var(--color-ember)' : 'var(--color-muted)' }}
-                      >
+                      <span className="text-sm font-bold num flex-shrink-0 ml-3" style={{ color: on ? 'var(--color-ember)' : 'var(--color-muted)' }}>
                         {currency} {parseFloat(String(p.default_monthly_price)).toFixed(0)}/mo
                       </span>
                     </button>
@@ -241,9 +250,7 @@ export function SubscribeModal({
           {/* Start date + Agreed price */}
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block text-xs font-semibold mb-1.5" style={{ color: 'var(--color-muted)' }}>
-                Start Date *
-              </label>
+              <label className="block text-xs font-semibold mb-1.5" style={{ color: 'var(--color-muted)' }}>Start Date *</label>
               <input
                 type="date"
                 value={startDate}
@@ -273,9 +280,7 @@ export function SubscribeModal({
 
           {/* Notes */}
           <div>
-            <label className="block text-xs font-semibold mb-1.5" style={{ color: 'var(--color-muted)' }}>
-              Notes
-            </label>
+            <label className="block text-xs font-semibold mb-1.5" style={{ color: 'var(--color-muted)' }}>Notes</label>
             <textarea
               value={notes}
               onChange={e => setNotes(e.target.value)}
@@ -305,7 +310,7 @@ export function SubscribeModal({
               className="flex-1 py-2.5 rounded-[10px] text-sm font-semibold disabled:opacity-50"
               style={{ background: 'var(--color-saffron)', color: '#fff' }}
             >
-              {loading ? 'Subscribing…' : 'Subscribe'}
+              {loading ? (isEdit ? 'Saving…' : 'Subscribing…') : (isEdit ? 'Save Changes' : 'Subscribe')}
             </button>
           </div>
         </form>

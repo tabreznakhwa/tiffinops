@@ -6,6 +6,7 @@ import { Plus, Search, Pencil } from 'lucide-react'
 import { togglePlanStatus, updateSubscriptionStatus } from '@/lib/fixed-menu/actions'
 import { PlanModal } from './plan-modal'
 import { SubscribeModal } from './subscribe-modal'
+import type { EditableSubscription } from './subscribe-modal'
 import { useAppSettings } from '@/components/settings/settings-context'
 import type { Tables } from '@/lib/supabase/types'
 
@@ -75,6 +76,7 @@ export function FixedMenuModule({
   const [showPlanModal, setShowPlanModal]       = useState(false)
   const [editPlan, setEditPlan]                 = useState<Plan | undefined>()
   const [showSubscribeModal, setShowSubscribeModal] = useState(false)
+  const [editSubscription, setEditSubscription]     = useState<EditableSubscription | undefined>()
   const [busy, setBusy]                 = useState<string | null>(null)
 
   // ── Derived counts ──────────────────────────────────────────────────────────
@@ -376,6 +378,21 @@ export function FixedMenuModule({
                       </p>
 
                       <div className="flex gap-2 flex-shrink-0">
+                        {/* Edit button — always visible for active/paused */}
+                        {(sub.status === 'active' || sub.status === 'paused') && (
+                          <button
+                            onClick={() => {
+                              setEditSubscription(sub as unknown as EditableSubscription)
+                              setShowSubscribeModal(true)
+                            }}
+                            disabled={loading}
+                            className="flex items-center gap-1 px-3 py-1.5 rounded-[8px] text-xs font-semibold disabled:opacity-50"
+                            style={{ color: 'var(--color-saffron)', border: '1px solid var(--color-border)', background: 'transparent' }}
+                          >
+                            <Pencil size={11} />
+                            Edit
+                          </button>
+                        )}
                         {sub.status === 'active' && (
                           <>
                             <button
@@ -566,7 +583,8 @@ export function FixedMenuModule({
         <SubscribeModal
           plans={plans}
           customers={customers}
-          onClose={() => { setShowSubscribeModal(false); router.refresh() }}
+          subscription={editSubscription}
+          onClose={() => { setShowSubscribeModal(false); setEditSubscription(undefined); router.refresh() }}
         />
       )}
     </div>

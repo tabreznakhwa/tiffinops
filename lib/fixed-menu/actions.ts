@@ -142,6 +142,32 @@ export async function createSubscription(input: SubscriptionInput): Promise<Fixe
   return {}
 }
 
+export async function updateSubscription(
+  id: string,
+  input: SubscriptionInput
+): Promise<FixedMenuActionResult> {
+  const user = await requireAuth()
+  if (!CREATE_ROLES.includes(user.role)) return { error: 'Owner, Manager or Data Entry role required' }
+
+  const parsed = SubscriptionSchema.safeParse(input)
+  if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? 'Invalid input' }
+
+  const admin = createAdminClient()
+  const { error } = await admin
+    .from('customer_subscriptions')
+    .update({
+      fixed_plan_id:        parsed.data.fixed_plan_id,
+      start_date:           parsed.data.start_date,
+      agreed_monthly_price: parsed.data.agreed_monthly_price.toFixed(2),
+      notes:                parsed.data.notes,
+    })
+    .eq('id', id)
+
+  if (error) return { error: error.message }
+  revalidatePath('/fixed-menu')
+  return {}
+}
+
 export async function updateSubscriptionStatus(
   id: string,
   status: 'active' | 'paused' | 'cancelled' | 'completed'
