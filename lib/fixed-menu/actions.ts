@@ -173,7 +173,9 @@ export async function updateSubscriptionStatus(
   status: 'active' | 'paused' | 'cancelled' | 'completed'
 ): Promise<FixedMenuActionResult> {
   const user = await requireAuth()
-  if (!ADMIN_ROLES.includes(user.role)) return { error: 'Owner or Manager role required' }
+  const isDestructive = status === 'cancelled' || status === 'completed'
+  if (isDestructive && !ADMIN_ROLES.includes(user.role)) return { error: 'Only Owner or Manager can cancel or complete subscriptions' }
+  if (!isDestructive && !CREATE_ROLES.includes(user.role)) return { error: 'Owner, Manager or Data Entry role required' }
 
   const admin = createAdminClient()
   const endDate = (status === 'cancelled' || status === 'completed')
