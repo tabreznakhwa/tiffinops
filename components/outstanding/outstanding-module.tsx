@@ -248,7 +248,11 @@ export function OutstandingModule({ customers, orders, payments, subscriptions, 
               <thead>
                 <tr style={{ borderBottom: '1px solid var(--color-border)', background: 'var(--color-cream)' }}>
                   {['#', 'Customer', 'Type', 'Contact', 'Billed', 'Paid', 'Outstanding'].map(h => (
-                    <th key={h} className="text-left px-4 py-3 text-xs font-bold uppercase tracking-wide" style={{ color: 'var(--color-muted)' }}>{h}</th>
+                    <th
+                      key={h}
+                      className={`px-4 py-3 text-xs font-bold uppercase tracking-wide ${['Billed', 'Paid', 'Outstanding'].includes(h) ? 'text-right' : 'text-left'}`}
+                      style={{ color: 'var(--color-muted)' }}
+                    >{h}</th>
                   ))}
                 </tr>
               </thead>
