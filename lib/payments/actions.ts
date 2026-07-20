@@ -33,7 +33,7 @@ export async function recordPayment(input: {
 }): Promise<PaymentActionResult> {
   const user = await requireAuth()
 
-  const canRecord = ['owner', 'manager', 'accounts'].includes(user.role)
+  const canRecord = ['owner', 'manager', 'accounts', 'data_entry'].includes(user.role)
     || user.can_record_payment === true
   if (!canRecord) return { error: 'Insufficient permissions to record payments' }
 
