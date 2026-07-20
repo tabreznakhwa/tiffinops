@@ -4,7 +4,7 @@ import { requireAuth } from '@/lib/auth'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { getSettings } from '@/lib/settings/getSettings'
 import { OutstandingModule } from '@/components/outstanding/outstanding-module'
-import type { CustomerBasic, OrderBasic, PaymentBasic } from '@/components/outstanding/outstanding-module'
+import type { CustomerBasic, OrderBasic, PaymentBasic, SubscriptionBasic } from '@/components/outstanding/outstanding-module'
 
 export default async function OutstandingPage() {
   const user = await requireAuth()
@@ -36,6 +36,7 @@ export default async function OutstandingPage() {
         customers={[]}
         orders={[]}
         payments={[]}
+        subscriptions={[]}
         currency={settings.currency}
       />
     )
@@ -79,11 +80,20 @@ export default async function OutstandingPage() {
     }
   }
 
+  // Fetch all active/paused/cancelled/completed subscriptions for these customers
+  const { data: subsData } = await admin
+    .from('customer_subscriptions')
+    .select('customer_id, start_date, end_date, agreed_monthly_price, status')
+    .in('customer_id', customerIds)
+
+  const allSubscriptions: SubscriptionBasic[] = (subsData ?? []) as SubscriptionBasic[]
+
   return (
     <OutstandingModule
       customers={(customers ?? []) as CustomerBasic[]}
       orders={allOrders}
       payments={allPayments}
+      subscriptions={allSubscriptions}
       currency={settings.currency}
     />
   )

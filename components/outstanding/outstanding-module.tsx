@@ -27,38 +27,74 @@ export type PaymentBasic = {
   payment_date: string
 }
 
+export type SubscriptionBasic = {
+  customer_id: string
+  start_date: string
+  end_date: string | null
+  agreed_monthly_price: string
+  status: string
+}
+
 const TYPE_LABELS: Record<string, string> = {
   a_la_carte: 'A La Carte',
   fixed_menu:  'Fixed Menu',
   hybrid:      'Hybrid',
 }
 const TYPE_COLORS: Record<string, { bg: string; color: string }> = {
-  a_la_carte: { bg: 'var(--color-saffron-soft)', color: 'var(--color-saffron)' },
-  fixed_menu:  { bg: 'var(--color-blue-soft, #EFF6FF)', color: 'var(--color-blue, #2563EB)' },
+  a_la_carte: { bg: 'var(--color-saffron-soft)',        color: 'var(--color-saffron)'         },
+  fixed_menu:  { bg: 'var(--color-blue-soft, #EFF6FF)', color: 'var(--color-blue, #2563EB)'   },
   hybrid:      { bg: 'var(--color-purple-soft, #F5F3FF)', color: 'var(--color-purple, #7C3AED)' },
 }
 
-interface Props {
-  customers: CustomerBasic[]
-  orders:    OrderBasic[]
-  payments:  PaymentBasic[]
-  currency:  string
+// Months elapsed inclusive (advance-payment model: month of start counts immediately)
+function monthsInRange(subStart: string, subEnd: string | null, subStatus: string, rangeFrom: string, rangeTo: string): number {
+  // Subscription hasn't started yet within the range
+  if (subStart > rangeTo) return 0
+
+  // Effective end of subscription
+  const subEffectiveEnd = (subStatus === 'cancelled' || subStatus === 'completed') && subEnd
+    ? subEnd
+    : rangeTo
+
+  // Clamp to range
+  const from = subStart > rangeFrom ? subStart : rangeFrom
+  const to   = subEffectiveEnd < rangeTo ? subEffectiveEnd : rangeTo
+
+  if (from > to) return 0
+
+  const f = new Date(from + 'T00:00:00Z')
+  const t = new Date(to   + 'T00:00:00Z')
+  return Math.max(0, (t.getFullYear() - f.getFullYear()) * 12 + (t.getMonth() - f.getMonth()) + 1)
 }
 
-export function OutstandingModule({ customers, orders, payments, currency }: Props) {
+function todayStr(): string {
+  return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Dubai', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date())
+}
+
+interface Props {
+  customers:     CustomerBasic[]
+  orders:        OrderBasic[]
+  payments:      PaymentBasic[]
+  subscriptions: SubscriptionBasic[]
+  currency:      string
+}
+
+export function OutstandingModule({ customers, orders, payments, subscriptions, currency }: Props) {
   const [search,   setSearch]   = useState('')
   const [fromDate, setFromDate] = useState('')
   const [toDate,   setToDate]   = useState('')
 
   const rows = useMemo(() => {
+    const today         = todayStr()
+    const effectiveFrom = fromDate || '2000-01-01'
+    const effectiveTo   = toDate   || today
+
     // Filter orders and payments by date range
     const filtOrders = orders.filter(o =>
-      (!fromDate || o.order_date >= fromDate) &&
-      (!toDate   || o.order_date <= toDate)
+      o.order_date >= effectiveFrom && o.order_date <= effectiveTo
     )
     const filtPayments = payments.filter(p =>
-      (!fromDate || p.payment_date >= fromDate) &&
-      (!toDate   || p.payment_date <= toDate)
+      p.payment_date >= effectiveFrom && p.payment_date <= effectiveTo
     )
 
     // Aggregate per customer
@@ -67,16 +103,34 @@ export function OutstandingModule({ customers, orders, payments, currency }: Pro
     for (const o of filtOrders)   orderTotals.set(o.customer_id, (orderTotals.get(o.customer_id) ?? 0) + parseFloat(o.total_amount))
     for (const p of filtPayments) paymentTotals.set(p.customer_id, (paymentTotals.get(p.customer_id) ?? 0) + parseFloat(p.amount))
 
+    // Subscription expected charges per customer (months × agreed_monthly_price)
+    const subExpected = new Map<string, number>()
+    for (const sub of subscriptions) {
+      const months = monthsInRange(sub.start_date, sub.end_date, sub.status, effectiveFrom, effectiveTo)
+      if (months > 0) {
+        const charge = months * parseFloat(sub.agreed_monthly_price)
+        subExpected.set(sub.customer_id, (subExpected.get(sub.customer_id) ?? 0) + charge)
+      }
+    }
+
     return customers
-      .map(c => ({
-        ...c,
-        totalBilled: orderTotals.get(c.id) ?? 0,
-        totalPaid:   paymentTotals.get(c.id) ?? 0,
-        outstanding: (orderTotals.get(c.id) ?? 0) - (paymentTotals.get(c.id) ?? 0),
-      }))
+      .map(c => {
+        const orderBilled = orderTotals.get(c.id) ?? 0
+        const subCharge   = subExpected.get(c.id) ?? 0
+        const totalBilled = orderBilled + subCharge
+        const totalPaid   = paymentTotals.get(c.id) ?? 0
+        return {
+          ...c,
+          orderBilled,
+          subCharge,
+          totalBilled,
+          totalPaid,
+          outstanding: totalBilled - totalPaid,
+        }
+      })
       .filter(r => r.outstanding > 0.005)
       .sort((a, b) => b.outstanding - a.outstanding)
-  }, [customers, orders, payments, fromDate, toDate])
+  }, [customers, orders, payments, subscriptions, fromDate, toDate])
 
   const filtered = useMemo(() => {
     if (!search.trim()) return rows
@@ -100,8 +154,8 @@ export function OutstandingModule({ customers, orders, payments, currency }: Pro
         <h1 className="font-display font-bold text-[25px] mt-0.5" style={{ color: 'var(--color-ink)' }}>Outstanding Report</h1>
         <p className="text-sm mt-1" style={{ color: 'var(--color-muted)' }}>
           {isFiltered && (fromDate || toDate)
-            ? `Orders & payments in selected period · customers with net balance > 0`
-            : 'All customers with unpaid balances (orders billed minus payments received)'}
+            ? 'Orders & subscription charges in selected period minus payments received'
+            : 'All customers with unpaid balances — orders + subscription charges minus payments'}
         </p>
       </div>
 
@@ -160,7 +214,7 @@ export function OutstandingModule({ customers, orders, payments, currency }: Pro
             <table className="w-full text-sm border-collapse">
               <thead>
                 <tr style={{ borderBottom: '1px solid var(--color-border)', background: 'var(--color-cream)' }}>
-                  {['#', 'Customer', 'Type', 'Contact', 'Total Billed', 'Total Paid', 'Outstanding'].map(h => (
+                  {['#', 'Customer', 'Type', 'Contact', 'Billed', 'Paid', 'Outstanding'].map(h => (
                     <th key={h} className="text-left px-4 py-3 text-xs font-bold uppercase tracking-wide" style={{ color: 'var(--color-muted)' }}>{h}</th>
                   ))}
                 </tr>
@@ -187,7 +241,15 @@ export function OutstandingModule({ customers, orders, payments, currency }: Pro
                         {row.area && <div className="mt-0.5">{row.area}</div>}
                       </td>
                       <td className="px-4 py-3 text-right font-mono" style={{ color: 'var(--color-ink)' }}>
-                        {currency} {row.totalBilled.toFixed(2)}
+                        <div>{currency} {row.totalBilled.toFixed(2)}</div>
+                        {row.subCharge > 0 && row.orderBilled > 0 && (
+                          <div className="text-[10px] mt-0.5" style={{ color: 'var(--color-muted)' }}>
+                            Sub {currency} {row.subCharge.toFixed(2)} + Orders {currency} {row.orderBilled.toFixed(2)}
+                          </div>
+                        )}
+                        {row.subCharge > 0 && row.orderBilled === 0 && (
+                          <div className="text-[10px] mt-0.5" style={{ color: 'var(--color-muted)' }}>Subscription charges</div>
+                        )}
                       </td>
                       <td className="px-4 py-3 text-right font-mono font-semibold" style={{ color: 'var(--color-green, #2E7D4F)' }}>
                         {currency} {row.totalPaid.toFixed(2)}
