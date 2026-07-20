@@ -80,9 +80,10 @@ interface Props {
 }
 
 export function OutstandingModule({ customers, orders, payments, subscriptions, currency }: Props) {
-  const [search,   setSearch]   = useState('')
-  const [fromDate, setFromDate] = useState('')
-  const [toDate,   setToDate]   = useState('')
+  const [search,      setSearch]      = useState('')
+  const [fromDate,    setFromDate]    = useState('')
+  const [toDate,      setToDate]      = useState('')
+  const [typeFilter,  setTypeFilter]  = useState<string>('')
 
   const rows = useMemo(() => {
     const today         = todayStr()
@@ -133,19 +134,23 @@ export function OutstandingModule({ customers, orders, payments, subscriptions, 
   }, [customers, orders, payments, subscriptions, fromDate, toDate])
 
   const filtered = useMemo(() => {
-    if (!search.trim()) return rows
-    const q = search.toLowerCase()
-    return rows.filter(r =>
-      r.full_name.toLowerCase().includes(q) ||
-      r.customer_code.toLowerCase().includes(q) ||
-      (r.mobile_number ?? '').includes(q)
-    )
-  }, [rows, search])
+    let result = rows
+    if (typeFilter) result = result.filter(r => r.customer_type === typeFilter)
+    if (search.trim()) {
+      const q = search.toLowerCase()
+      result = result.filter(r =>
+        r.full_name.toLowerCase().includes(q) ||
+        r.customer_code.toLowerCase().includes(q) ||
+        (r.mobile_number ?? '').includes(q)
+      )
+    }
+    return result
+  }, [rows, search, typeFilter])
 
   const grandTotal  = filtered.reduce((s, r) => s + r.outstanding, 0)
   const grandBilled = filtered.reduce((s, r) => s + r.totalBilled, 0)
   const grandPaid   = filtered.reduce((s, r) => s + r.totalPaid,   0)
-  const isFiltered  = !!(fromDate || toDate || search.trim())
+  const isFiltered  = !!(fromDate || toDate || search.trim() || typeFilter)
 
   return (
     <div>
@@ -176,6 +181,34 @@ export function OutstandingModule({ customers, orders, payments, subscriptions, 
           <p className="font-display font-bold text-[20px]" style={{ color: '#fff' }}>{currency} {grandTotal.toFixed(2)}</p>
           <p className="text-[11px] mt-0.5" style={{ color: '#A09080' }}>All customers combined</p>
         </div>
+      </div>
+
+      {/* Type filter pills */}
+      <div className="flex items-center gap-2 mb-3 flex-wrap">
+        {([
+          { value: '',            label: 'All Types' },
+          { value: 'a_la_carte',  label: 'A La Carte' },
+          { value: 'fixed_menu',  label: 'Fixed Menu' },
+          { value: 'hybrid',      label: 'Hybrid' },
+        ] as const).map(opt => {
+          const active = typeFilter === opt.value
+          const tc = opt.value ? TYPE_COLORS[opt.value] : null
+          return (
+            <button
+              key={opt.value}
+              onClick={() => setTypeFilter(opt.value)}
+              className="px-3 py-1 rounded-full text-xs font-semibold transition-colors"
+              style={active && tc
+                ? { background: tc.bg, color: tc.color, border: `1.5px solid ${tc.color}` }
+                : active
+                ? { background: 'var(--color-ink)', color: '#fff', border: '1.5px solid var(--color-ink)' }
+                : { background: 'var(--color-surface)', color: 'var(--color-muted)', border: '1px solid var(--color-border)' }
+              }
+            >
+              {opt.label}
+            </button>
+          )
+        })}
       </div>
 
       {/* Search + date filter */}
