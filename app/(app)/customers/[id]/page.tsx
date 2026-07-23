@@ -6,6 +6,7 @@ import { requireAuth } from '@/lib/auth'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { CustomerDetailView } from '@/components/customers/customer-detail-view'
 import type { BalanceSummary } from '@/components/customers/customer-detail-view'
+import type { ReferralCustomerOption } from '@/components/customers/customer-form-fields'
 
 const WRITER_ROLES = ['owner', 'manager', 'data_entry']
 const ADMIN_ROLES = ['owner', 'manager']
@@ -33,6 +34,7 @@ export default async function CustomerDetailPage({
     { data: payments },
     { data: monthOrders },
     { data: recentOrders },
+    { data: referralOptions },
   ] = await Promise.all([
     admin.from('customers').select('*').eq('id', id).single(),
 
@@ -72,6 +74,12 @@ export default async function CustomerDetailPage({
       .order('order_date', { ascending: false })
       .order('created_at', { ascending: false })
       .limit(15),
+
+    admin
+      .from('customers')
+      .select('id, full_name, customer_code, mobile_number')
+      .neq('id', id)
+      .order('full_name'),
   ])
 
   if (!customer) notFound()
@@ -112,6 +120,9 @@ export default async function CustomerDetailPage({
     order_items: { item_name_snapshot: string; quantity: string }[]
   }
 
+  const referralCustomers = (referralOptions ?? []) as ReferralCustomerOption[]
+  const referrer = referralCustomers.find(c => c.id === customer.referred_by_customer_id) ?? null
+
   return (
     <CustomerDetailView
       customer={customer}
@@ -119,6 +130,8 @@ export default async function CustomerDetailPage({
       canAdmin={ADMIN_ROLES.includes(user.role)}
       balance={balance}
       orders={(recentOrders ?? []) as unknown as OrderWithItems[]}
+      referrer={referrer}
+      referralCustomers={referralCustomers}
     />
   )
 }

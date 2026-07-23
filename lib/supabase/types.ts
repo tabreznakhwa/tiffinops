@@ -83,6 +83,8 @@ export type Database = {
           status: Database['public']['Enums']['customer_status']
           billing_day: number | null
           notes: string | null
+          referred_by_customer_id: string | null
+          referral_reward_amount: string
           created_by: string | null
           created_at: string
           updated_at: string
@@ -103,6 +105,8 @@ export type Database = {
           status?: Database['public']['Enums']['customer_status']
           billing_day?: number | null
           notes?: string | null
+          referred_by_customer_id?: string | null
+          referral_reward_amount?: string
           created_by?: string | null
           created_at?: string
           updated_at?: string
@@ -123,13 +127,16 @@ export type Database = {
           status?: Database['public']['Enums']['customer_status']
           billing_day?: number | null
           notes?: string | null
+          referred_by_customer_id?: string | null
+          referral_reward_amount?: string
           created_by?: string | null
           created_at?: string
           updated_at?: string
         }
         Relationships: [
           { foreignKeyName: 'customers_company_id_fkey'; columns: ['company_id']; referencedRelation: 'companies'; referencedColumns: ['id'] },
-          { foreignKeyName: 'customers_created_by_fkey'; columns: ['created_by']; referencedRelation: 'users'; referencedColumns: ['id'] }
+          { foreignKeyName: 'customers_created_by_fkey'; columns: ['created_by']; referencedRelation: 'users'; referencedColumns: ['id'] },
+          { foreignKeyName: 'customers_referred_by_customer_id_fkey'; columns: ['referred_by_customer_id']; referencedRelation: 'customers'; referencedColumns: ['id'] }
         ]
       }
       menu_items: {
@@ -599,6 +606,48 @@ export type Database = {
         }
         Relationships: []
       }
+      customer_referral_rewards: {
+        Row: {
+          id: string
+          referrer_customer_id: string
+          referred_customer_id: string
+          reward_month: string
+          amount: string
+          status: string
+          paid_at: string | null
+          notes: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          referrer_customer_id: string
+          referred_customer_id: string
+          reward_month: string
+          amount: string
+          status?: string
+          paid_at?: string | null
+          notes?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          referrer_customer_id?: string
+          referred_customer_id?: string
+          reward_month?: string
+          amount?: string
+          status?: string
+          paid_at?: string | null
+          notes?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: [
+          { foreignKeyName: 'customer_referral_rewards_referred_customer_id_fkey'; columns: ['referred_customer_id']; referencedRelation: 'customers'; referencedColumns: ['id'] },
+          { foreignKeyName: 'customer_referral_rewards_referrer_customer_id_fkey'; columns: ['referrer_customer_id']; referencedRelation: 'customers'; referencedColumns: ['id'] }
+        ]
+      }
       ledger_entries: {
         Row: {
           id: string
@@ -838,6 +887,10 @@ export type Database = {
       next_invoice_number: {
         Args: Record<PropertyKey, never>
         Returns: string
+      }
+      generate_referral_rewards_for_month: {
+        Args: { p_month?: string }
+        Returns: number
       }
     }
     Enums: {

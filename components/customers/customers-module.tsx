@@ -9,6 +9,7 @@ import { AddCustomerModal } from './add-customer-modal'
 import { EditCustomerModal } from './edit-customer-modal'
 import { useAppSettings } from '@/components/settings/settings-context'
 import type { Tables, Enums } from '@/lib/supabase/types'
+import type { ReferralCustomerOption } from './customer-form-fields'
 
 type Customer = Tables<'customers'>
 
@@ -90,10 +91,12 @@ export function CustomersModule({
   customers,
   canWrite,
   balances = {},
+  referralCustomers,
 }: {
   customers: Customer[]
   canWrite: boolean
   balances?: Record<string, number>
+  referralCustomers?: ReferralCustomerOption[]
 }) {
   const router = useRouter()
   const { currency } = useAppSettings()
@@ -108,6 +111,15 @@ export function CustomersModule({
     () =>
       [...new Set(customers.map((c) => c.area).filter(Boolean) as string[])].sort(),
     [customers]
+  )
+  const referralOptions = useMemo<ReferralCustomerOption[]>(
+    () => referralCustomers ?? customers.map(c => ({
+      id: c.id,
+      full_name: c.full_name,
+      customer_code: c.customer_code,
+      mobile_number: c.mobile_number,
+    })),
+    [customers, referralCustomers]
   )
 
   const filtered = useMemo(() => {
@@ -343,6 +355,7 @@ export function CustomersModule({
         open={addOpen}
         onClose={() => setAddOpen(false)}
         onSuccess={handleDone}
+        referralCustomers={referralOptions}
       />
 
       {/* Edit modal */}
@@ -355,6 +368,7 @@ export function CustomersModule({
             handleDone()
             setEditingCustomer(null)
           }}
+          referralCustomers={referralOptions}
         />
       )}
     </div>

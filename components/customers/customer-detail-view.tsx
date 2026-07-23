@@ -6,6 +6,7 @@ import Link from 'next/link'
 import { ArrowLeft, Edit2, Phone, Mail, MapPin, ShoppingBag, Plus } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { EditCustomerModal } from './edit-customer-modal'
+import type { ReferralCustomerOption } from './customer-form-fields'
 import { RecordPaymentModal } from '@/components/payments/record-payment-modal'
 import { setCustomerStatus } from '@/lib/customers/actions'
 import { useAppSettings } from '@/components/settings/settings-context'
@@ -110,12 +111,16 @@ export function CustomerDetailView({
   canAdmin,
   balance,
   orders = [],
+  referrer,
+  referralCustomers = [],
 }: {
   customer: Customer
   canWrite: boolean
   canAdmin: boolean
   balance: BalanceSummary
   orders?: OrderWithItems[]
+  referrer?: ReferralCustomerOption | null
+  referralCustomers?: ReferralCustomerOption[]
 }) {
   const router = useRouter()
   const { currency } = useAppSettings()
@@ -223,6 +228,12 @@ export function CustomerDetailView({
           )}
           {customer.billing_day && (
             <InfoRow label="Billing Day" value={`Day ${customer.billing_day} of each month`} />
+          )}
+          {referrer && (
+            <InfoRow label="Referred By" value={`${referrer.full_name} (${referrer.customer_code})`} />
+          )}
+          {customer.referral_reward_amount && Number(customer.referral_reward_amount) > 0 && (
+            <InfoRow label="Referral Reward" value={`${currency} ${Number(customer.referral_reward_amount).toFixed(2)} / month`} />
           )}
         </div>
 
@@ -569,6 +580,7 @@ export function CustomerDetailView({
           router.refresh()
           setEditOpen(false)
         }}
+        referralCustomers={referralCustomers}
       />
 
       {/* Record payment modal */}

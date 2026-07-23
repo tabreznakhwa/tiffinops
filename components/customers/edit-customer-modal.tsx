@@ -3,6 +3,7 @@
 import { useState, useTransition } from 'react'
 import { CustomerModal } from './customer-modal'
 import { CustomerFormFields } from './customer-form-fields'
+import type { ReferralCustomerOption } from './customer-form-fields'
 import { Button } from '@/components/ui/button'
 import { updateCustomer } from '@/lib/customers/actions'
 import type { Tables } from '@/lib/supabase/types'
@@ -14,11 +15,13 @@ export function EditCustomerModal({
   open,
   onClose,
   onSuccess,
+  referralCustomers = [],
 }: {
   customer: Customer
   open: boolean
   onClose: () => void
   onSuccess: () => void
+  referralCustomers?: ReferralCustomerOption[]
 }) {
   const [error, setError] = useState<string | null>(null)
   const [isPending, startTransition] = useTransition()
@@ -54,7 +57,7 @@ export function EditCustomerModal({
       </div>
 
       <form onSubmit={handleSubmit}>
-        <CustomerFormFields defaultValues={customer} />
+        <CustomerFormFields defaultValues={customer} referralCustomers={referralCustomers} />
 
         {error && (
           <p className="mt-4 text-sm font-semibold" style={{ color: 'var(--color-red)' }}>

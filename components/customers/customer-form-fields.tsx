@@ -4,6 +4,13 @@ import type { Tables } from '@/lib/supabase/types'
 
 type Customer = Tables<'customers'>
 
+export type ReferralCustomerOption = {
+  id: string
+  full_name: string
+  customer_code: string
+  mobile_number: string
+}
+
 const inputBase =
   'mt-1 w-full rounded-[11px] px-3 py-2.5 text-sm bg-surface text-ink focus:outline-none focus:ring-1 focus:ring-saffron'
 const inputStyle = {
@@ -12,8 +19,10 @@ const inputStyle = {
 
 export function CustomerFormFields({
   defaultValues,
+  referralCustomers = [],
 }: {
   defaultValues?: Partial<Customer>
+  referralCustomers?: ReferralCustomerOption[]
 }) {
   return (
     <div className="space-y-4">
@@ -108,6 +117,51 @@ export function CustomerFormFields({
           style={inputStyle}
           placeholder="optional"
         />
+      </div>
+
+      {/* Referral */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <div>
+          <label className="block text-sm font-semibold" style={{ color: 'var(--color-ink)' }}>
+            Customer Referred By
+          </label>
+          <select
+            name="referred_by_customer_id"
+            defaultValue={defaultValues?.referred_by_customer_id ?? ''}
+            className={inputBase}
+            style={{ ...inputStyle, cursor: 'pointer' }}
+          >
+            <option value="">No referral</option>
+            {referralCustomers
+              .filter(c => c.id !== defaultValues?.id)
+              .map(c => (
+                <option key={c.id} value={c.id}>
+                  {c.full_name} ({c.customer_code}) · {c.mobile_number}
+                </option>
+              ))}
+          </select>
+          <p className="text-[11px] mt-1" style={{ color: 'var(--color-muted)' }}>
+            The selected referrer is eligible for a monthly cash reward while this customer has an active tiffin plan.
+          </p>
+        </div>
+        <div>
+          <label className="block text-sm font-semibold" style={{ color: 'var(--color-ink)' }}>
+            Referral Reward / Month
+          </label>
+          <input
+            name="referral_reward_amount"
+            type="number"
+            min="0"
+            step="0.01"
+            defaultValue={defaultValues?.referral_reward_amount ?? '0.00'}
+            className={inputBase}
+            style={inputStyle}
+            placeholder="0.00"
+          />
+          <p className="text-[11px] mt-1" style={{ color: 'var(--color-muted)' }}>
+            Cash amount payable to the referrer each active tiffin month.
+          </p>
+        </div>
       </div>
 
       {/* Delivery address */}

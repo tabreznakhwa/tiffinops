@@ -4,6 +4,7 @@ import { formatInTimeZone } from 'date-fns-tz'
 export type GenerateResult = {
   generated: number
   skipped: number
+  referralRewardsGenerated: number
   errors: string[]
   month: string
 }
@@ -55,7 +56,7 @@ export async function generateMonthlyInvoices(
     `)
     .eq('status', 'active')
 
-  if (subsErr) return { generated: 0, skipped: 0, errors: [subsErr.message], month: targetMonth }
+  if (subsErr) return { generated: 0, skipped: 0, referralRewardsGenerated: 0, errors: [subsErr.message], month: targetMonth }
 
   const { start: periodStart, end: periodEnd } = monthBounds(targetMonth)
   // Due date = 1st of the target month (pay before month begins)
@@ -79,7 +80,18 @@ export async function generateMonthlyInvoices(
 
   let generated = 0
   let skipped = 0
+  let referralRewardsGenerated = 0
   const errors: string[] = []
+
+  const { data: rewardsCount, error: rewardsErr } = await admin.rpc(
+    'generate_referral_rewards_for_month',
+    { p_month: periodStart },
+  )
+  if (rewardsErr) {
+    errors.push(`Referral rewards: ${rewardsErr.message}`)
+  } else {
+    referralRewardsGenerated = rewardsCount ?? 0
+  }
 
   for (const sub of subs ?? []) {
     if (alreadyInvoiced.has(sub.customer_id)) {
@@ -154,5 +166,5 @@ export async function generateMonthlyInvoices(
     generated++
   }
 
-  return { generated, skipped, errors, month: targetMonth }
+  return { generated, skipped, referralRewardsGenerated, errors, month: targetMonth }
 }

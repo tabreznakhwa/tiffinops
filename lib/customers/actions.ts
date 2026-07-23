@@ -20,6 +20,12 @@ const CustomerSchema = z.object({
   // optional: not exposed in the current form, reserved for future fields
   delivery_instructions: z.string().optional().transform(v => v?.trim() || null),
   notes: z.string().transform(v => v.trim() || null),
+  referred_by_customer_id: z.string().optional().transform(v => v?.trim() || null),
+  referral_reward_amount: z.string().optional().transform(v => {
+    if (!v) return '0.00'
+    const n = parseFloat(v)
+    return Number.isFinite(n) && n >= 0 ? n.toFixed(2) : '0.00'
+  }),
   billing_day: z.string().optional().transform(v => {
     if (!v) return null
     const n = parseInt(v, 10)
@@ -70,6 +76,10 @@ export async function updateCustomer(
   )
   const parsed = CustomerSchema.safeParse(raw)
   if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? 'Validation error' }
+
+  if (parsed.data.referred_by_customer_id === id) {
+    return { error: 'Customer cannot refer themself' }
+  }
 
   const admin = createAdminClient()
   const { error } = await admin.from('customers').update(parsed.data).eq('id', id)

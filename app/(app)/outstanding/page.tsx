@@ -8,7 +8,7 @@ import type { CustomerBasic, OrderBasic, PaymentBasic, SubscriptionBasic } from 
 
 export default async function OutstandingPage() {
   const user = await requireAuth()
-  const canView = ['owner', 'manager', 'accounts'].includes(user.role)
+  const canView = ['owner', 'manager', 'accounts', 'data_entry'].includes(user.role)
   if (!canView) {
     return (
       <div className="flex items-center justify-center h-48">

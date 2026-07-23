@@ -51,6 +51,7 @@ const MODULE_ACCESS: { module: string; owner: boolean; manager: boolean; account
   { module: 'Payments',        owner: true,  manager: true,  accounts: true,  data_entry: false, packer: false, viewer: false },
   { module: 'Reports',         owner: true,  manager: true,  accounts: true,  data_entry: false, packer: false, viewer: false },
   { module: 'A La Carte Bill', owner: true,  manager: true,  accounts: true,  data_entry: false, packer: false, viewer: false },
+  { module: 'Outstanding',     owner: true,  manager: true,  accounts: true,  data_entry: true,  packer: false, viewer: false },
   { module: 'Staff Mgmt',      owner: true,  manager: false, accounts: false, data_entry: false, packer: false, viewer: false },
 ]
 
