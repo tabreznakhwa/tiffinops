@@ -229,8 +229,13 @@ export function CustomerDetailView({
           {customer.billing_day && (
             <InfoRow label="Billing Day" value={`Day ${customer.billing_day} of each month`} />
           )}
-          {referrer && (
-            <InfoRow label="Referred By" value={`${referrer.full_name} (${referrer.customer_code})`} />
+          {(referrer || customer.referrer_name) && (
+            <InfoRow
+              label="Referred By"
+              value={referrer
+                ? `${referrer.full_name} (${referrer.customer_code})`
+                : `${customer.referrer_name}${customer.referrer_phone ? ` · ${customer.referrer_phone}` : ''}`}
+            />
           )}
           {customer.referral_reward_amount && Number(customer.referral_reward_amount) > 0 && (
             <InfoRow label="Referral Reward" value={`${currency} ${Number(customer.referral_reward_amount).toFixed(2)} / month`} />

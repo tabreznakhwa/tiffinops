@@ -20,7 +20,10 @@ const CustomerSchema = z.object({
   // optional: not exposed in the current form, reserved for future fields
   delivery_instructions: z.string().optional().transform(v => v?.trim() || null),
   notes: z.string().transform(v => v.trim() || null),
+  referral_source: z.enum(['none', 'customer', 'external']).optional().default('none'),
   referred_by_customer_id: z.string().optional().transform(v => v?.trim() || null),
+  referrer_name: z.string().optional().transform(v => v?.trim() || null),
+  referrer_phone: z.string().optional().transform(v => v?.trim() || null),
   referral_reward_amount: z.string().optional().transform(v => {
     if (!v) return '0.00'
     const n = parseFloat(v)
@@ -31,7 +34,35 @@ const CustomerSchema = z.object({
     const n = parseInt(v, 10)
     return !isNaN(n) && n >= 1 && n <= 31 ? n : null
   }),
-})
+}).transform(({ referral_source, ...data }) => {
+  if (referral_source === 'customer') {
+    return {
+      ...data,
+      referrer_name: null,
+      referrer_phone: null,
+    }
+  }
+
+  if (referral_source === 'external') {
+    return {
+      ...data,
+      referred_by_customer_id: null,
+      referrer_name: data.referrer_name,
+      referrer_phone: data.referrer_phone,
+    }
+  }
+
+  return {
+    ...data,
+    referred_by_customer_id: null,
+    referrer_name: null,
+    referrer_phone: null,
+    referral_reward_amount: '0.00',
+  }
+}).refine(
+  data => !!data.referred_by_customer_id || !!data.referrer_name || Number(data.referral_reward_amount) === 0,
+  { message: 'Select a customer referrer or enter a non-customer referrer name' },
+)
 
 export type CustomerActionResult = { error?: string }
 

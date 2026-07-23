@@ -84,6 +84,8 @@ export type Database = {
           billing_day: number | null
           notes: string | null
           referred_by_customer_id: string | null
+          referrer_name: string | null
+          referrer_phone: string | null
           referral_reward_amount: string
           created_by: string | null
           created_at: string
@@ -106,6 +108,8 @@ export type Database = {
           billing_day?: number | null
           notes?: string | null
           referred_by_customer_id?: string | null
+          referrer_name?: string | null
+          referrer_phone?: string | null
           referral_reward_amount?: string
           created_by?: string | null
           created_at?: string
@@ -128,6 +132,8 @@ export type Database = {
           billing_day?: number | null
           notes?: string | null
           referred_by_customer_id?: string | null
+          referrer_name?: string | null
+          referrer_phone?: string | null
           referral_reward_amount?: string
           created_by?: string | null
           created_at?: string
@@ -609,7 +615,9 @@ export type Database = {
       customer_referral_rewards: {
         Row: {
           id: string
-          referrer_customer_id: string
+          referrer_customer_id: string | null
+          referrer_name: string | null
+          referrer_phone: string | null
           referred_customer_id: string
           reward_month: string
           amount: string
@@ -621,7 +629,9 @@ export type Database = {
         }
         Insert: {
           id?: string
-          referrer_customer_id: string
+          referrer_customer_id?: string | null
+          referrer_name?: string | null
+          referrer_phone?: string | null
           referred_customer_id: string
           reward_month: string
           amount: string
@@ -633,7 +643,9 @@ export type Database = {
         }
         Update: {
           id?: string
-          referrer_customer_id?: string
+          referrer_customer_id?: string | null
+          referrer_name?: string | null
+          referrer_phone?: string | null
           referred_customer_id?: string
           reward_month?: string
           amount?: string
