@@ -3,12 +3,12 @@
 import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { ArrowLeft, Edit2, Phone, Mail, MapPin, ShoppingBag, Plus } from 'lucide-react'
+import { ArrowLeft, Edit2, Phone, Mail, MapPin, ShoppingBag, Plus, Trash2, AlertTriangle } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { EditCustomerModal } from './edit-customer-modal'
 import type { ReferralCustomerOption } from './customer-form-fields'
 import { RecordPaymentModal } from '@/components/payments/record-payment-modal'
-import { setCustomerStatus } from '@/lib/customers/actions'
+import { setCustomerStatus, deleteCustomer } from '@/lib/customers/actions'
 import { useAppSettings } from '@/components/settings/settings-context'
 import type { Tables, Enums } from '@/lib/supabase/types'
 
@@ -109,6 +109,7 @@ export function CustomerDetailView({
   customer,
   canWrite,
   canAdmin,
+  isOwner = false,
   balance,
   orders = [],
   referrer,
@@ -117,6 +118,7 @@ export function CustomerDetailView({
   customer: Customer
   canWrite: boolean
   canAdmin: boolean
+  isOwner?: boolean
   balance: BalanceSummary
   orders?: OrderWithItems[]
   referrer?: ReferralCustomerOption | null
@@ -129,6 +131,10 @@ export function CustomerDetailView({
   const [statusError, setStatusError] = useState<string | null>(null)
   const [isPending, startTransition]  = useTransition()
 
+  const [deleteOpen, setDeleteOpen]     = useState(false)
+  const [deleteError, setDeleteError]   = useState('')
+  const [isDeletePending, startDeleteTransition] = useTransition()
+
   const statusCfg = STATUS_CONFIG[customer.status]
 
   function handleStatusChange(newStatus: Enums<'customer_status'>) {
@@ -140,6 +146,19 @@ export function CustomerDetailView({
       } else {
         router.refresh()
       }
+    })
+  }
+
+  function handleDeleteConfirm() {
+    setDeleteError('')
+    startDeleteTransition(async () => {
+      const result = await deleteCustomer(customer.id)
+      if (result?.error) {
+        setDeleteError(result.error)
+        return
+      }
+      router.push('/customers')
+      router.refresh()
     })
   }
 
@@ -196,8 +215,65 @@ export function CustomerDetailView({
               Edit
             </Button>
           )}
+          {isOwner && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => { setDeleteError(''); setDeleteOpen(true) }}
+              style={{ color: 'var(--color-red)', borderColor: '#FECACA' }}
+            >
+              <Trash2 size={14} />
+              Delete
+            </Button>
+          )}
         </div>
       </div>
+
+      {/* Delete confirmation */}
+      {deleteOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4"
+          style={{ background: 'rgba(0,0,0,0.4)' }}
+        >
+          <div
+            className="w-full max-w-sm rounded-[14px] p-5"
+            style={{ background: 'var(--color-surface)', boxShadow: 'var(--shadow-card)' }}
+          >
+            <div className="flex items-center gap-2 mb-2">
+              <AlertTriangle size={16} style={{ color: 'var(--color-red)' }} />
+              <p className="font-bold text-sm" style={{ color: 'var(--color-ink)' }}>
+                Delete {customer.full_name}?
+              </p>
+            </div>
+            <p className="text-xs mb-3" style={{ color: 'var(--color-muted)' }}>
+              This permanently removes the customer. This cannot be undone. Customers with any order, invoice, or payment history cannot be deleted — set them to Inactive instead.
+            </p>
+            {deleteError && (
+              <p className="text-xs font-semibold mb-3" style={{ color: 'var(--color-red)' }}>
+                {deleteError}
+              </p>
+            )}
+            <div className="flex gap-2">
+              <button
+                onClick={() => setDeleteOpen(false)}
+                disabled={isDeletePending}
+                className="flex-1 py-2 rounded-[10px] text-sm font-semibold"
+                style={{ background: '#fff', border: '1px solid var(--color-border)', color: 'var(--color-muted)' }}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleDeleteConfirm}
+                disabled={isDeletePending}
+                className="flex-1 py-2 rounded-[10px] text-sm font-bold disabled:opacity-60"
+                style={{ background: 'var(--color-red)', color: '#fff' }}
+              >
+                {isDeletePending ? 'Deleting…' : 'Yes, Delete'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Profile card */}
       <div

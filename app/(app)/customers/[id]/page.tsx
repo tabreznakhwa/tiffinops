@@ -128,6 +128,7 @@ export default async function CustomerDetailPage({
       customer={customer}
       canWrite={WRITER_ROLES.includes(user.role)}
       canAdmin={ADMIN_ROLES.includes(user.role)}
+      isOwner={user.role === 'owner'}
       balance={balance}
       orders={(recentOrders ?? []) as unknown as OrderWithItems[]}
       referrer={referrer}

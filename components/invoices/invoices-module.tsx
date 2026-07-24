@@ -6,11 +6,14 @@ import { Plus, Search, Printer, X } from 'lucide-react'
 import { DatePresetPicker } from '@/components/ui/date-preset-picker'
 import {
   createInvoice,
+  updateInvoice,
+  deleteInvoice,
   issueInvoice,
   updateInvoiceStatus,
   voidInvoice,
   triggerMonthlyInvoices,
   type CreateInvoiceInput,
+  type UpdateInvoiceInput,
   type GenerateResult,
 } from '@/lib/invoices/actions'
 import { getCustomerSubscription } from '@/lib/invoices/getCustomerSubscription'
@@ -155,43 +158,64 @@ function StatusTabs({
 function GenerateInvoiceModal({
   onClose,
   onSuccess,
+  editingInvoice,
 }: {
   onClose: () => void
   onSuccess: (id: string) => void
+  editingInvoice?: InvoiceWithCustomer
 }) {
   const [isPending, startTransition] = useTransition()
   const { currency, vatRate } = useAppSettings()
 
+  const isEditing = !!editingInvoice
+
   // Customer search
-  const [customerSearch, setCustomerSearch] = useState('')
+  const [customerSearch, setCustomerSearch] = useState(editingInvoice?.customers?.full_name ?? '')
   const [customers, setCustomers] = useState<CustomerOption[]>([])
   const [customersLoaded, setCustomersLoaded] = useState(false)
-  const [selectedCustomer, setSelectedCustomer] = useState<CustomerOption | null>(null)
+  const [selectedCustomer, setSelectedCustomer] = useState<CustomerOption | null>(
+    editingInvoice
+      ? {
+          id: editingInvoice.customer_id,
+          full_name: editingInvoice.customers?.full_name ?? '',
+          customer_code: editingInvoice.customers?.customer_code ?? '',
+        }
+      : null
+  )
   const [showCustomerDropdown, setShowCustomerDropdown] = useState(false)
 
   // Invoice type
-  const [invoiceType, setInvoiceType] = useState<InvoiceType>('adhoc')
+  const [invoiceType, setInvoiceType] = useState<InvoiceType>(editingInvoice?.invoice_type ?? 'adhoc')
 
   // Billing period (for fixed_monthly)
   const [billingMonth, setBillingMonth] = useState(() => {
+    if (editingInvoice?.billing_period_start) return editingInvoice.billing_period_start.slice(0, 7)
     const d = new Date()
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
   })
 
   // Due date — defaults to 30 days from today
   const [dueDate, setDueDate] = useState(() => {
+    if (editingInvoice) return editingInvoice.due_date
     const d = new Date()
     d.setDate(d.getDate() + 30)
     return d.toISOString().split('T')[0]
   })
 
   // Notes
-  const [notes, setNotes] = useState('')
+  const [notes, setNotes] = useState(editingInvoice?.notes ?? '')
 
   // Line items
-  const [items, setItems] = useState<LineItem[]>([
-    { description: '', quantity: '1', unit_price: '' },
-  ])
+  const [items, setItems] = useState<LineItem[]>(
+    editingInvoice?.invoice_items.length
+      ? editingInvoice.invoice_items.map((it) => ({
+          description: it.description,
+          quantity: String(it.quantity),
+          unit_price: String(it.unit_price),
+          order_id: it.order_id ?? undefined,
+        }))
+      : [{ description: '', quantity: '1', unit_price: '' }]
+  )
 
   // Subscription load
   const [loadingSubscription, setLoadingSubscription] = useState(false)
@@ -308,7 +332,7 @@ function GenerateInvoiceModal({
       return
     }
 
-    const input: CreateInvoiceInput = {
+    const input: CreateInvoiceInput | UpdateInvoiceInput = {
       customer_id: selectedCustomer.id,
       invoice_type: invoiceType,
       billing_period_start: invoiceType === 'fixed_monthly' ? `${billingMonth}-01` : null,
@@ -330,7 +354,9 @@ function GenerateInvoiceModal({
     }
 
     startTransition(async () => {
-      const result = await createInvoice(input)
+      const result = isEditing
+        ? await updateInvoice(editingInvoice!.id, input)
+        : await createInvoice(input)
       if (result.error) {
         setError(result.error)
       } else if (result.invoice_id) {
@@ -360,10 +386,10 @@ function GenerateInvoiceModal({
               className="text-[10px] font-bold uppercase tracking-wider"
               style={{ color: 'var(--color-saffron)' }}
             >
-              New Invoice
+              {isEditing ? `Invoice ${editingInvoice!.invoice_number}` : 'New Invoice'}
             </p>
             <h2 className="font-bold text-[18px]" style={{ color: 'var(--color-ink)' }}>
-              Generate Invoice
+              {isEditing ? 'Edit Invoice' : 'Generate Invoice'}
             </h2>
           </div>
           <button
@@ -698,7 +724,7 @@ function GenerateInvoiceModal({
                 opacity: isPending ? 0.6 : 1,
               }}
             >
-              {isPending ? 'Creating…' : 'Create Draft Invoice'}
+              {isPending ? 'Saving…' : isEditing ? 'Save Changes' : 'Create Draft Invoice'}
             </button>
           </div>
         </form>
@@ -967,6 +993,9 @@ export function InvoicesModule({
   const [showModal, setShowModal] = useState(false)
   const [showBulkModal, setShowBulkModal] = useState(false)
   const [cancelTarget, setCancelTarget] = useState<{ id: string; invoice_number: string } | null>(null)
+  const [editingInvoice, setEditingInvoice] = useState<InvoiceWithCustomer | null>(null)
+  const [deleteTarget, setDeleteTarget] = useState<{ id: string; invoice_number: string } | null>(null)
+  const [deleteError, setDeleteError] = useState('')
 
   const [isPending, startTransition] = useTransition()
 
@@ -1014,6 +1043,20 @@ export function InvoicesModule({
       const res = await voidInvoice(id, reason)
       if (res.error) alert(res.error)
       setCancelTarget(null)
+    })
+  }
+
+  function handleDeleteConfirm() {
+    if (!deleteTarget) return
+    const id = deleteTarget.id
+    setDeleteError('')
+    startTransition(async () => {
+      const res = await deleteInvoice(id)
+      if (res.error) {
+        setDeleteError(res.error)
+        return
+      }
+      setDeleteTarget(null)
     })
   }
 
@@ -1251,6 +1294,20 @@ export function InvoicesModule({
                     Print
                   </Link>
 
+                  {/* Edit (owner only) */}
+                  {isOwner && inv.status !== 'cancelled' && inv.status !== 'written_off' && (
+                    <button
+                      onClick={() => setEditingInvoice(inv)}
+                      className="px-2.5 py-1 rounded-[7px] text-[11px] font-bold transition-colors"
+                      style={{
+                        background: 'var(--color-saffron-soft)',
+                        color: 'var(--color-saffron)',
+                      }}
+                    >
+                      Edit
+                    </button>
+                  )}
+
                   {/* Cancel (owner only) */}
                   {isCancellable && isOwner && (
                     <button
@@ -1262,6 +1319,20 @@ export function InvoicesModule({
                       }}
                     >
                       Cancel
+                    </button>
+                  )}
+
+                  {/* Delete (owner only, draft invoices only) */}
+                  {isDraft && isOwner && (
+                    <button
+                      onClick={() => { setDeleteError(''); setDeleteTarget({ id: inv.id, invoice_number: inv.invoice_number }) }}
+                      className="px-2.5 py-1 rounded-[7px] text-[11px] font-bold transition-colors"
+                      style={{
+                        background: 'var(--color-red-soft)',
+                        color: 'var(--color-red)',
+                      }}
+                    >
+                      Delete
                     </button>
                   )}
                 </div>
@@ -1291,6 +1362,15 @@ export function InvoicesModule({
         />
       )}
 
+      {/* Edit Invoice Modal */}
+      {editingInvoice && (
+        <GenerateInvoiceModal
+          editingInvoice={editingInvoice}
+          onClose={() => setEditingInvoice(null)}
+          onSuccess={() => setEditingInvoice(null)}
+        />
+      )}
+
       {/* Cancel Confirmation */}
       {cancelTarget && (
         <CancelDialog
@@ -1299,6 +1379,48 @@ export function InvoicesModule({
           onConfirm={handleCancelConfirm}
           isPending={isPending}
         />
+      )}
+
+      {/* Delete Confirmation */}
+      {deleteTarget && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4"
+          style={{ background: 'rgba(34,26,19,0.5)' }}
+          onClick={(e) => { if (e.target === e.currentTarget) setDeleteTarget(null) }}
+        >
+          <div
+            className="w-full max-w-sm rounded-[18px] p-6"
+            style={{ background: 'var(--color-surface)', border: '1px solid var(--color-border)', boxShadow: 'var(--shadow-card)' }}
+          >
+            <h2 className="font-bold text-[16px] mb-2" style={{ color: 'var(--color-ink)' }}>
+              Delete Invoice {deleteTarget.invoice_number}?
+            </h2>
+            <p className="text-xs mb-4" style={{ color: 'var(--color-muted)' }}>
+              This permanently removes the invoice and its line items. This cannot be undone.
+            </p>
+            {deleteError && (
+              <p className="text-xs font-semibold mb-3" style={{ color: 'var(--color-red)' }}>{deleteError}</p>
+            )}
+            <div className="flex gap-2">
+              <button
+                onClick={() => setDeleteTarget(null)}
+                disabled={isPending}
+                className="flex-1 py-2 rounded-[10px] text-sm font-semibold"
+                style={{ background: 'var(--color-border)', color: 'var(--color-muted)' }}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleDeleteConfirm}
+                disabled={isPending}
+                className="flex-1 py-2 rounded-[10px] text-sm font-bold"
+                style={{ background: 'var(--color-red)', color: '#fff' }}
+              >
+                {isPending ? 'Deleting…' : 'Yes, Delete'}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   )

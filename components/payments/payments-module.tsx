@@ -4,9 +4,10 @@ import { useState, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 import { Plus, Search, AlertTriangle, FileSpreadsheet, Printer } from 'lucide-react'
 import { DatePresetPicker } from '@/components/ui/date-preset-picker'
-import { voidPayment } from '@/lib/payments/actions'
+import { voidPayment, deletePayment } from '@/lib/payments/actions'
 import { requestApproval } from '@/lib/approvals/actions'
 import { RecordPaymentModal } from './record-payment-modal'
+import { EditPaymentModal, type EditablePayment } from './edit-payment-modal'
 import { useAppSettings } from '@/components/settings/settings-context'
 import type { Enums } from '@/lib/supabase/types'
 
@@ -115,6 +116,11 @@ export function PaymentsModule({
   const [reqVoidError, setReqVoidError]   = useState('')
   const [reqVoidLoading, setReqVoidLoading] = useState(false)
 
+  const [editingPayment, setEditingPayment] = useState<PaymentRow | null>(null)
+  const [deletingId, setDeletingId]       = useState<string | null>(null)
+  const [deleteError, setDeleteError]     = useState('')
+  const [deleteLoading, setDeleteLoading] = useState(false)
+
   // Derived
   const nonVoided = payments.filter(p => !p.voided_at)
   const voided    = payments.filter(p => !!p.voided_at)
@@ -162,6 +168,17 @@ export function PaymentsModule({
     if (result.error) { setVoidError(result.error); return }
     setVoidingId(null)
     setVoidReason('')
+    router.refresh()
+  }
+
+  async function handleDelete() {
+    if (!deletingId) return
+    setDeleteError('')
+    setDeleteLoading(true)
+    const result = await deletePayment(deletingId)
+    setDeleteLoading(false)
+    if (result.error) { setDeleteError(result.error); return }
+    setDeletingId(null)
     router.refresh()
   }
 
@@ -432,13 +449,29 @@ export function PaymentsModule({
                           {currency} {parseFloat(String(pay.amount)).toFixed(2)}
                         </p>
                         {isOwner && !isVoided && !isVoiding && (
-                          <button
-                            onClick={() => { setVoidingId(pay.id); setVoidReason(''); setVoidError('') }}
-                            className="text-[11px] font-semibold mt-1"
-                            style={{ color: 'var(--color-red)' }}
-                          >
-                            Void
-                          </button>
+                          <div className="flex items-center gap-2 justify-end mt-1">
+                            <button
+                              onClick={() => setEditingPayment(pay)}
+                              className="text-[11px] font-semibold"
+                              style={{ color: 'var(--color-saffron)' }}
+                            >
+                              Edit
+                            </button>
+                            <button
+                              onClick={() => { setVoidingId(pay.id); setVoidReason(''); setVoidError('') }}
+                              className="text-[11px] font-semibold"
+                              style={{ color: 'var(--color-red)' }}
+                            >
+                              Void
+                            </button>
+                            <button
+                              onClick={() => { setDeletingId(pay.id); setDeleteError('') }}
+                              className="text-[11px] font-semibold"
+                              style={{ color: 'var(--color-red)' }}
+                            >
+                              Delete
+                            </button>
+                          </div>
                         )}
                         {!isOwner && !isVoided && reqVoidId !== pay.id && (
                           <button
@@ -536,10 +569,63 @@ export function PaymentsModule({
                     </div>
                   </div>
                 )}
+
+                {/* Inline delete confirmation */}
+                {deletingId === pay.id && (
+                  <div
+                    className="mx-4 mb-4 rounded-[10px] p-3"
+                    style={{ background: 'var(--color-red-soft)', border: '1px solid #FECACA' }}
+                  >
+                    <div className="flex items-center gap-1.5 mb-2">
+                      <AlertTriangle size={13} style={{ color: 'var(--color-red)' }} />
+                      <p className="text-xs font-bold" style={{ color: 'var(--color-red)' }}>
+                        Permanently delete this payment? This cannot be undone.
+                      </p>
+                    </div>
+                    {deleteError && (
+                      <p className="text-xs font-semibold mb-2" style={{ color: 'var(--color-red)' }}>{deleteError}</p>
+                    )}
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => { setDeletingId(null); setDeleteError('') }}
+                        className="flex-1 py-1.5 rounded-[7px] text-xs font-semibold"
+                        style={{ background: '#fff', border: '1px solid var(--color-border)', color: 'var(--color-muted)' }}
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        onClick={handleDelete}
+                        disabled={deleteLoading}
+                        className="flex-1 py-1.5 rounded-[7px] text-xs font-bold disabled:opacity-50"
+                        style={{ background: 'var(--color-red)', color: '#fff' }}
+                      >
+                        {deleteLoading ? 'Deleting…' : 'Confirm Delete'}
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
             )
           })}
         </div>
+      )}
+
+      {editingPayment && (
+        <EditPaymentModal
+          payment={{
+            id: editingPayment.id,
+            payment_number: editingPayment.payment_number,
+            customer_full_name: editingPayment.customers?.full_name ?? 'Unknown',
+            amount: editingPayment.amount,
+            mode: editingPayment.mode,
+            reference_number: editingPayment.reference_number,
+            payment_date: editingPayment.payment_date,
+            notes: editingPayment.notes,
+            is_advance: editingPayment.is_advance,
+          } satisfies EditablePayment}
+          onClose={() => setEditingPayment(null)}
+          onSaved={() => { setEditingPayment(null); router.refresh() }}
+        />
       )}
 
       {/* Record payment modal */}

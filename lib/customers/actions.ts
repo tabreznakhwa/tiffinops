@@ -121,6 +121,29 @@ export async function updateCustomer(
   return {}
 }
 
+export async function deleteCustomer(id: string): Promise<CustomerActionResult> {
+  const user = await requireAuth()
+  if (user.role !== 'owner') return { error: 'Only the owner can delete customers' }
+
+  const admin = createAdminClient()
+
+  const [{ count: orderCount }, { count: invoiceCount }, { count: paymentCount }] = await Promise.all([
+    admin.from('orders').select('id', { count: 'exact', head: true }).eq('customer_id', id),
+    admin.from('invoices').select('id', { count: 'exact', head: true }).eq('customer_id', id),
+    admin.from('payments').select('id', { count: 'exact', head: true }).eq('customer_id', id),
+  ])
+
+  if ((orderCount ?? 0) > 0 || (invoiceCount ?? 0) > 0 || (paymentCount ?? 0) > 0) {
+    return { error: 'This customer has order, invoice, or payment history and cannot be deleted — set them to Inactive instead' }
+  }
+
+  const { error } = await admin.from('customers').delete().eq('id', id)
+  if (error) return { error: error.message }
+
+  revalidatePath('/customers')
+  return {}
+}
+
 export async function setCustomerStatus(
   id: string,
   status: Enums<'customer_status'>

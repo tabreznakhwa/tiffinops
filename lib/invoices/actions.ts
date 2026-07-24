@@ -206,6 +206,129 @@ export async function updateInvoiceStatus(
   return { invoice_id: id }
 }
 
+// ── updateInvoice ─────────────────────────────────────────────────────────────
+
+export type UpdateInvoiceInput = {
+  customer_id: string
+  invoice_type: Enums<'invoice_type'>
+  billing_period_start?: string | null
+  billing_period_end?: string | null
+  due_date: string
+  notes?: string | null
+  items: {
+    description: string
+    quantity: number
+    unit_price: number
+    order_id?: string | null
+  }[]
+}
+
+export async function updateInvoice(
+  id: string,
+  input: UpdateInvoiceInput
+): Promise<InvoiceActionResult> {
+  const user = await requireAuth()
+  if (user.role !== 'owner') return { error: 'Only the owner can edit invoices' }
+
+  if (!input.customer_id) return { error: 'Customer is required' }
+  if (!input.due_date) return { error: 'Due date is required' }
+  if (!input.items || input.items.length === 0) return { error: 'At least one line item is required' }
+
+  const admin = createAdminClient()
+
+  const { data: existing, error: fetchErr } = await admin
+    .from('invoices')
+    .select('id, invoice_number, status')
+    .eq('id', id)
+    .single()
+
+  if (fetchErr || !existing) return { error: 'Invoice not found' }
+  if (existing.status === 'cancelled' || existing.status === 'written_off') {
+    return { error: `Cannot edit a ${existing.status.replace('_', ' ')} invoice` }
+  }
+
+  const { data: settingsRow } = await admin.from('app_settings').select('vat_percent').eq('id', 1).single()
+  const vatRate = parseFloat(String(settingsRow?.vat_percent ?? '5'))
+
+  const subtotal = input.items.reduce((sum, item) => sum + item.quantity * item.unit_price, 0)
+  const taxAmount = (subtotal * vatRate) / (100 + vatRate)
+  const totalAmount = subtotal
+
+  const { error: updateErr } = await admin
+    .from('invoices')
+    .update({
+      customer_id: input.customer_id,
+      invoice_type: input.invoice_type,
+      billing_period_start: input.billing_period_start ?? null,
+      billing_period_end: input.billing_period_end ?? null,
+      due_date: input.due_date,
+      subtotal: subtotal.toFixed(2),
+      tax_amount: taxAmount.toFixed(2),
+      total_amount: totalAmount.toFixed(2),
+      notes: input.notes ?? null,
+    })
+    .eq('id', id)
+
+  if (updateErr) return { error: updateErr.message }
+
+  // Replace line items
+  const { error: deleteItemsErr } = await admin.from('invoice_items').delete().eq('invoice_id', id)
+  if (deleteItemsErr) return { error: deleteItemsErr.message }
+
+  const lineItems = input.items.map((item) => ({
+    invoice_id: id,
+    order_id: item.order_id ?? null,
+    description: item.description,
+    quantity: item.quantity.toString(),
+    unit_price: item.unit_price.toFixed(2),
+    total_price: (item.quantity * item.unit_price).toFixed(2),
+  }))
+
+  const { error: itemsErr } = await admin.from('invoice_items').insert(lineItems)
+  if (itemsErr) return { error: itemsErr.message }
+
+  // Invoice was already issued (has a ledger debit entry) — keep it in sync with the new total
+  if (existing.status !== 'draft') {
+    await admin
+      .from('ledger_entries')
+      .update({ debit_amount: totalAmount.toFixed(2) })
+      .eq('reference_table', 'invoices')
+      .eq('reference_id', id)
+  }
+
+  revalidatePath('/invoices')
+  return { invoice_id: id }
+}
+
+// ── deleteInvoice ─────────────────────────────────────────────────────────────
+
+export async function deleteInvoice(id: string): Promise<InvoiceActionResult> {
+  const user = await requireAuth()
+  if (user.role !== 'owner') return { error: 'Only the owner can delete invoices' }
+
+  const admin = createAdminClient()
+
+  const { data: existing, error: fetchErr } = await admin
+    .from('invoices')
+    .select('status')
+    .eq('id', id)
+    .single()
+
+  if (fetchErr || !existing) return { error: 'Invoice not found' }
+  if (existing.status !== 'draft') {
+    return { error: 'Only draft (unissued) invoices can be deleted — cancel it instead' }
+  }
+
+  const { error: itemsErr } = await admin.from('invoice_items').delete().eq('invoice_id', id)
+  if (itemsErr) return { error: itemsErr.message }
+
+  const { error } = await admin.from('invoices').delete().eq('id', id)
+  if (error) return { error: error.message }
+
+  revalidatePath('/invoices')
+  return {}
+}
+
 // ── voidInvoice ───────────────────────────────────────────────────────────────
 
 export async function voidInvoice(id: string, reason: string): Promise<InvoiceActionResult> {

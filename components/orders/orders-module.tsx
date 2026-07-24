@@ -3,8 +3,9 @@
 import { Fragment, useState, useMemo, useTransition } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
-import { Plus, Search, AlertTriangle, Pencil } from 'lucide-react'
+import { Plus, Search, AlertTriangle, Pencil, Trash2 } from 'lucide-react'
 import { voidOrder } from '@/lib/orders/voidOrder'
+import { deleteOrder } from '@/lib/orders/actions'
 import { useAppSettings } from '@/components/settings/settings-context'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -163,6 +164,11 @@ export function OrdersModule({
   const [voidError, setVoidError]     = useState('')
   const [isPending, startTransition]  = useTransition()
 
+  // Delete state
+  const [deletingId, setDeletingId]     = useState<string | null>(null)
+  const [deleteError, setDeleteError]   = useState('')
+  const [isDeletePending, startDeleteTransition] = useTransition()
+
 
   // ── Filter logic ──────────────────────────────────────────────────────────
 
@@ -244,6 +250,32 @@ export function OrdersModule({
       }
       setVoidingId(null)
       setVoidReason('')
+      router.refresh()
+    })
+  }
+
+  // ── Delete handler ────────────────────────────────────────────────────────
+
+  function handleDeleteClick(id: string) {
+    setDeletingId(id)
+    setDeleteError('')
+  }
+
+  function handleDeleteCancel() {
+    setDeletingId(null)
+    setDeleteError('')
+  }
+
+  function handleDeleteConfirm() {
+    if (!deletingId) return
+    setDeleteError('')
+    startDeleteTransition(async () => {
+      const result = await deleteOrder(deletingId)
+      if (result.error) {
+        setDeleteError(result.error)
+        return
+      }
+      setDeletingId(null)
       router.refresh()
     })
   }
@@ -468,6 +500,7 @@ export function OrdersModule({
                 {filtered.map((order, idx) => {
                   const isVoided  = order.order_status === 'voided'
                   const isVoiding = voidingId === order.id
+                  const isDeleting = deletingId === order.id
                   const itemSummary = order.order_items
                     .map((i) => i.item_name_snapshot)
                     .join(', ')
@@ -558,7 +591,7 @@ export function OrdersModule({
                         {/* Actions */}
                         <td className="px-3 py-3">
                           <div className="flex items-center gap-1.5">
-                            {!isVoided && !isVoiding && order.order_date === todayStr() && (
+                            {!isVoided && !isVoiding && !isDeleting && (order.order_date === todayStr() || isOwner) && (
                               <Link
                                 href={`/orders/${order.id}/edit`}
                                 className="flex items-center gap-1 text-[11px] font-semibold px-2 py-1 rounded-[6px] transition-colors"
@@ -568,7 +601,7 @@ export function OrdersModule({
                                 Edit
                               </Link>
                             )}
-                            {isOwner && !isVoided && !isVoiding && (
+                            {isOwner && !isVoided && !isVoiding && !isDeleting && (
                               <button
                                 onClick={() => handleVoidClick(order.id)}
                                 className="text-[11px] font-semibold px-2 py-1 rounded-[6px] transition-colors"
@@ -577,9 +610,61 @@ export function OrdersModule({
                                 Void
                               </button>
                             )}
+                            {isOwner && !isVoiding && !isDeleting && (
+                              <button
+                                onClick={() => handleDeleteClick(order.id)}
+                                className="flex items-center gap-1 text-[11px] font-semibold px-2 py-1 rounded-[6px] transition-colors"
+                                style={{ color: 'var(--color-red)', background: 'var(--color-red-soft)' }}
+                              >
+                                <Trash2 size={10} />
+                                Delete
+                              </button>
+                            )}
                           </div>
                         </td>
                       </tr>
+
+                      {/* Inline delete confirmation row */}
+                      {isDeleting && (
+                        <tr style={{ borderTop: '1px solid var(--color-border)' }}>
+                          <td colSpan={8} className="px-4 pb-4 pt-2">
+                            <div
+                              className="rounded-[10px] p-3"
+                              style={{ background: 'var(--color-red-soft)', border: '1px solid #FECACA' }}
+                            >
+                              <div className="flex items-center gap-1.5 mb-2">
+                                <AlertTriangle size={13} style={{ color: 'var(--color-red)' }} />
+                                <p className="text-xs font-bold" style={{ color: 'var(--color-red)' }}>
+                                  Permanently delete order {order.order_number}? This cannot be undone.
+                                </p>
+                              </div>
+                              {deleteError && (
+                                <p className="text-xs font-semibold mb-2" style={{ color: 'var(--color-red)' }}>
+                                  {deleteError}
+                                </p>
+                              )}
+                              <div className="flex gap-2">
+                                <button
+                                  onClick={handleDeleteCancel}
+                                  className="flex-1 py-1.5 rounded-[7px] text-xs font-semibold"
+                                  style={{ background: '#fff', border: '1px solid var(--color-border)', color: 'var(--color-muted)' }}
+                                  disabled={isDeletePending}
+                                >
+                                  Cancel
+                                </button>
+                                <button
+                                  onClick={handleDeleteConfirm}
+                                  disabled={isDeletePending}
+                                  className="flex-1 py-1.5 rounded-[7px] text-xs font-bold disabled:opacity-50"
+                                  style={{ background: 'var(--color-red)', color: '#fff' }}
+                                >
+                                  {isDeletePending ? 'Deleting…' : 'Confirm Delete'}
+                                </button>
+                              </div>
+                            </div>
+                          </td>
+                        </tr>
+                      )}
 
                       {/* Inline void confirmation row */}
                       {isVoiding && (

@@ -233,3 +233,40 @@ export async function updateOrderFull(input: UpdateOrderFullInput): Promise<Orde
 
   return { order_id }
 }
+
+// ── deleteOrder ────────────────────────────────────────────────────────────────
+
+export async function deleteOrder(id: string): Promise<OrderActionResult> {
+  const user = await requireAuth()
+  if (user.role !== 'owner') return { error: 'Only the owner can delete orders' }
+
+  const admin = createAdminClient()
+
+  const { data: existing, error: fetchErr } = await admin
+    .from('orders')
+    .select('customer_id')
+    .eq('id', id)
+    .single()
+
+  if (fetchErr || !existing) return { error: 'Order not found' }
+
+  const { count, error: linkErr } = await admin
+    .from('invoice_items')
+    .select('id', { count: 'exact', head: true })
+    .eq('order_id', id)
+
+  if (linkErr) return { error: linkErr.message }
+  if (count && count > 0) {
+    return { error: 'This order has been invoiced and cannot be deleted — void it instead' }
+  }
+
+  const { error: itemsErr } = await admin.from('order_items').delete().eq('order_id', id)
+  if (itemsErr) return { error: itemsErr.message }
+
+  const { error } = await admin.from('orders').delete().eq('id', id)
+  if (error) return { error: error.message }
+
+  revalidatePath('/orders')
+  revalidatePath(`/customers/${existing.customer_id}`)
+  return {}
+}
