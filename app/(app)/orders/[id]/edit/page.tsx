@@ -5,6 +5,7 @@ import { ArrowLeft } from 'lucide-react'
 import { notFound, redirect } from 'next/navigation'
 import { requireAuth } from '@/lib/auth'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { formatInTimeZone } from 'date-fns-tz'
 import { EditOrderForm } from '@/components/orders/edit-order-form'
 import type { EditableOrder } from '@/components/orders/edit-order-form'
 
@@ -14,7 +15,7 @@ export default async function EditOrderPage({
   params: Promise<{ id: string }>
 }) {
   const { id } = await params
-  await requireAuth()
+  const user = await requireAuth()
 
   const admin = createAdminClient()
 
@@ -43,6 +44,11 @@ export default async function EditOrderPage({
 
   if (error || !order) notFound()
   if (order.order_status === 'voided') redirect('/orders')
+
+  const todayDubai = formatInTimeZone(new Date(), 'Asia/Dubai', 'yyyy-MM-dd')
+  if (user.role !== 'owner' && order.order_date !== todayDubai) {
+    redirect('/orders?error=past_order_locked')
+  }
 
   const [{ data: customers }, { data: menuItems }] = await Promise.all([
     admin

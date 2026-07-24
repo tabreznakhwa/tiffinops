@@ -4,9 +4,14 @@ import { revalidatePath } from 'next/cache'
 import { z } from 'zod'
 import { requireAuth } from '@/lib/auth'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { formatInTimeZone } from 'date-fns-tz'
 import type { Enums } from '@/lib/supabase/types'
 
 const WRITE_ROLES: Enums<'user_role'>[] = ['owner', 'manager', 'data_entry']
+
+function todayDubai() {
+  return formatInTimeZone(new Date(), 'Asia/Dubai', 'yyyy-MM-dd')
+}
 
 const OrderItemSchema = z.object({
   menu_item_id: z.string().uuid(),
@@ -121,11 +126,14 @@ export async function updateOrder(input: UpdateOrderInput): Promise<UpdateOrderR
 
   const { data: order, error: fetchErr } = await admin
     .from('orders')
-    .select('subtotal, customer_id')
+    .select('subtotal, customer_id, order_date')
     .eq('id', order_id)
     .single()
 
   if (fetchErr || !order) return { error: 'Order not found' }
+  if (user.role !== 'owner' && order.order_date !== todayDubai()) {
+    return { error: 'Only the owner can edit past orders' }
+  }
 
   const subtotal    = parseFloat(String(order.subtotal))
   const totalAmount = subtotal - discount_amount + delivery_charge
@@ -188,12 +196,15 @@ export async function updateOrderFull(input: UpdateOrderFullInput): Promise<Orde
 
   const { data: existing, error: fetchErr } = await admin
     .from('orders')
-    .select('customer_id, order_status')
+    .select('customer_id, order_status, order_date')
     .eq('id', order_id)
     .single()
 
   if (fetchErr || !existing) return { error: 'Order not found' }
   if (existing.order_status === 'voided') return { error: 'Cannot edit a voided order' }
+  if (user.role !== 'owner' && existing.order_date !== todayDubai()) {
+    return { error: 'Only the owner can edit past orders' }
+  }
 
   const { error: updateErr } = await admin.from('orders').update({
     customer_id,
