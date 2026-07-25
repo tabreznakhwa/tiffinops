@@ -34,6 +34,14 @@ const PLAN_CONFIG: Record<
   hybrid:     { label: 'Hybrid',      bg: 'var(--color-blue-soft)',    color: 'var(--color-blue)'   },
 }
 
+const PAYMENT_TERMS_CONFIG: Record<
+  Enums<'payment_terms'>,
+  { label: string; bg: string; color: string }
+> = {
+  prepaid:  { label: 'Prepaid',  bg: 'var(--color-green-soft)', color: 'var(--color-green)' },
+  postpaid: { label: 'Postpaid', bg: 'var(--color-border)',     color: 'var(--color-muted)' },
+}
+
 function StatusBadge({ status }: { status: Enums<'customer_status'> }) {
   const cfg = STATUS_CONFIG[status]
   return (
@@ -48,6 +56,18 @@ function StatusBadge({ status }: { status: Enums<'customer_status'> }) {
 
 function PlanBadge({ type }: { type: Enums<'customer_type'> }) {
   const cfg = PLAN_CONFIG[type]
+  return (
+    <span
+      className="inline-flex items-center px-2 py-0.5 rounded-pill text-[11px] font-bold"
+      style={{ background: cfg.bg, color: cfg.color }}
+    >
+      {cfg.label}
+    </span>
+  )
+}
+
+function TermsBadge({ terms }: { terms: Enums<'payment_terms'> }) {
+  const cfg = PAYMENT_TERMS_CONFIG[terms]
   return (
     <span
       className="inline-flex items-center px-2 py-0.5 rounded-pill text-[11px] font-bold"
@@ -103,6 +123,7 @@ export function CustomersModule({
   const [search, setSearch] = useState('')
   const [filterStatus, setFilterStatus] = useState('all')
   const [filterType, setFilterType] = useState('all')
+  const [filterTerms, setFilterTerms] = useState('all')
   const [filterArea, setFilterArea] = useState('all')
   const [addOpen, setAddOpen] = useState(false)
   const [editingCustomer, setEditingCustomer] = useState<Customer | null>(null)
@@ -127,6 +148,7 @@ export function CustomersModule({
     return customers.filter((c) => {
       if (filterStatus !== 'all' && c.status !== filterStatus) return false
       if (filterType !== 'all' && c.customer_type !== filterType) return false
+      if (filterTerms !== 'all' && c.payment_terms !== filterTerms) return false
       if (filterArea !== 'all' && c.area !== filterArea) return false
       if (q) {
         return (
@@ -138,7 +160,7 @@ export function CustomersModule({
       }
       return true
     })
-  }, [customers, search, filterStatus, filterType, filterArea])
+  }, [customers, search, filterStatus, filterType, filterTerms, filterArea])
 
   function handleDone() {
     router.refresh()
@@ -218,6 +240,12 @@ export function CustomersModule({
             <option value="hybrid">Hybrid</option>
           </FilterSelect>
 
+          <FilterSelect value={filterTerms} onChange={setFilterTerms}>
+            <option value="all">All Terms</option>
+            <option value="prepaid">Prepaid</option>
+            <option value="postpaid">Postpaid</option>
+          </FilterSelect>
+
           {areas.length > 0 && (
             <FilterSelect value={filterArea} onChange={setFilterArea}>
               <option value="all">All Areas</option>
@@ -292,7 +320,10 @@ export function CustomersModule({
                     </td>
                     {/* Plan */}
                     <td className="px-4 py-3">
-                      <PlanBadge type={c.customer_type} />
+                      <div className="flex flex-col items-start gap-1">
+                        <PlanBadge type={c.customer_type} />
+                        <TermsBadge terms={c.payment_terms} />
+                      </div>
                     </td>
                     {/* Balance */}
                     <td className="hidden sm:table-cell px-4 py-3 text-right num font-semibold">

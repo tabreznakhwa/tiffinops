@@ -82,6 +82,7 @@ export type Database = {
           customer_type: Database['public']['Enums']['customer_type']
           status: Database['public']['Enums']['customer_status']
           billing_day: number | null
+          payment_terms: Database['public']['Enums']['payment_terms']
           notes: string | null
           referred_by_customer_id: string | null
           referrer_name: string | null
@@ -106,6 +107,7 @@ export type Database = {
           customer_type?: Database['public']['Enums']['customer_type']
           status?: Database['public']['Enums']['customer_status']
           billing_day?: number | null
+          payment_terms?: Database['public']['Enums']['payment_terms']
           notes?: string | null
           referred_by_customer_id?: string | null
           referrer_name?: string | null
@@ -130,6 +132,7 @@ export type Database = {
           customer_type?: Database['public']['Enums']['customer_type']
           status?: Database['public']['Enums']['customer_status']
           billing_day?: number | null
+          payment_terms?: Database['public']['Enums']['payment_terms']
           notes?: string | null
           referred_by_customer_id?: string | null
           referrer_name?: string | null
@@ -910,6 +913,7 @@ export type Database = {
       user_status: 'pending' | 'active' | 'inactive'
       customer_type: 'a_la_carte' | 'fixed_menu' | 'hybrid'
       customer_status: 'active' | 'paused' | 'inactive' | 'blacklisted'
+      payment_terms: 'prepaid' | 'postpaid'
       meal_period: 'breakfast' | 'lunch' | 'dinner'
       order_status: 'draft' | 'confirmed' | 'preparing' | 'out_for_delivery' | 'delivered' | 'cancelled' | 'voided'
       payment_status: 'unpaid' | 'partial' | 'paid' | 'refunded' | 'written_off'

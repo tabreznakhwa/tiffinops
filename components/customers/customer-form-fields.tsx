@@ -126,6 +126,23 @@ export function CustomerFormFields({
         </div>
       </div>
 
+      {/* Payment terms */}
+      <div>
+        <label className="block text-sm font-semibold" style={{ color: 'var(--color-ink)' }}>
+          Payment Terms <span style={{ color: 'var(--color-red)' }}>*</span>
+        </label>
+        <select
+          name="payment_terms"
+          defaultValue={defaultValues?.payment_terms ?? 'prepaid'}
+          required
+          className={inputBase}
+          style={{ ...inputStyle, cursor: 'pointer' }}
+        >
+          <option value="prepaid">Prepaid — pays in advance</option>
+          <option value="postpaid">Postpaid — pays after month completion</option>
+        </select>
+      </div>
+
       {/* Email */}
       <div>
         <label className="block text-sm font-semibold" style={{ color: 'var(--color-ink)' }}>

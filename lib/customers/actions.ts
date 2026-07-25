@@ -13,6 +13,7 @@ const CustomerSchema = z.object({
   full_name: z.string().min(2, 'Name must be at least 2 characters'),
   mobile_number: z.string().min(7, 'Enter a valid mobile number'),
   customer_type: z.enum(['a_la_carte', 'fixed_menu', 'hybrid']),
+  payment_terms: z.enum(['prepaid', 'postpaid']).default('prepaid'),
   area: z.string().transform(v => v.trim() || null),
   whatsapp_number: z.string().transform(v => v.trim() || null),
   email: z.string().transform(v => v.trim() || null),

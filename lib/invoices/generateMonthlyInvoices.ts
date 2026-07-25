@@ -1,5 +1,6 @@
 import { createAdminClient } from '@/lib/supabase/admin'
 import { formatInTimeZone } from 'date-fns-tz'
+import type { Enums } from '@/lib/supabase/types'
 
 export type GenerateResult = {
   generated: number
@@ -18,6 +19,11 @@ function monthBounds(yyyyMM: string): { start: string; end: string } {
   return { start, end }
 }
 
+function monthLabelFor(yyyyMM: string): string {
+  const [y, m] = yyyyMM.split('-').map(Number)
+  return new Date(y, m - 1, 1).toLocaleDateString('en-GB', { month: 'long', year: 'numeric' })
+}
+
 // Advance one month: '2026-06' → '2026-07'
 export function nextMonth(yyyyMM: string): string {
   const [y, m] = yyyyMM.split('-').map(Number)
@@ -25,11 +31,24 @@ export function nextMonth(yyyyMM: string): string {
   return formatInTimeZone(d, 'Asia/Dubai', 'yyyy-MM')
 }
 
+// Go back one month: '2026-07' → '2026-06'
+export function prevMonth(yyyyMM: string): string {
+  const [y, m] = yyyyMM.split('-').map(Number)
+  const d = new Date(y, m - 2, 1) // 1st of previous month
+  return formatInTimeZone(d, 'Asia/Dubai', 'yyyy-MM')
+}
+
 /**
  * Generate draft fixed_monthly invoices for all active subscribers.
- * Designed to run on the 26th — creates invoices for the NEXT calendar month.
+ * Designed to run on the 26th, when `targetMonth` is the upcoming calendar month.
  *
- * @param targetMonth  'YYYY-MM' of the month being invoiced (defaults to next Dubai month)
+ * Billing depends on the customer's payment_terms:
+ *  - prepaid  (default): billed in advance for targetMonth, due on the 1st of targetMonth.
+ *  - postpaid: billed for the month that's about to complete (the month before
+ *              targetMonth), due on the 1st of targetMonth — i.e. right after
+ *              that billing month finishes.
+ *
+ * @param targetMonth  'YYYY-MM' of the upcoming month (defaults to next Dubai month)
  * @param createdBy    auth user ID to stamp on each invoice
  */
 export async function generateMonthlyInvoices(
@@ -52,31 +71,39 @@ export async function generateMonthlyInvoices(
       agreed_monthly_price,
       fixed_plan_id,
       fixed_plans(plan_name),
-      customers(full_name, customer_code)
+      customers(full_name, customer_code, payment_terms)
     `)
     .eq('status', 'active')
 
   if (subsErr) return { generated: 0, skipped: 0, referralRewardsGenerated: 0, errors: [subsErr.message], month: targetMonth }
 
-  const { start: periodStart, end: periodEnd } = monthBounds(targetMonth)
-  // Due date = 1st of the target month (pay before month begins)
-  const dueDate = periodStart
+  const priorMonth = prevMonth(targetMonth)
 
-  // Fetch existing invoices for this month to skip duplicates
+  const PERIOD_BY_TERMS: Record<Enums<'payment_terms'>, { periodStart: string; periodEnd: string; dueDate: string; monthLabel: string }> = {
+    prepaid: (() => {
+      const { start, end } = monthBounds(targetMonth)
+      // Due date = 1st of the target month (pay before month begins)
+      return { periodStart: start, periodEnd: end, dueDate: start, monthLabel: monthLabelFor(targetMonth) }
+    })(),
+    postpaid: (() => {
+      const { start, end } = monthBounds(priorMonth)
+      // Due date = 1st of the target month (pay right after the billed month completes)
+      return { periodStart: start, periodEnd: end, dueDate: monthBounds(targetMonth).start, monthLabel: monthLabelFor(priorMonth) }
+    })(),
+  }
+
+  const periodStarts = [PERIOD_BY_TERMS.prepaid.periodStart, PERIOD_BY_TERMS.postpaid.periodStart]
+
+  // Fetch existing invoices across both possible periods to skip duplicates
   const { data: existingInvoices } = await admin
     .from('invoices')
-    .select('customer_id')
+    .select('customer_id, billing_period_start')
     .eq('invoice_type', 'fixed_monthly')
-    .gte('billing_period_start', periodStart)
-    .lte('billing_period_start', periodEnd)
+    .in('billing_period_start', periodStarts)
 
-  const alreadyInvoiced = new Set((existingInvoices ?? []).map((i) => i.customer_id))
-
-  // Format month label: '2026-07' → 'July 2026'
-  const [ty, tm] = targetMonth.split('-').map(Number)
-  const monthLabel = new Date(ty, tm - 1, 1).toLocaleDateString('en-GB', {
-    month: 'long', year: 'numeric',
-  })
+  const alreadyInvoiced = new Set(
+    (existingInvoices ?? []).map((i) => `${i.customer_id}:${i.billing_period_start}`)
+  )
 
   let generated = 0
   let skipped = 0
@@ -85,7 +112,7 @@ export async function generateMonthlyInvoices(
 
   const { data: rewardsCount, error: rewardsErr } = await admin.rpc(
     'generate_referral_rewards_for_month',
-    { p_month: periodStart },
+    { p_month: PERIOD_BY_TERMS.prepaid.periodStart },
   )
   if (rewardsErr) {
     errors.push(`Referral rewards: ${rewardsErr.message}`)
@@ -94,13 +121,16 @@ export async function generateMonthlyInvoices(
   }
 
   for (const sub of subs ?? []) {
-    if (alreadyInvoiced.has(sub.customer_id)) {
+    const customer = sub.customers as unknown as { full_name: string; customer_code: string; payment_terms: Enums<'payment_terms'> } | null
+    const terms = customer?.payment_terms ?? 'prepaid'
+    const { periodStart, periodEnd, dueDate, monthLabel } = PERIOD_BY_TERMS[terms]
+
+    if (alreadyInvoiced.has(`${sub.customer_id}:${periodStart}`)) {
       skipped++
       continue
     }
 
     const plan = sub.fixed_plans as unknown as { plan_name: string } | null
-    const customer = sub.customers as unknown as { full_name: string; customer_code: string } | null
 
     const amount = parseFloat(String(sub.agreed_monthly_price))
     if (!amount || amount <= 0) {

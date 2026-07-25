@@ -804,10 +804,10 @@ function BulkGenerateModal({
             >
               <p style={{ color: 'var(--color-ink)' }}>
                 Creates a <strong>draft fixed_monthly invoice</strong> for every active subscriber.
-                Existing invoices for the selected month are skipped.
+                Existing invoices for the billed month are skipped.
               </p>
               <p className="mt-1.5 text-xs" style={{ color: 'var(--color-muted)' }}>
-                {activeSubCount} active subscription{activeSubCount !== 1 ? 's' : ''} · Due date = 1st of selected month
+                {activeSubCount} active subscription{activeSubCount !== 1 ? 's' : ''} · Prepaid customers are billed for the selected month · Postpaid customers are billed for the month before it, once it completes · Due date = 1st of the selected month either way
               </p>
             </div>
 

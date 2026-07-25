@@ -13,6 +13,7 @@ create type user_role         as enum ('owner','manager','data_entry','accounts'
 create type user_status       as enum ('pending','active','inactive');
 create type customer_type     as enum ('a_la_carte','fixed_menu','hybrid');
 create type customer_status   as enum ('active','paused','inactive','blacklisted');
+create type payment_terms     as enum ('prepaid','postpaid');
 create type meal_period       as enum ('breakfast','lunch','dinner');
 create type order_status      as enum ('draft','confirmed','preparing','out_for_delivery','delivered','cancelled','voided');
 create type payment_status    as enum ('unpaid','partial','paid','refunded','written_off');
@@ -72,6 +73,8 @@ create table customers (
   status customer_status not null default 'active',
   -- billing config (mix: customer-level wins; falls back to company default; falls back to 26)
   billing_day smallint check (billing_day between 1 and 31),
+  -- prepaid: billed in advance for the coming month; postpaid: billed after the month completes
+  payment_terms payment_terms not null default 'prepaid',
   notes text,
   created_by uuid references users(id),
   created_at timestamptz not null default now(),

@@ -47,6 +47,11 @@ const PLAN_LABELS: Record<Enums<'customer_type'>, string> = {
   hybrid:     'Hybrid',
 }
 
+const PAYMENT_TERMS_LABELS: Record<Enums<'payment_terms'>, string> = {
+  prepaid:  'Prepaid — pays in advance',
+  postpaid: 'Postpaid — pays after month completion',
+}
+
 function InfoRow({
   label,
   value,
@@ -299,6 +304,7 @@ export function CustomerDetailView({
             <InfoRow label="Email" value={customer.email} icon={<Mail size={13} />} />
           )}
           <InfoRow label="Plan Type" value={PLAN_LABELS[customer.customer_type]} />
+          <InfoRow label="Payment Terms" value={PAYMENT_TERMS_LABELS[customer.payment_terms]} />
           {customer.area && (
             <InfoRow label="Area / Zone" value={customer.area} icon={<MapPin size={13} />} />
           )}
