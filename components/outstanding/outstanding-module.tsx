@@ -46,25 +46,57 @@ const TYPE_COLORS: Record<string, { bg: string; color: string }> = {
   hybrid:      { bg: 'var(--color-purple-soft, #F5F3FF)', color: 'var(--color-purple, #7C3AED)' },
 }
 
-// Months elapsed inclusive (advance-payment model: month of start counts immediately)
-function monthsInRange(subStart: string, subEnd: string | null, subStatus: string, rangeFrom: string, rangeTo: string): number {
-  // Subscription hasn't started yet within the range
-  if (subStart > rangeTo) return 0
+/**
+ * Prorata subscription charge over a date range.
+ * Paused/cancelled/completed subscriptions use end_date as the billing cutoff.
+ * Partial months at start or end are charged by the day (activeDays / daysInMonth * monthlyPrice).
+ */
+function chargeForRange(
+  subStart: string,
+  subEnd: string | null,
+  subStatus: string,
+  monthlyPrice: number,
+  rangeFrom: string,
+  rangeTo: string,
+): number {
+  if (!monthlyPrice || subStart > rangeTo) return 0
 
-  // Effective end of subscription
-  const subEffectiveEnd = (subStatus === 'cancelled' || subStatus === 'completed') && subEnd
-    ? subEnd
-    : rangeTo
+  // Paused/cancelled/completed: billing stops on end_date
+  const hasEndCutoff = subStatus === 'paused' || subStatus === 'cancelled' || subStatus === 'completed'
+  const subLastDay = hasEndCutoff && subEnd ? subEnd : rangeTo
 
-  // Clamp to range
-  const from = subStart > rangeFrom ? subStart : rangeFrom
-  const to   = subEffectiveEnd < rangeTo ? subEffectiveEnd : rangeTo
+  // Active window: intersection of subscription period and requested range
+  const wFrom = subStart > rangeFrom ? subStart : rangeFrom
+  const wTo   = subLastDay < rangeTo  ? subLastDay : rangeTo
+  if (wFrom > wTo) return 0
 
-  if (from > to) return 0
+  const [wfY, wfM, wfD] = wFrom.split('-').map(Number)
+  const [wtY, wtM, wtD] = wTo.split('-').map(Number)
+  const wFromMs = Date.UTC(wfY, wfM - 1, wfD)
+  const wToMs   = Date.UTC(wtY, wtM - 1, wtD)
 
-  const f = new Date(from + 'T00:00:00Z')
-  const t = new Date(to   + 'T00:00:00Z')
-  return Math.max(0, (t.getFullYear() - f.getFullYear()) * 12 + (t.getMonth() - f.getMonth()) + 1)
+  let total = 0
+  let yr = wfY, mo = wfM - 1  // 0-based month index
+
+  while (true) {
+    const monthFirstMs    = Date.UTC(yr, mo, 1)
+    const nextMonthFirstMs = Date.UTC(yr, mo + 1, 1)
+    const daysInMonth     = (nextMonthFirstMs - monthFirstMs) / 86_400_000
+    const monthLastMs     = nextMonthFirstMs - 86_400_000  // inclusive last day of month
+
+    const segFromMs = wFromMs > monthFirstMs ? wFromMs : monthFirstMs
+    const segToMs   = wToMs   < monthLastMs  ? wToMs   : monthLastMs
+    if (segFromMs > wToMs) break
+
+    const activeDays = Math.round((segToMs - segFromMs) / 86_400_000) + 1
+    total += (activeDays / daysInMonth) * monthlyPrice
+
+    mo++
+    if (mo > 11) { mo = 0; yr++ }
+    if (Date.UTC(yr, mo, 1) > wToMs) break
+  }
+
+  return total
 }
 
 function todayStr(): string {
@@ -104,13 +136,20 @@ export function OutstandingModule({ customers, orders, payments, subscriptions, 
     for (const o of filtOrders)   orderTotals.set(o.customer_id, (orderTotals.get(o.customer_id) ?? 0) + parseFloat(o.total_amount))
     for (const p of filtPayments) paymentTotals.set(p.customer_id, (paymentTotals.get(p.customer_id) ?? 0) + parseFloat(p.amount))
 
-    // Subscription expected charges per customer (months × agreed_monthly_price)
-    const subExpected = new Map<string, number>()
+    // Subscription expected charges per customer (prorata day-based)
+    const subExpected   = new Map<string, number>()
+    const subMonthlyRate = new Map<string, number>()  // most recent active/paused rate
+    const subIsPaused   = new Map<string, boolean>()
+
     for (const sub of subscriptions) {
-      const months = monthsInRange(sub.start_date, sub.end_date, sub.status, effectiveFrom, effectiveTo)
-      if (months > 0) {
-        const charge = months * parseFloat(sub.agreed_monthly_price)
+      const rate = parseFloat(sub.agreed_monthly_price)
+      const charge = chargeForRange(sub.start_date, sub.end_date, sub.status, rate, effectiveFrom, effectiveTo)
+      if (charge > 0) {
         subExpected.set(sub.customer_id, (subExpected.get(sub.customer_id) ?? 0) + charge)
+      }
+      if (sub.status === 'active' || sub.status === 'paused') {
+        subMonthlyRate.set(sub.customer_id, rate)
+        if (sub.status === 'paused') subIsPaused.set(sub.customer_id, true)
       }
     }
 
@@ -126,7 +165,9 @@ export function OutstandingModule({ customers, orders, payments, subscriptions, 
           subCharge,
           totalBilled,
           totalPaid,
-          outstanding: totalBilled - totalPaid,
+          outstanding:  totalBilled - totalPaid,
+          monthlyRate:  subMonthlyRate.get(c.id) ?? 0,
+          subPaused:    subIsPaused.get(c.id) ?? false,
         }
       })
       .filter(r => r.outstanding > 0.005)
@@ -247,10 +288,10 @@ export function OutstandingModule({ customers, orders, payments, subscriptions, 
             <table className="w-full text-sm border-collapse">
               <thead>
                 <tr style={{ borderBottom: '1px solid var(--color-border)', background: 'var(--color-cream)' }}>
-                  {['#', 'Customer', 'Type', 'Contact', 'Billed', 'Paid', 'Outstanding'].map(h => (
+                  {['#', 'Customer', 'Type', 'Contact', 'Plan Rate', 'Billed', 'Paid', 'Outstanding'].map(h => (
                     <th
                       key={h}
-                      className={`px-4 py-3 text-xs font-bold uppercase tracking-wide ${['Billed', 'Paid', 'Outstanding'].includes(h) ? 'text-right' : 'text-left'}`}
+                      className={`px-4 py-3 text-xs font-bold uppercase tracking-wide ${['Plan Rate', 'Billed', 'Paid', 'Outstanding'].includes(h) ? 'text-right' : 'text-left'}`}
                       style={{ color: 'var(--color-muted)' }}
                     >{h}</th>
                   ))}
@@ -277,6 +318,28 @@ export function OutstandingModule({ customers, orders, payments, subscriptions, 
                         <div>{row.mobile_number}</div>
                         {row.area && <div className="mt-0.5">{row.area}</div>}
                       </td>
+                      {/* Plan Rate */}
+                      <td className="px-4 py-3 text-right">
+                        {row.monthlyRate > 0 ? (
+                          <div>
+                            <span className="font-mono text-xs font-semibold" style={{ color: 'var(--color-ink)' }}>
+                              {currency} {row.monthlyRate.toFixed(2)}
+                            </span>
+                            <span className="text-[10px] ml-0.5" style={{ color: 'var(--color-muted)' }}>/mo</span>
+                            {row.subPaused && (
+                              <div className="mt-0.5">
+                                <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-[4px]"
+                                  style={{ background: '#FEF3C7', color: '#92400E' }}>
+                                  PAUSED
+                                </span>
+                              </div>
+                            )}
+                          </div>
+                        ) : (
+                          <span className="text-[10px]" style={{ color: 'var(--color-muted)' }}>—</span>
+                        )}
+                      </td>
+                      {/* Billed */}
                       <td className="px-4 py-3 text-right font-mono" style={{ color: 'var(--color-ink)' }}>
                         <div>{currency} {row.totalBilled.toFixed(2)}</div>
                         {row.subCharge > 0 && row.orderBilled > 0 && (
@@ -285,7 +348,9 @@ export function OutstandingModule({ customers, orders, payments, subscriptions, 
                           </div>
                         )}
                         {row.subCharge > 0 && row.orderBilled === 0 && (
-                          <div className="text-[10px] mt-0.5" style={{ color: 'var(--color-muted)' }}>Subscription charges</div>
+                          <div className="text-[10px] mt-0.5" style={{ color: 'var(--color-muted)' }}>
+                            {row.subPaused ? 'Prorated subscription (paused)' : 'Subscription charges'}
+                          </div>
                         )}
                       </td>
                       <td className="px-4 py-3 text-right font-mono font-semibold" style={{ color: 'var(--color-green, #2E7D4F)' }}>
@@ -300,7 +365,7 @@ export function OutstandingModule({ customers, orders, payments, subscriptions, 
               </tbody>
               <tfoot>
                 <tr style={{ borderTop: '2px solid var(--color-border)', background: 'var(--color-cream)' }}>
-                  <td className="px-4 py-3 font-bold text-xs uppercase tracking-wide" style={{ color: 'var(--color-muted)' }} colSpan={4}>
+                  <td className="px-4 py-3 font-bold text-xs uppercase tracking-wide" style={{ color: 'var(--color-muted)' }} colSpan={5}>
                     Total ({filtered.length} customers)
                   </td>
                   <td className="px-4 py-3 text-right font-bold font-mono" style={{ color: 'var(--color-ink)' }}>{currency} {grandBilled.toFixed(2)}</td>

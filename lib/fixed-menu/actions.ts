@@ -178,7 +178,8 @@ export async function updateSubscriptionStatus(
   if (!isDestructive && !CREATE_ROLES.includes(user.role)) return { error: 'Owner, Manager or Data Entry role required' }
 
   const admin = createAdminClient()
-  const endDate = (status === 'cancelled' || status === 'completed')
+  // Record the date for any terminal/paused transition; clear it when re-activating
+  const endDate = (status === 'cancelled' || status === 'completed' || status === 'paused')
     ? formatInTimeZone(new Date(), 'Asia/Dubai', 'yyyy-MM-dd')
     : null
 
