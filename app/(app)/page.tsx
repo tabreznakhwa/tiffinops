@@ -186,8 +186,14 @@ export default async function DashboardPage({
   const monthRevenue  = (monthPayments  ?? []).reduce((s, p) => s + parseFloat(String(p.amount)), 0)
   const lastMonthRev  = (lastMonthPay   ?? []).reduce((s, p) => s + parseFloat(String(p.amount)), 0)
   const mrr           = (activeSubs     ?? []).reduce((s, p) => s + parseFloat(String(p.agreed_monthly_price)), 0)
-  const activeCount   = (allCustomers   ?? []).filter(c => c.status === 'active').length
-  const pausedCount   = (allCustomers   ?? []).filter(c => c.status === 'paused').length
+  const activeCount             = (allCustomers ?? []).filter(c => c.status === 'active').length
+  const pausedCount             = (allCustomers ?? []).filter(c => c.status === 'paused').length
+  const fixedMenuActiveCustomers = (allCustomers ?? []).filter(c => c.status === 'active' && c.customer_type === 'fixed_menu').length
+  const alaCarteActiveCustomers  = (allCustomers ?? []).filter(c => c.status === 'active' && c.customer_type === 'a_la_carte').length
+
+  // Build customer_id → customer_type map for outstanding split
+  const customerTypeMap = new Map<string, string>()
+  for (const c of allCustomers ?? []) customerTypeMap.set(c.id, c.customer_type)
 
   // ── Order KPIs (paginated) ─────────────────────────────────────────────────
   const todayBilled     = (todayOrderAmounts ?? []).reduce((s, o) => s + parseFloat(String(o.total_amount)), 0)
@@ -211,6 +217,7 @@ export default async function DashboardPage({
   }
 
   let totalOutstandingOrders = 0
+  let alaCarteOutstanding = 0
   const debtorMap = new Map<string, { full_name: string; customer_code: string; outstanding: number }>()
   for (const [customerId, data] of custOrderTotals) {
     const paid = custPayTotals.get(customerId) ?? 0
@@ -218,6 +225,8 @@ export default async function DashboardPage({
     if (outstanding > 0.01) {
       totalOutstandingOrders += outstanding
       debtorMap.set(customerId, { full_name: data.full_name, customer_code: data.customer_code, outstanding })
+      const ctype = customerTypeMap.get(customerId)
+      if (ctype === 'a_la_carte' || ctype === 'hybrid') alaCarteOutstanding += outstanding
     }
   }
 
@@ -239,6 +248,7 @@ export default async function DashboardPage({
   const subs = (activeSubs ?? []) as unknown as SubRow[]
 
   const balanceRows = subs.map(s => ({
+    customer_id:   s.customer_id,
     full_name:     s.customers?.full_name ?? 'Unknown',
     customer_code: s.customers?.customer_code ?? '',
     monthlyCharge: parseFloat(String(s.agreed_monthly_price)),
@@ -247,6 +257,9 @@ export default async function DashboardPage({
   })).filter(r => r.balance > 0.005).sort((a, b) => b.balance - a.balance)
 
   const subOutstanding = balanceRows.reduce((s, r) => s + r.balance, 0)
+  const fixedMenuOutstanding = balanceRows
+    .filter(r => customerTypeMap.get(r.customer_id) === 'fixed_menu')
+    .reduce((s, r) => s + r.balance, 0)
 
   // ── Charts ─────────────────────────────────────────────────────────────────
   const payDayMap = new Map<string, number>()
@@ -311,10 +324,14 @@ export default async function DashboardPage({
     activeSubscriptions: subs.length,
     totalOutstanding:    subOutstanding,
     topBalances:         balanceRows.slice(0, 5),
-    activeCustomers:     activeCount,
-    pausedCustomers:     pausedCount,
-    totalCustomers:      (allCustomers ?? []).length,
-    newCustomersMonth:   newCustomers?.length ?? 0,
+    activeCustomers:           activeCount,
+    pausedCustomers:           pausedCount,
+    totalCustomers:            (allCustomers ?? []).length,
+    newCustomersMonth:         newCustomers?.length ?? 0,
+    fixedMenuActiveCustomers,
+    alaCarteActiveCustomers,
+    fixedMenuOutstanding,
+    alaCarteOutstanding,
     ordersToday:         orders.length,
     ordersByPeriod:      byPeriod,
     pendingApprovals:    pendingApprovals ?? 0,

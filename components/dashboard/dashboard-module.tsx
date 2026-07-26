@@ -47,6 +47,10 @@ export type DashboardData = {
   pausedCustomers: number
   totalCustomers: number
   newCustomersMonth: number
+  fixedMenuActiveCustomers: number
+  alaCarteActiveCustomers: number
+  fixedMenuOutstanding: number
+  alaCarteOutstanding: number
   // Operations
   ordersToday: number
   ordersByPeriod: { breakfast: number; lunch: number; dinner: number }
@@ -291,6 +295,19 @@ export function DashboardModule({ data }: { data: DashboardData }) {
           sub="payments received this month" color={C.green} href="/payments" />
         <KPI label="Total Outstanding (Orders)" value={`${currency} ${d.totalOutstandingOrders.toFixed(2)}`}
           sub="unpaid orders (pre-invoice)" color={C.muted} href="/bills" />
+      </div>
+
+      {/* ── Plan Type KPIs ── */}
+      <SectionLabel>By Plan Type</SectionLabel>
+      <div className="grid gap-3 mb-2" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(155px, 1fr))' }}>
+        <KPI label="Fixed Menu Customers" value={String(d.fixedMenuActiveCustomers)} color={C.purple}
+          sub="active tiffin subscribers" href="/customers" />
+        <KPI label="A La Carte Customers" value={String(d.alaCarteActiveCustomers)} color={C.teal}
+          sub="active order customers" href="/customers" />
+        <KPI label="Fixed Menu Outstanding" value={`${currency} ${d.fixedMenuOutstanding.toFixed(2)}`} color={C.ember}
+          sub="unpaid subscription invoices" href="/invoices" />
+        <KPI label="A La Carte Outstanding" value={`${currency} ${d.alaCarteOutstanding.toFixed(2)}`} color={C.red}
+          sub="unpaid order balances" href="/bills" />
       </div>
 
       {/* ── Operations KPIs ── */}
