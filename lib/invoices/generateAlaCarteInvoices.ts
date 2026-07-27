@@ -112,6 +112,32 @@ export async function generateAlaCarteInvoices(
     byCustomer.get(order.customer_id)!.push(order)
   }
 
+  // Fetch order items for all uninvoiced orders so we can show what was ordered
+  type OrderItemRow = { order_id: string; item_name_snapshot: string; quantity: string }
+  const orderItemsMap = new Map<string, string>()
+  {
+    const uninvoicedIds = [...byCustomer.values()].flat().map(o => o.id)
+    if (uninvoicedIds.length > 0) {
+      const PAGE = 1000; let off = 0
+      while (true) {
+        const { data } = await admin
+          .from('order_items')
+          .select('order_id, item_name_snapshot, quantity')
+          .in('order_id', uninvoicedIds)
+          .range(off, off + PAGE - 1)
+        if (!data || data.length === 0) break
+        for (const item of data as OrderItemRow[]) {
+          const qty = parseFloat(item.quantity)
+          const entry = qty !== 1 ? `${item.item_name_snapshot} ×${qty}` : item.item_name_snapshot
+          const prev = orderItemsMap.get(item.order_id)
+          orderItemsMap.set(item.order_id, prev ? `${prev}, ${entry}` : entry)
+        }
+        if (data.length < PAGE) break
+        off += PAGE
+      }
+    }
+  }
+
   const today    = formatInTimeZone(new Date(), 'Asia/Dubai', 'yyyy-MM-dd')
   const dueDate  = periodEnd
 
@@ -166,15 +192,21 @@ export async function generateAlaCarteInvoices(
       continue
     }
 
-    // Line items — one per order
-    const lineItems = orders.map(o => ({
-      invoice_id:  invoice.id,
-      order_id:    o.id,
-      description: `${o.order_date} · ${o.meal_period} · ${o.order_number}`,
-      quantity:    '1',
-      unit_price:  parseFloat(o.total_amount).toFixed(2),
-      total_price: parseFloat(o.total_amount).toFixed(2),
-    }))
+    // Line items — one per order, description includes what was ordered
+    const lineItems = orders.map(o => {
+      const itemsSummary = orderItemsMap.get(o.id)
+      const description  = itemsSummary
+        ? `${o.order_date} · ${o.meal_period} · ${itemsSummary}`
+        : `${o.order_date} · ${o.meal_period} · ${o.order_number}`
+      return {
+        invoice_id:  invoice.id,
+        order_id:    o.id,
+        description,
+        quantity:    '1',
+        unit_price:  parseFloat(o.total_amount).toFixed(2),
+        total_price: parseFloat(o.total_amount).toFixed(2),
+      }
+    })
 
     const { error: itemsErr } = await admin.from('invoice_items').insert(lineItems)
     if (itemsErr) {
