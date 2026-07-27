@@ -9,8 +9,6 @@ import { formatInTimeZone } from 'date-fns-tz'
 import type { GenerateResult } from '@/lib/invoices/generateMonthlyInvoices'
 import type { AlaCarteGenerateResult } from '@/lib/invoices/generateAlaCarteInvoices'
 
-export type { GenerateResult, AlaCarteGenerateResult }
-
 export async function triggerMonthlyInvoices(
   targetMonth?: string
 ): Promise<{ error?: string } & Partial<GenerateResult>> {

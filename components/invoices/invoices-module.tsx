@@ -16,9 +16,9 @@ import {
   getInvoiceItems,
   type CreateInvoiceInput,
   type UpdateInvoiceInput,
-  type GenerateResult,
-  type AlaCarteGenerateResult,
 } from '@/lib/invoices/actions'
+import type { GenerateResult } from '@/lib/invoices/generateMonthlyInvoices'
+import type { AlaCarteGenerateResult } from '@/lib/invoices/generateAlaCarteInvoices'
 import { getCustomerSubscription } from '@/lib/invoices/getCustomerSubscription'
 import { useAppSettings } from '@/components/settings/settings-context'
 import type { InvoiceWithCustomer, StatusCounts } from '@/app/(app)/invoices/page'
