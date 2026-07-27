@@ -49,6 +49,25 @@ import type { Enums } from '@/lib/supabase/types'
 
 export type InvoiceActionResult = { error?: string; invoice_id?: string }
 
+// ── getInvoiceItems ───────────────────────────────────────────────────────────
+
+export type InvoiceItemRow = {
+  description: string
+  quantity: string
+  unit_price: string
+  order_id: string | null
+}
+
+export async function getInvoiceItems(invoiceId: string): Promise<InvoiceItemRow[]> {
+  await requireAuth()
+  const admin = createAdminClient()
+  const { data } = await admin
+    .from('invoice_items')
+    .select('description, quantity, unit_price, order_id')
+    .eq('invoice_id', invoiceId)
+  return (data ?? []) as InvoiceItemRow[]
+}
+
 // ── createInvoice ─────────────────────────────────────────────────────────────
 
 export type CreateInvoiceInput = {

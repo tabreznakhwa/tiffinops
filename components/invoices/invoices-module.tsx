@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useMemo, useTransition } from 'react'
+import { useState, useMemo, useTransition, useEffect } from 'react'
 import Link from 'next/link'
 import { Plus, Search, Printer, X } from 'lucide-react'
 import { DatePresetPicker } from '@/components/ui/date-preset-picker'
@@ -13,6 +13,7 @@ import {
   voidInvoice,
   triggerMonthlyInvoices,
   triggerAlaCarteInvoices,
+  getInvoiceItems,
   type CreateInvoiceInput,
   type UpdateInvoiceInput,
   type GenerateResult,
@@ -207,17 +208,24 @@ function GenerateInvoiceModal({
   // Notes
   const [notes, setNotes] = useState(editingInvoice?.notes ?? '')
 
-  // Line items
-  const [items, setItems] = useState<LineItem[]>(
-    editingInvoice?.invoice_items.length
-      ? editingInvoice.invoice_items.map((it) => ({
+  // Line items — fetched lazily when editing (invoice_items not in list query)
+  const [items, setItems] = useState<LineItem[]>([{ description: '', quantity: '1', unit_price: '' }])
+  const [itemsLoading, setItemsLoading] = useState(!!editingInvoice)
+  useEffect(() => {
+    if (!editingInvoice) return
+    getInvoiceItems(editingInvoice.id).then((rows) => {
+      if (rows.length) {
+        setItems(rows.map((it) => ({
           description: it.description,
           quantity: String(it.quantity),
           unit_price: String(it.unit_price),
           order_id: it.order_id ?? undefined,
-        }))
-      : [{ description: '', quantity: '1', unit_price: '' }]
-  )
+        })))
+      }
+      setItemsLoading(false)
+    })
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   // Subscription load
   const [loadingSubscription, setLoadingSubscription] = useState(false)
@@ -556,9 +564,14 @@ function GenerateInvoiceModal({
               )}
             </div>
 
+            {itemsLoading ? (
+              <div className="py-6 text-center text-sm" style={{ color: 'var(--color-muted)' }}>
+                Loading line items…
+              </div>
+            ) : null}
             <div
               className="rounded-[10px] overflow-hidden"
-              style={{ border: '1px solid var(--color-border)' }}
+              style={{ border: '1px solid var(--color-border)', display: itemsLoading ? 'none' : undefined }}
             >
               {/* Table header */}
               <div

@@ -27,7 +27,7 @@ export type InvoiceWithCustomer = {
     full_name: string
     customer_code: string
   } | null
-  invoice_items: {
+  invoice_items?: {
     description: string
     quantity: string
     unit_price: string
@@ -58,8 +58,7 @@ export default async function InvoicesPage({
         invoice_type, billing_period_start, billing_period_end,
         subtotal, discount_amount, tax_amount, total_amount,
         status, notes, created_at,
-        customers(full_name, customer_code),
-        invoice_items(description, quantity, unit_price, order_id)
+        customers(full_name, customer_code)
       `)
       .order('invoice_date', { ascending: false })
       .order('created_at', { ascending: false }),
