@@ -54,7 +54,7 @@ export async function generateAlaCarteInvoices(
     .eq('status', 'active')
 
   if (custErr || !customers?.length) {
-    return { generated: 0, skipped: 0, errors: custErr ? [custErr.message] : [], invoice_ids: [], total_amount: 0, month: forMonth }
+    return { generated: 0, skipped: 0, errors: custErr ? [custErr.message] : [], invoice_ids: [], total_amount: 0, discount_total: 0, month: forMonth }
   }
 
   const customerIds = customers.map(c => c.id)
