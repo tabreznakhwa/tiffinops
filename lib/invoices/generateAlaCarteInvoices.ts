@@ -2,12 +2,13 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { formatInTimeZone } from 'date-fns-tz'
 
 export type AlaCarteGenerateResult = {
-  generated:    number
-  skipped:      number
-  errors:       string[]
-  invoice_ids:  string[]
-  total_amount: number
-  month:        string
+  generated:      number
+  skipped:        number
+  errors:         string[]
+  invoice_ids:    string[]
+  total_amount:   number
+  discount_total: number
+  month:          string
 }
 
 /**
@@ -23,7 +24,7 @@ export type AlaCarteGenerateResult = {
 export async function generateAlaCarteInvoices(
   forMonth: string,
   createdBy: string,
-  options?: { periodStart?: string; periodEnd?: string },
+  options?: { periodStart?: string; periodEnd?: string; discountPercent?: number },
 ): Promise<AlaCarteGenerateResult> {
   const admin = createAdminClient()
 
@@ -138,12 +139,15 @@ export async function generateAlaCarteInvoices(
     }
   }
 
+  const discountPct = Math.min(100, Math.max(0, options?.discountPercent ?? 0))
+
   const today    = formatInTimeZone(new Date(), 'Asia/Dubai', 'yyyy-MM-dd')
   const dueDate  = periodEnd
 
-  let generated    = 0
-  let skipped      = 0
-  let total_amount = 0
+  let generated      = 0
+  let skipped        = 0
+  let total_amount   = 0
+  let discount_total = 0
   const errors:      string[] = []
   const invoice_ids: string[] = []
 
@@ -153,10 +157,12 @@ export async function generateAlaCarteInvoices(
     const customer = customerMap.get(customerId)
     if (!customer) { skipped++; continue }
 
-    const subtotal = orders.reduce((s, o) => s + parseFloat(o.total_amount), 0)
+    const subtotal        = orders.reduce((s, o) => s + parseFloat(o.total_amount), 0)
     if (subtotal < 0.01) { skipped++; continue }
 
-    const taxAmount = (subtotal * vatRate) / (100 + vatRate)
+    const discountAmount  = parseFloat((subtotal * discountPct / 100).toFixed(2))
+    const discountedTotal = Math.max(0, subtotal - discountAmount)
+    const taxAmount       = (discountedTotal * vatRate) / (100 + vatRate)
 
     // Generate invoice number
     const { data: invNum, error: numErr } = await admin.rpc('next_invoice_number')
@@ -177,11 +183,13 @@ export async function generateAlaCarteInvoices(
         billing_period_start: periodStart,
         billing_period_end:   periodEnd,
         subtotal:             subtotal.toFixed(2),
-        discount_amount:      '0.00',
+        discount_amount:      discountAmount.toFixed(2),
         tax_amount:           taxAmount.toFixed(2),
-        total_amount:         subtotal.toFixed(2),
+        total_amount:         discountedTotal.toFixed(2),
         status:               'draft',
-        notes:                `A La Carte cycle — ${monthLabel}`,
+        notes:                discountPct > 0
+          ? `A La Carte cycle — ${monthLabel} · ${discountPct}% discount applied`
+          : `A La Carte cycle — ${monthLabel}`,
         created_by:           createdBy === 'system-cron' ? null : createdBy,
       })
       .select('id')
@@ -216,9 +224,10 @@ export async function generateAlaCarteInvoices(
     }
 
     invoice_ids.push(invoice.id)
-    total_amount += subtotal
+    total_amount   += discountedTotal
+    discount_total += discountAmount
     generated++
   }
 
-  return { generated, skipped, errors, invoice_ids, total_amount, month: forMonth }
+  return { generated, skipped, errors, invoice_ids, total_amount, discount_total, month: forMonth }
 }

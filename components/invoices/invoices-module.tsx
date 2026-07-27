@@ -937,8 +937,9 @@ function BulkAlaCarteModal({ onClose }: { onClose: () => void }) {
   }
 
   const { ps: initStart, pe: initEnd } = currentCycleDates()
-  const [periodStart, setPeriodStart] = useState(initStart)
-  const [periodEnd,   setPeriodEnd]   = useState(initEnd)
+  const [periodStart,    setPeriodStart]    = useState(initStart)
+  const [periodEnd,      setPeriodEnd]      = useState(initEnd)
+  const [discountPctStr, setDiscountPctStr] = useState('0')
 
   function fmtDate(d: string) {
     return new Date(d + 'T00:00:00Z').toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
@@ -947,13 +948,17 @@ function BulkAlaCarteModal({ onClose }: { onClose: () => void }) {
   // Derive forMonth from periodEnd for the server action
   function forMonthOf(pe: string) { return pe.slice(0, 7) }
 
+  const discountPct = Math.min(100, Math.max(0, parseFloat(discountPctStr) || 0))
   const isValid = periodStart && periodEnd && periodStart <= periodEnd
 
   function handleGenerate() {
     setError('')
     setResult(null)
     startTransition(async () => {
-      const res = await triggerAlaCarteInvoices(forMonthOf(periodEnd), periodStart, periodEnd)
+      const res = await triggerAlaCarteInvoices(
+        forMonthOf(periodEnd), periodStart, periodEnd,
+        discountPct > 0 ? discountPct : undefined,
+      )
       if (res.error) { setError(res.error); return }
       setResult(res as AlaCarteGenerateResult)
     })
@@ -1044,6 +1049,49 @@ function BulkAlaCarteModal({ onClose }: { onClose: () => void }) {
               </p>
             )}
 
+            {/* Discount */}
+            <div className="mb-5">
+              <label className="block text-xs font-bold mb-1.5" style={{ color: 'var(--color-ink)' }}>
+                Discount (optional)
+              </label>
+              <div className="flex items-center gap-2">
+                <div className="relative flex-1">
+                  <input
+                    type="number"
+                    min="0"
+                    max="100"
+                    step="0.5"
+                    value={discountPctStr}
+                    onChange={(e) => setDiscountPctStr(e.target.value)}
+                    placeholder="0"
+                    className="w-full rounded-[10px] px-3 py-2.5 pr-8 text-sm focus:outline-none focus:ring-1"
+                    style={{
+                      background: 'var(--color-cream)',
+                      border: '1px solid var(--color-border)',
+                      color: 'var(--color-ink)',
+                    }}
+                  />
+                  <span
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-sm font-bold pointer-events-none"
+                    style={{ color: 'var(--color-muted)' }}
+                  >
+                    %
+                  </span>
+                </div>
+                {discountPct > 0 && (
+                  <div
+                    className="px-3 py-2.5 rounded-[10px] text-xs font-bold whitespace-nowrap"
+                    style={{ background: 'var(--color-green-soft)', color: 'var(--color-green)' }}
+                  >
+                    {discountPct}% off all invoices
+                  </div>
+                )}
+              </div>
+              <p className="text-[11px] mt-1" style={{ color: 'var(--color-muted)' }}>
+                Applied to every invoice in this batch. Enter 0 for no discount.
+              </p>
+            </div>
+
             {error && (
               <p className="text-xs mb-4 font-semibold" style={{ color: 'var(--color-red)' }}>
                 {error}
@@ -1085,6 +1133,12 @@ function BulkAlaCarteModal({ onClose }: { onClose: () => void }) {
                 <span className="text-sm font-semibold" style={{ color: 'var(--color-muted)' }}>Total Amount</span>
                 <span className="font-display font-bold text-[22px] num" style={{ color: 'var(--color-ink)' }}>{currency} {result.total_amount.toFixed(2)}</span>
               </div>
+              {(result.discount_total ?? 0) > 0 && (
+                <div className="flex justify-between items-center py-2.5 px-4 rounded-[10px]" style={{ background: 'var(--color-green-soft)' }}>
+                  <span className="text-sm font-semibold" style={{ color: 'var(--color-green)' }}>Total Discount ({discountPct}%)</span>
+                  <span className="font-display font-bold text-[22px] num" style={{ color: 'var(--color-green)' }}>- {currency} {(result.discount_total ?? 0).toFixed(2)}</span>
+                </div>
+              )}
               <div className="flex justify-between items-center py-2.5 px-4 rounded-[10px]" style={{ background: 'var(--color-cream)' }}>
                 <span className="text-sm font-semibold" style={{ color: 'var(--color-muted)' }}>Skipped (already invoiced)</span>
                 <span className="font-display font-bold text-[22px] num" style={{ color: 'var(--color-muted)' }}>{result.skipped}</span>
