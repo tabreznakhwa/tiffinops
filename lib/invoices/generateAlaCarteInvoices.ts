@@ -83,15 +83,19 @@ export async function generateAlaCarteInvoices(
 
   const alreadyHasCycleInvoice = new Set((existingForCycle ?? []).map(i => i.customer_id))
 
-  // Fetch all credit non-cancelled orders in the period (paginated)
-  type OrderRow = { id: string; customer_id: string; total_amount: string; order_date: string; order_number: string; meal_period: string }
+  // Fetch all credit non-cancelled orders in the period, including their items in one query
+  type OrderRow = {
+    id: string; customer_id: string; total_amount: string
+    order_date: string; order_number: string; meal_period: string
+    order_items: { item_name_snapshot: string; quantity: string }[]
+  }
   const allOrders: OrderRow[] = []
   {
     const PAGE = 1000; let off = 0
     while (true) {
       const { data } = await admin
         .from('orders')
-        .select('id, customer_id, total_amount, order_date, order_number, meal_period')
+        .select('id, customer_id, total_amount, order_date, order_number, meal_period, order_items(item_name_snapshot, quantity)')
         .in('customer_id', customerIds)
         .gte('order_date', periodStart)
         .lte('order_date', periodEnd)
@@ -99,7 +103,7 @@ export async function generateAlaCarteInvoices(
         .not('order_status', 'in', '(cancelled,voided,draft)')
         .range(off, off + PAGE - 1)
       if (!data || data.length === 0) break
-      allOrders.push(...(data as OrderRow[]))
+      allOrders.push(...(data as unknown as OrderRow[]))
       if (data.length < PAGE) break
       off += PAGE
     }
@@ -111,32 +115,6 @@ export async function generateAlaCarteInvoices(
     if (alreadyInvoicedOrderIds.has(order.id)) continue
     if (!byCustomer.has(order.customer_id)) byCustomer.set(order.customer_id, [])
     byCustomer.get(order.customer_id)!.push(order)
-  }
-
-  // Fetch order items for all uninvoiced orders so we can show what was ordered
-  type OrderItemRow = { order_id: string; item_name_snapshot: string; quantity: string }
-  const orderItemsMap = new Map<string, string>()
-  {
-    const uninvoicedIds = [...byCustomer.values()].flat().map(o => o.id)
-    if (uninvoicedIds.length > 0) {
-      const PAGE = 1000; let off = 0
-      while (true) {
-        const { data } = await admin
-          .from('order_items')
-          .select('order_id, item_name_snapshot, quantity')
-          .in('order_id', uninvoicedIds)
-          .range(off, off + PAGE - 1)
-        if (!data || data.length === 0) break
-        for (const item of data as OrderItemRow[]) {
-          const qty = parseFloat(item.quantity)
-          const entry = qty !== 1 ? `${item.item_name_snapshot} ×${qty}` : item.item_name_snapshot
-          const prev = orderItemsMap.get(item.order_id)
-          orderItemsMap.set(item.order_id, prev ? `${prev}, ${entry}` : entry)
-        }
-        if (data.length < PAGE) break
-        off += PAGE
-      }
-    }
   }
 
   const discountPct = Math.min(100, Math.max(0, options?.discountPercent ?? 0))
@@ -202,8 +180,14 @@ export async function generateAlaCarteInvoices(
 
     // Line items — one per order, description includes what was ordered
     const lineItems = orders.map(o => {
-      const itemsSummary = orderItemsMap.get(o.id)
-      const description  = itemsSummary
+      const items = o.order_items ?? []
+      const itemsSummary = items.length > 0
+        ? items.map(it => {
+            const qty = parseFloat(it.quantity)
+            return qty !== 1 ? `${it.item_name_snapshot} ×${qty}` : it.item_name_snapshot
+          }).join(', ')
+        : null
+      const description = itemsSummary
         ? `${o.order_date} · ${o.meal_period} · ${itemsSummary}`
         : `${o.order_date} · ${o.meal_period} · ${o.order_number}`
       return {
