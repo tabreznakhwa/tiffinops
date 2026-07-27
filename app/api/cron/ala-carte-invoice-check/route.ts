@@ -14,43 +14,16 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
-  const admin   = createAdminClient()
-  const DUBAI   = 'Asia/Dubai'
-  const today   = formatInTimeZone(new Date(), DUBAI, 'yyyy-MM-dd')
-  const month   = formatInTimeZone(new Date(), DUBAI, 'yyyy-MM')
+  const DUBAI = 'Asia/Dubai'
+  const url   = new URL(req.url)
 
-  // 1. Verify dinner orders have been posted today
-  const { count: dinnerCount } = await admin
-    .from('orders')
-    .select('id', { count: 'exact', head: true })
-    .eq('order_date', today)
-    .eq('meal_period', 'dinner')
-    .eq('is_credit', true)
-    .not('order_status', 'in', '(cancelled,voided,draft)')
+  // Allow ?month=YYYY-MM override for late/manual runs; default = current Dubai month
+  const monthParam = url.searchParams.get('month')
+  const month = monthParam ?? formatInTimeZone(new Date(), DUBAI, 'yyyy-MM')
 
-  if (!dinnerCount || dinnerCount === 0) {
-    return NextResponse.json({
-      ok: false,
-      reason: `Dinner orders for ${today} not yet posted — skipping invoice generation`,
-    })
-  }
+  const admin = createAdminClient()
 
-  // 2. Idempotency: skip if approval request already created for this month
-  const { count: existingRequest } = await admin
-    .from('approval_requests')
-    .select('id', { count: 'exact', head: true })
-    .eq('target_table', 'invoice')
-    .eq('request_type', 'edit')
-    .like('reason', `%${month}%`)
-
-  if (existingRequest && existingRequest > 0) {
-    return NextResponse.json({
-      ok: false,
-      reason: `Approval request for ${month} already exists`,
-    })
-  }
-
-  // 3. Look up the owner's user ID to stamp on the approval request
+  // Look up the owner's user ID to stamp on the approval request
   const { data: ownerUser } = await admin
     .from('users')
     .select('id')
@@ -63,7 +36,23 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ ok: false, error: 'No active owner found in users table' })
   }
 
-  // 4. Generate draft invoices
+  // Idempotency: skip if approval request already created for this cycle
+  const { count: existingRequest } = await admin
+    .from('approval_requests')
+    .select('id', { count: 'exact', head: true })
+    .eq('target_table', 'invoice')
+    .eq('request_type', 'edit')
+    .like('reason', `%${month}%`)
+    .like('reason', '%A La Carte%')
+
+  if (existingRequest && existingRequest > 0) {
+    return NextResponse.json({
+      ok: false,
+      reason: `Approval request for A La Carte cycle ${month} already exists`,
+    })
+  }
+
+  // Generate draft invoices
   const result = await generateAlaCarteInvoices(month, 'system-cron')
 
   if (result.generated === 0 && result.errors.length === 0) {
@@ -78,7 +67,7 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ ok: false, errors: result.errors, month })
   }
 
-  // 5. Create one approval request for the batch
+  // Create one approval request for the batch
   const { data: settings } = await admin.from('app_settings').select('currency').eq('id', 1).single()
   const currency = settings?.currency ?? 'AED'
 
@@ -87,7 +76,7 @@ export async function GET(req: NextRequest) {
   const { error: approvalErr } = await admin.from('approval_requests').insert({
     request_type:     'edit',
     target_table:     'invoice',
-    target_id:        result.invoice_ids[0], // first invoice UUID as anchor
+    target_id:        result.invoice_ids[0],
     reason,
     proposed_changes: {
       type:           'ala_carte_batch',

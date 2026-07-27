@@ -12,9 +12,11 @@ import {
   updateInvoiceStatus,
   voidInvoice,
   triggerMonthlyInvoices,
+  triggerAlaCarteInvoices,
   type CreateInvoiceInput,
   type UpdateInvoiceInput,
   type GenerateResult,
+  type AlaCarteGenerateResult,
 } from '@/lib/invoices/actions'
 import { getCustomerSubscription } from '@/lib/invoices/getCustomerSubscription'
 import { useAppSettings } from '@/components/settings/settings-context'
@@ -900,6 +902,180 @@ function BulkGenerateModal({
   )
 }
 
+// ── A La Carte Bulk Generate Modal ────────────────────────────────────────────
+
+function BulkAlaCarteModal({
+  defaultMonth,
+  onClose,
+}: {
+  defaultMonth: string
+  onClose: () => void
+}) {
+  const { currency } = useAppSettings()
+  const [month, setMonth] = useState(defaultMonth)
+  const [isPending, startTransition] = useTransition()
+  const [result, setResult] = useState<AlaCarteGenerateResult | null>(null)
+  const [error, setError] = useState('')
+
+  function fmtMonth(yyyyMM: string) {
+    const [y, m] = yyyyMM.split('-').map(Number)
+    return new Date(y, m - 1, 1).toLocaleDateString('en-GB', { month: 'long', year: 'numeric' })
+  }
+
+  function cyclePeriod(yyyyMM: string) {
+    const [y, m] = yyyyMM.split('-').map(Number)
+    const prevYear  = m === 1 ? y - 1 : y
+    const prevMonth = m === 1 ? 12 : m - 1
+    const from = new Date(prevYear, prevMonth - 1, 26)
+    const to   = new Date(y, m - 1, 25)
+    const fmt  = (d: Date) => d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
+    return `${fmt(from)} – ${fmt(to)}`
+  }
+
+  function handleGenerate() {
+    setError('')
+    setResult(null)
+    startTransition(async () => {
+      const res = await triggerAlaCarteInvoices(month)
+      if (res.error) { setError(res.error); return }
+      setResult(res as AlaCarteGenerateResult)
+    })
+  }
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center px-4"
+      style={{ background: 'rgba(34,26,19,0.5)' }}
+      onClick={(e) => { if (e.target === e.currentTarget && !isPending) onClose() }}
+    >
+      <div
+        className="w-full max-w-[420px] rounded-[18px] p-6"
+        style={{ background: 'var(--color-surface)', border: '1px solid var(--color-border)' }}
+      >
+        <div className="flex items-start justify-between mb-4">
+          <div>
+            <p className="text-[10px] font-bold uppercase tracking-widest mb-0.5" style={{ color: 'var(--color-teal)' }}>
+              Bulk Action
+            </p>
+            <h3 className="font-display font-bold text-[18px]" style={{ color: 'var(--color-ink)' }}>
+              Generate A La Carte Invoices
+            </h3>
+          </div>
+          <button
+            onClick={onClose}
+            disabled={isPending}
+            className="w-8 h-8 flex items-center justify-center rounded-full transition-colors hover:bg-cream"
+            style={{ color: 'var(--color-muted)' }}
+          >
+            <X size={16} />
+          </button>
+        </div>
+
+        {!result ? (
+          <>
+            <div
+              className="rounded-[10px] px-4 py-3 mb-5 text-sm"
+              style={{ background: 'var(--color-cream)', border: '1px solid var(--color-border)' }}
+            >
+              <p style={{ color: 'var(--color-ink)' }}>
+                Creates a <strong>draft a_la_carte_cycle invoice</strong> for every active A La Carte / Hybrid customer who has uninvoiced credit orders in the selected cycle period.
+              </p>
+              <p className="mt-1.5 text-xs" style={{ color: 'var(--color-muted)' }}>
+                Already-invoiced orders are automatically skipped (safe to run multiple times).
+              </p>
+            </div>
+
+            <div className="mb-5">
+              <label className="block text-xs font-bold mb-1.5" style={{ color: 'var(--color-ink)' }}>
+                Closing Month
+              </label>
+              <input
+                type="month"
+                value={month}
+                onChange={(e) => setMonth(e.target.value)}
+                className="w-full rounded-[10px] px-3 py-2.5 text-sm focus:outline-none focus:ring-1"
+                style={{
+                  background: 'var(--color-cream)',
+                  border: '1px solid var(--color-border)',
+                  color: 'var(--color-ink)',
+                }}
+              />
+              <p className="text-[11px] mt-1" style={{ color: 'var(--color-muted)' }}>
+                Cycle covers orders from {month ? cyclePeriod(month) : '—'}
+              </p>
+            </div>
+
+            {error && (
+              <p className="text-xs mb-4 font-semibold" style={{ color: 'var(--color-red)' }}>
+                {error}
+              </p>
+            )}
+
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={onClose}
+                className="flex-1 py-2.5 rounded-[10px] text-sm font-bold"
+                style={{ background: 'var(--color-border)', color: 'var(--color-muted)' }}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleGenerate}
+                disabled={isPending || !month}
+                className="flex-1 py-2.5 rounded-[10px] text-sm font-bold transition-opacity"
+                style={{
+                  background: 'var(--color-teal)',
+                  color: '#fff',
+                  opacity: isPending || !month ? 0.6 : 1,
+                }}
+              >
+                {isPending ? 'Generating…' : `Generate ${month ? fmtMonth(month) : ''}`}
+              </button>
+            </div>
+          </>
+        ) : (
+          <div>
+            <div className="space-y-3 mb-5">
+              <div className="flex justify-between items-center py-2.5 px-4 rounded-[10px]" style={{ background: 'var(--color-green-soft)' }}>
+                <span className="text-sm font-semibold" style={{ color: 'var(--color-green)' }}>Invoices Generated</span>
+                <span className="font-display font-bold text-[22px] num" style={{ color: 'var(--color-green)' }}>{result.generated}</span>
+              </div>
+              <div className="flex justify-between items-center py-2.5 px-4 rounded-[10px]" style={{ background: 'var(--color-cream)' }}>
+                <span className="text-sm font-semibold" style={{ color: 'var(--color-muted)' }}>Total Amount</span>
+                <span className="font-display font-bold text-[22px] num" style={{ color: 'var(--color-ink)' }}>{currency} {result.total_amount.toFixed(2)}</span>
+              </div>
+              <div className="flex justify-between items-center py-2.5 px-4 rounded-[10px]" style={{ background: 'var(--color-cream)' }}>
+                <span className="text-sm font-semibold" style={{ color: 'var(--color-muted)' }}>Skipped (already invoiced)</span>
+                <span className="font-display font-bold text-[22px] num" style={{ color: 'var(--color-muted)' }}>{result.skipped}</span>
+              </div>
+              {result.errors.length > 0 && (
+                <div className="rounded-[10px] px-4 py-3" style={{ background: 'var(--color-red-soft)', border: '1px solid var(--color-red)' }}>
+                  <p className="text-xs font-bold mb-1" style={{ color: 'var(--color-red)' }}>
+                    {result.errors.length} error{result.errors.length !== 1 ? 's' : ''}:
+                  </p>
+                  {result.errors.map((e, i) => (
+                    <p key={i} className="text-xs" style={{ color: 'var(--color-red)' }}>{e}</p>
+                  ))}
+                </div>
+              )}
+            </div>
+            <button
+              type="button"
+              onClick={onClose}
+              className="w-full py-2.5 rounded-[10px] text-sm font-bold"
+              style={{ background: 'var(--color-teal)', color: '#fff' }}
+            >
+              Done — View Invoices
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
 // ── Cancel Confirmation Dialog ─────────────────────────────────────────────────
 
 function CancelDialog({
@@ -992,6 +1168,7 @@ export function InvoicesModule({
   const [toDate,   setToDate]   = useState('')
   const [showModal, setShowModal] = useState(false)
   const [showBulkModal, setShowBulkModal] = useState(false)
+  const [showAlaCarteModal, setShowAlaCarteModal] = useState(false)
   const [cancelTarget, setCancelTarget] = useState<{ id: string; invoice_number: string } | null>(null)
   const [editingInvoice, setEditingInvoice] = useState<InvoiceWithCustomer | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<{ id: string; invoice_number: string } | null>(null)
@@ -1079,6 +1256,19 @@ export function InvoicesModule({
           </h1>
         </div>
         <div className="flex items-center gap-2">
+          {isOwner && (
+            <button
+              onClick={() => setShowAlaCarteModal(true)}
+              className="flex items-center gap-1.5 px-4 py-2.5 rounded-[10px] text-sm font-bold transition-opacity"
+              style={{ background: 'var(--color-teal)', color: '#fff' }}
+            >
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-4 h-4" aria-hidden="true">
+                <circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/>
+                <path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/>
+              </svg>
+              Generate A La Carte
+            </button>
+          )}
           {isOwner && (
             <button
               onClick={() => setShowBulkModal(true)}
@@ -1340,6 +1530,14 @@ export function InvoicesModule({
             )
           })}
         </div>
+      )}
+
+      {/* Bulk A La Carte Invoice Modal */}
+      {showAlaCarteModal && (
+        <BulkAlaCarteModal
+          defaultMonth={defaultGenerateMonth}
+          onClose={() => setShowAlaCarteModal(false)}
+        />
       )}
 
       {/* Bulk Monthly Invoice Modal */}

@@ -4,10 +4,12 @@ import { revalidatePath } from 'next/cache'
 import { requireAuth } from '@/lib/auth'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { generateMonthlyInvoices, nextMonth } from '@/lib/invoices/generateMonthlyInvoices'
+import { generateAlaCarteInvoices } from '@/lib/invoices/generateAlaCarteInvoices'
 import { formatInTimeZone } from 'date-fns-tz'
 import type { GenerateResult } from '@/lib/invoices/generateMonthlyInvoices'
+import type { AlaCarteGenerateResult } from '@/lib/invoices/generateAlaCarteInvoices'
 
-export type { GenerateResult }
+export type { GenerateResult, AlaCarteGenerateResult }
 
 export async function triggerMonthlyInvoices(
   targetMonth?: string
@@ -19,6 +21,20 @@ export async function triggerMonthlyInvoices(
   const month = targetMonth ?? nextMonth(currentDubaiMonth)
 
   const result = await generateMonthlyInvoices(month, user.id)
+  revalidatePath('/invoices')
+  return result
+}
+
+export async function triggerAlaCarteInvoices(
+  targetMonth?: string
+): Promise<{ error?: string } & Partial<AlaCarteGenerateResult>> {
+  const user = await requireAuth()
+  if (user.role !== 'owner') return { error: 'Only the owner can generate A La Carte invoices' }
+
+  const currentDubaiMonth = formatInTimeZone(new Date(), 'Asia/Dubai', 'yyyy-MM')
+  const month = targetMonth ?? currentDubaiMonth
+
+  const result = await generateAlaCarteInvoices(month, user.id)
   revalidatePath('/invoices')
   return result
 }
