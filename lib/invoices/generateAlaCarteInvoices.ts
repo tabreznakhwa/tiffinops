@@ -86,16 +86,16 @@ export async function generateAlaCarteInvoices(
   // Fetch all credit non-cancelled orders in the period, including their items in one query
   type OrderRow = {
     id: string; customer_id: string; total_amount: string
-    order_date: string; order_number: string; meal_period: string
+    order_date: string; order_number: string; meal_period: string; notes: string | null
     order_items: { item_name_snapshot: string; quantity: string }[]
   }
   const allOrders: OrderRow[] = []
   {
-    const PAGE = 1000; let off = 0
+    const PAGE = 500; let off = 0
     while (true) {
       const { data } = await admin
         .from('orders')
-        .select('id, customer_id, total_amount, order_date, order_number, meal_period, order_items(item_name_snapshot, quantity)')
+        .select('id, customer_id, total_amount, order_date, order_number, meal_period, notes, order_items(item_name_snapshot, quantity)')
         .in('customer_id', customerIds)
         .gte('order_date', periodStart)
         .lte('order_date', periodEnd)
@@ -186,7 +186,7 @@ export async function generateAlaCarteInvoices(
             const qty = parseFloat(it.quantity)
             return qty !== 1 ? `${it.item_name_snapshot} ×${qty}` : it.item_name_snapshot
           }).join(', ')
-        : null
+        : (o.notes?.trim() || null)
       const description = itemsSummary
         ? `${o.order_date} · ${o.meal_period} · ${itemsSummary}`
         : `${o.order_date} · ${o.meal_period} · ${o.order_number}`
