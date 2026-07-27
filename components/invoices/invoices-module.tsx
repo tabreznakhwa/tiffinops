@@ -904,29 +904,25 @@ function BulkGenerateModal({
 
 // ── A La Carte Bulk Generate Modal ────────────────────────────────────────────
 
-function BulkAlaCarteModal({
-  defaultMonth,
-  onClose,
-}: {
-  defaultMonth: string
-  onClose: () => void
-}) {
+function BulkAlaCarteModal({ onClose }: { onClose: () => void }) {
   const { currency } = useAppSettings()
   const [isPending, startTransition] = useTransition()
   const [result, setResult] = useState<AlaCarteGenerateResult | null>(null)
   const [error, setError] = useState('')
 
-  // Compute standard cycle dates from defaultMonth (prev-26 → current-25)
-  function stdDates(yyyyMM: string) {
-    const [y, m] = yyyyMM.split('-').map(Number)
+  // Compute the current standard A La Carte cycle using Dubai time (UTC+4)
+  function currentCycleDates() {
+    const dubai = new Date(Date.now() + 4 * 60 * 60 * 1000)
+    const y = dubai.getUTCFullYear()
+    const m = dubai.getUTCMonth() + 1           // 1-12
     const prevY = m === 1 ? y - 1 : y
     const prevM = m === 1 ? 12 : m - 1
-    const ps = prevM < 10 ? `${prevY}-0${prevM}-26` : `${prevY}-${prevM}-26`
-    const pe = `${yyyyMM}-25`
+    const ps = `${prevY}-${String(prevM).padStart(2, '0')}-26`
+    const pe = `${y}-${String(m).padStart(2, '0')}-25`
     return { ps, pe }
   }
 
-  const { ps: initStart, pe: initEnd } = stdDates(defaultMonth)
+  const { ps: initStart, pe: initEnd } = currentCycleDates()
   const [periodStart, setPeriodStart] = useState(initStart)
   const [periodEnd,   setPeriodEnd]   = useState(initEnd)
 
@@ -1564,7 +1560,6 @@ export function InvoicesModule({
       {/* Bulk A La Carte Invoice Modal */}
       {showAlaCarteModal && (
         <BulkAlaCarteModal
-          defaultMonth={defaultGenerateMonth}
           onClose={() => setShowAlaCarteModal(false)}
         />
       )}
