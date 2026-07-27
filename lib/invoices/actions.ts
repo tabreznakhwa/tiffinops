@@ -26,7 +26,9 @@ export async function triggerMonthlyInvoices(
 }
 
 export async function triggerAlaCarteInvoices(
-  targetMonth?: string
+  targetMonth?: string,
+  periodStart?: string,
+  periodEnd?: string,
 ): Promise<{ error?: string } & Partial<AlaCarteGenerateResult>> {
   const user = await requireAuth()
   if (user.role !== 'owner') return { error: 'Only the owner can generate A La Carte invoices' }
@@ -34,7 +36,7 @@ export async function triggerAlaCarteInvoices(
   const currentDubaiMonth = formatInTimeZone(new Date(), 'Asia/Dubai', 'yyyy-MM')
   const month = targetMonth ?? currentDubaiMonth
 
-  const result = await generateAlaCarteInvoices(month, user.id)
+  const result = await generateAlaCarteInvoices(month, user.id, { periodStart, periodEnd })
   revalidatePath('/invoices')
   return result
 }

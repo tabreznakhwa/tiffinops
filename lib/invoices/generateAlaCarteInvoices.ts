@@ -12,16 +12,18 @@ export type AlaCarteGenerateResult = {
 
 /**
  * Generate draft a_la_carte_cycle invoices for all active A La Carte / Hybrid
- * customers who have uninvoiced credit orders in the current month (1st–25th).
+ * customers who have uninvoiced credit orders in the given period.
  *
  * Safe to call multiple times — uses billing_period_start/end as idempotency key.
  *
- * @param forMonth   'YYYY-MM' of the month being closed
+ * @param forMonth   'YYYY-MM' of the month being closed (used to compute default period)
  * @param createdBy  user ID to stamp on each invoice (or 'system-cron')
+ * @param options    optional period override; when absent the standard cycle is used
  */
 export async function generateAlaCarteInvoices(
   forMonth: string,
   createdBy: string,
+  options?: { periodStart?: string; periodEnd?: string },
 ): Promise<AlaCarteGenerateResult> {
   const admin = createAdminClient()
 
@@ -29,10 +31,12 @@ export async function generateAlaCarteInvoices(
   const prevYear  = m === 1 ? y - 1 : y
   const prevMonth = m === 1 ? 12 : m - 1
   const prevMonthStr = prevMonth < 10 ? `0${prevMonth}` : `${prevMonth}`
-  const periodStart = `${prevYear}-${prevMonthStr}-26`
-  const periodEnd   = `${forMonth}-25`
+  const periodStart = options?.periodStart ?? `${prevYear}-${prevMonthStr}-26`
+  const periodEnd   = options?.periodEnd   ?? `${forMonth}-25`
 
-  const monthLabel = new Date(y, m - 1, 1).toLocaleDateString('en-GB', {
+  // Derive a human label from the period end for invoice notes
+  const endParts = periodEnd.split('-').map(Number)
+  const monthLabel = new Date(endParts[0], endParts[1] - 1, 1).toLocaleDateString('en-GB', {
     month: 'long', year: 'numeric',
   })
 

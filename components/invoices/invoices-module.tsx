@@ -912,31 +912,38 @@ function BulkAlaCarteModal({
   onClose: () => void
 }) {
   const { currency } = useAppSettings()
-  const [month, setMonth] = useState(defaultMonth)
   const [isPending, startTransition] = useTransition()
   const [result, setResult] = useState<AlaCarteGenerateResult | null>(null)
   const [error, setError] = useState('')
 
-  function fmtMonth(yyyyMM: string) {
+  // Compute standard cycle dates from defaultMonth (prev-26 → current-25)
+  function stdDates(yyyyMM: string) {
     const [y, m] = yyyyMM.split('-').map(Number)
-    return new Date(y, m - 1, 1).toLocaleDateString('en-GB', { month: 'long', year: 'numeric' })
+    const prevY = m === 1 ? y - 1 : y
+    const prevM = m === 1 ? 12 : m - 1
+    const ps = prevM < 10 ? `${prevY}-0${prevM}-26` : `${prevY}-${prevM}-26`
+    const pe = `${yyyyMM}-25`
+    return { ps, pe }
   }
 
-  function cyclePeriod(yyyyMM: string) {
-    const [y, m] = yyyyMM.split('-').map(Number)
-    const prevYear  = m === 1 ? y - 1 : y
-    const prevMonth = m === 1 ? 12 : m - 1
-    const from = new Date(prevYear, prevMonth - 1, 26)
-    const to   = new Date(y, m - 1, 25)
-    const fmt  = (d: Date) => d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
-    return `${fmt(from)} – ${fmt(to)}`
+  const { ps: initStart, pe: initEnd } = stdDates(defaultMonth)
+  const [periodStart, setPeriodStart] = useState(initStart)
+  const [periodEnd,   setPeriodEnd]   = useState(initEnd)
+
+  function fmtDate(d: string) {
+    return new Date(d + 'T00:00:00Z').toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
   }
+
+  // Derive forMonth from periodEnd for the server action
+  function forMonthOf(pe: string) { return pe.slice(0, 7) }
+
+  const isValid = periodStart && periodEnd && periodStart <= periodEnd
 
   function handleGenerate() {
     setError('')
     setResult(null)
     startTransition(async () => {
-      const res = await triggerAlaCarteInvoices(month)
+      const res = await triggerAlaCarteInvoices(forMonthOf(periodEnd), periodStart, periodEnd)
       if (res.error) { setError(res.error); return }
       setResult(res as AlaCarteGenerateResult)
     })
@@ -978,32 +985,54 @@ function BulkAlaCarteModal({
               style={{ background: 'var(--color-cream)', border: '1px solid var(--color-border)' }}
             >
               <p style={{ color: 'var(--color-ink)' }}>
-                Creates a <strong>draft a_la_carte_cycle invoice</strong> for every active A La Carte / Hybrid customer who has uninvoiced credit orders in the selected cycle period.
+                Creates a <strong>draft invoice</strong> per A La Carte / Hybrid customer covering all uninvoiced credit orders in the selected date range.
               </p>
               <p className="mt-1.5 text-xs" style={{ color: 'var(--color-muted)' }}>
-                Already-invoiced orders are automatically skipped (safe to run multiple times).
+                Already-invoiced orders are automatically skipped — safe to run multiple times.
               </p>
             </div>
 
-            <div className="mb-5">
-              <label className="block text-xs font-bold mb-1.5" style={{ color: 'var(--color-ink)' }}>
-                Closing Month
-              </label>
-              <input
-                type="month"
-                value={month}
-                onChange={(e) => setMonth(e.target.value)}
-                className="w-full rounded-[10px] px-3 py-2.5 text-sm focus:outline-none focus:ring-1"
-                style={{
-                  background: 'var(--color-cream)',
-                  border: '1px solid var(--color-border)',
-                  color: 'var(--color-ink)',
-                }}
-              />
-              <p className="text-[11px] mt-1" style={{ color: 'var(--color-muted)' }}>
-                Cycle covers orders from {month ? cyclePeriod(month) : '—'}
-              </p>
+            {/* Date range */}
+            <div className="grid grid-cols-2 gap-3 mb-5">
+              <div>
+                <label className="block text-xs font-bold mb-1.5" style={{ color: 'var(--color-ink)' }}>
+                  From
+                </label>
+                <input
+                  type="date"
+                  value={periodStart}
+                  onChange={(e) => setPeriodStart(e.target.value)}
+                  className="w-full rounded-[10px] px-3 py-2.5 text-sm focus:outline-none focus:ring-1"
+                  style={{
+                    background: 'var(--color-cream)',
+                    border: '1px solid var(--color-border)',
+                    color: 'var(--color-ink)',
+                  }}
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-bold mb-1.5" style={{ color: 'var(--color-ink)' }}>
+                  To
+                </label>
+                <input
+                  type="date"
+                  value={periodEnd}
+                  onChange={(e) => setPeriodEnd(e.target.value)}
+                  className="w-full rounded-[10px] px-3 py-2.5 text-sm focus:outline-none focus:ring-1"
+                  style={{
+                    background: 'var(--color-cream)',
+                    border: '1px solid var(--color-border)',
+                    color: 'var(--color-ink)',
+                  }}
+                />
+              </div>
             </div>
+
+            {periodStart && periodEnd && (
+              <p className="text-[11px] -mt-3 mb-4" style={{ color: 'var(--color-muted)' }}>
+                Covers orders from {fmtDate(periodStart)} to {fmtDate(periodEnd)}
+              </p>
+            )}
 
             {error && (
               <p className="text-xs mb-4 font-semibold" style={{ color: 'var(--color-red)' }}>
@@ -1023,15 +1052,15 @@ function BulkAlaCarteModal({
               <button
                 type="button"
                 onClick={handleGenerate}
-                disabled={isPending || !month}
+                disabled={isPending || !isValid}
                 className="flex-1 py-2.5 rounded-[10px] text-sm font-bold transition-opacity"
                 style={{
                   background: 'var(--color-teal)',
                   color: '#fff',
-                  opacity: isPending || !month ? 0.6 : 1,
+                  opacity: isPending || !isValid ? 0.6 : 1,
                 }}
               >
-                {isPending ? 'Generating…' : `Generate ${month ? fmtMonth(month) : ''}`}
+                {isPending ? 'Generating…' : 'Generate Invoices'}
               </button>
             </div>
           </>
