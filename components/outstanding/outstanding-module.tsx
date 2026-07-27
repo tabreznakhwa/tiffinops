@@ -10,6 +10,7 @@ export type CustomerBasic = {
   full_name: string
   customer_code: string
   customer_type: string
+  payment_terms: string
   mobile_number: string
   area: string | null
   status: string
@@ -310,9 +311,19 @@ export function OutstandingModule({ customers, orders, payments, subscriptions, 
                         </Link>
                       </td>
                       <td className="px-4 py-3">
-                        <span className="text-[11px] font-bold px-2 py-0.5 rounded-full" style={{ background: tc.bg, color: tc.color }}>
-                          {TYPE_LABELS[row.customer_type] ?? row.customer_type}
-                        </span>
+                        <div className="flex flex-col gap-1">
+                          <span className="text-[11px] font-bold px-2 py-0.5 rounded-full w-fit" style={{ background: tc.bg, color: tc.color }}>
+                            {TYPE_LABELS[row.customer_type] ?? row.customer_type}
+                          </span>
+                          <span
+                            className="text-[10px] font-semibold px-1.5 py-0.5 rounded-[4px] w-fit"
+                            style={row.payment_terms === 'prepaid'
+                              ? { background: '#DCFCE7', color: '#166534' }
+                              : { background: '#EDE9FE', color: '#5B21B6' }}
+                          >
+                            {row.payment_terms === 'prepaid' ? 'Prepaid' : 'Postpaid'}
+                          </span>
+                        </div>
                       </td>
                       <td className="px-4 py-3 text-xs" style={{ color: 'var(--color-muted)' }}>
                         <div>{row.mobile_number}</div>

@@ -24,7 +24,7 @@ export default async function OutstandingPage() {
 
   const { data: customers } = await admin
     .from('customers')
-    .select('id, full_name, customer_code, customer_type, mobile_number, area, status')
+    .select('id, full_name, customer_code, customer_type, payment_terms, mobile_number, area, status')
     .in('status', ['active', 'paused'])
     .order('full_name', { ascending: true })
 
