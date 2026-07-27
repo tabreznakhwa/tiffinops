@@ -125,11 +125,10 @@ export default async function PrintInvoicePage({
 
   const MEAL_ORDER: Record<string, number> = { breakfast: 0, lunch: 1, dinner: 2 }
 
-  // Parse date and meal from description: "7 Jun 2026 – Dinner – items..."
+  // Parse date and meal from description: "2026-07-02 · dinner · item"
   function parseSortKey(desc: string): { date: string; meal: number } {
-    const parts = desc.split(' – ')
-    const d = parts[0] ? new Date(parts[0] + ' UTC') : null
-    const dateStr = d && !isNaN(d.getTime()) ? d.toISOString().split('T')[0] : ''
+    const parts = desc.split(' · ')
+    const dateStr = parts[0] ?? ''
     const meal = MEAL_ORDER[parts[1]?.toLowerCase() ?? ''] ?? 99
     return { date: dateStr, meal }
   }
