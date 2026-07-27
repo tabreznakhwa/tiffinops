@@ -83,7 +83,7 @@ export default async function OutstandingPage() {
   // Fetch all active/paused/cancelled/completed subscriptions for these customers
   const { data: subsData } = await admin
     .from('customer_subscriptions')
-    .select('customer_id, start_date, end_date, agreed_monthly_price, status')
+    .select('id, customer_id, start_date, end_date, agreed_monthly_price, status')
     .in('customer_id', customerIds)
 
   const allSubscriptions: SubscriptionBasic[] = (subsData ?? []) as SubscriptionBasic[]

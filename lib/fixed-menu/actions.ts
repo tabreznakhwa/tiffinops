@@ -192,3 +192,23 @@ export async function updateSubscriptionStatus(
   revalidatePath('/fixed-menu')
   return {}
 }
+
+export async function updateSubscriptionDates(
+  id: string,
+  startDate: string,
+  endDate: string | null,
+): Promise<FixedMenuActionResult> {
+  const user = await requireAuth()
+  if (!CREATE_ROLES.includes(user.role)) return { error: 'Owner, Manager or Data Entry role required' }
+
+  const admin = createAdminClient()
+  const { error } = await admin
+    .from('customer_subscriptions')
+    .update({ start_date: startDate, end_date: endDate })
+    .eq('id', id)
+
+  if (error) return { error: error.message }
+  revalidatePath('/outstanding')
+  revalidatePath('/fixed-menu')
+  return {}
+}

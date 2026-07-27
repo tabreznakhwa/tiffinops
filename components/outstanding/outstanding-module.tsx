@@ -1,9 +1,11 @@
 'use client'
 
 import { useState, useMemo } from 'react'
-import { Search } from 'lucide-react'
+import { Search, Pencil, Check, X } from 'lucide-react'
 import Link from 'next/link'
+import { useRouter } from 'next/navigation'
 import { DatePresetPicker } from '@/components/ui/date-preset-picker'
+import { updateSubscriptionDates } from '@/lib/fixed-menu/actions'
 
 export type CustomerBasic = {
   id: string
@@ -29,6 +31,7 @@ export type PaymentBasic = {
 }
 
 export type SubscriptionBasic = {
+  id: string
   customer_id: string
   start_date: string
   end_date: string | null
@@ -112,11 +115,37 @@ interface Props {
   currency:      string
 }
 
+type DateEdit = { subId: string; field: 'start' | 'end'; value: string; customerId: string }
+
+function fmtDateShort(d: string) {
+  return new Date(d + 'T00:00:00Z').toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
+}
+
 export function OutstandingModule({ customers, orders, payments, subscriptions, currency }: Props) {
+  const router = useRouter()
   const [search,      setSearch]      = useState('')
   const [fromDate,    setFromDate]    = useState('')
   const [toDate,      setToDate]      = useState('')
   const [typeFilter,  setTypeFilter]  = useState<string>('')
+  const [editingDate, setEditingDate] = useState<DateEdit | null>(null)
+  const [savingDate,  setSavingDate]  = useState(false)
+  const [dateError,   setDateError]   = useState<string | null>(null)
+
+  async function handleSaveDate() {
+    if (!editingDate) return
+    setSavingDate(true)
+    setDateError(null)
+    const isStart = editingDate.field === 'start'
+    // We need the OTHER date value to keep it intact — find from rows
+    const row = filtered.find(r => r.id === editingDate.customerId)
+    const startDate = isStart ? editingDate.value : (row?.subStartDate ?? '')
+    const endDate   = isStart ? (row?.subEndDate ?? null) : (editingDate.value || null)
+    const res = await updateSubscriptionDates(editingDate.subId, startDate, endDate)
+    setSavingDate(false)
+    if (res.error) { setDateError(res.error); return }
+    setEditingDate(null)
+    router.refresh()
+  }
 
   const rows = useMemo(() => {
     const today         = todayStr()
@@ -139,8 +168,9 @@ export function OutstandingModule({ customers, orders, payments, subscriptions, 
 
     // Subscription expected charges per customer (prorata day-based)
     const subExpected   = new Map<string, number>()
-    const subMonthlyRate = new Map<string, number>()  // most recent active/paused rate
-    const subIsPaused   = new Map<string, boolean>()
+    const subMonthlyRate = new Map<string, number>()
+    const subIsPaused    = new Map<string, boolean>()
+    const subMeta        = new Map<string, { id: string; startDate: string; endDate: string | null }>()
 
     for (const sub of subscriptions) {
       const rate = parseFloat(sub.agreed_monthly_price)
@@ -150,6 +180,7 @@ export function OutstandingModule({ customers, orders, payments, subscriptions, 
       }
       if (sub.status === 'active' || sub.status === 'paused') {
         subMonthlyRate.set(sub.customer_id, rate)
+        subMeta.set(sub.customer_id, { id: sub.id, startDate: sub.start_date, endDate: sub.end_date })
         if (sub.status === 'paused') subIsPaused.set(sub.customer_id, true)
       }
     }
@@ -160,15 +191,19 @@ export function OutstandingModule({ customers, orders, payments, subscriptions, 
         const subCharge   = subExpected.get(c.id) ?? 0
         const totalBilled = orderBilled + subCharge
         const totalPaid   = paymentTotals.get(c.id) ?? 0
+        const meta        = subMeta.get(c.id)
         return {
           ...c,
           orderBilled,
           subCharge,
           totalBilled,
           totalPaid,
-          outstanding:  totalBilled - totalPaid,
-          monthlyRate:  subMonthlyRate.get(c.id) ?? 0,
-          subPaused:    subIsPaused.get(c.id) ?? false,
+          outstanding:   totalBilled - totalPaid,
+          monthlyRate:   subMonthlyRate.get(c.id) ?? 0,
+          subPaused:     subIsPaused.get(c.id) ?? false,
+          subId:         meta?.id ?? null,
+          subStartDate:  meta?.startDate ?? null,
+          subEndDate:    meta?.endDate ?? null,
         }
       })
       .filter(r => r.outstanding > 0.005)
@@ -289,10 +324,10 @@ export function OutstandingModule({ customers, orders, payments, subscriptions, 
             <table className="w-full text-sm border-collapse">
               <thead>
                 <tr style={{ borderBottom: '1px solid var(--color-border)', background: 'var(--color-cream)' }}>
-                  {['#', 'Customer', 'Type', 'Contact', 'Plan Rate', 'Billed', 'Paid', 'Outstanding'].map(h => (
+                  {['#', 'Customer', 'Type', 'Contact', 'Subscription', 'Billed', 'Paid', 'Outstanding'].map(h => (
                     <th
                       key={h}
-                      className={`px-4 py-3 text-xs font-bold uppercase tracking-wide ${['Plan Rate', 'Billed', 'Paid', 'Outstanding'].includes(h) ? 'text-right' : 'text-left'}`}
+                      className={`px-4 py-3 text-xs font-bold uppercase tracking-wide ${['Billed', 'Paid', 'Outstanding'].includes(h) ? 'text-right' : 'text-left'}`}
                       style={{ color: 'var(--color-muted)' }}
                     >{h}</th>
                   ))}
@@ -329,25 +364,100 @@ export function OutstandingModule({ customers, orders, payments, subscriptions, 
                         <div>{row.mobile_number}</div>
                         {row.area && <div className="mt-0.5">{row.area}</div>}
                       </td>
-                      {/* Plan Rate */}
-                      <td className="px-4 py-3 text-right">
-                        {row.monthlyRate > 0 ? (
-                          <div>
-                            <span className="font-mono text-xs font-semibold" style={{ color: 'var(--color-ink)' }}>
-                              {currency} {row.monthlyRate.toFixed(2)}
-                            </span>
-                            <span className="text-[10px] ml-0.5" style={{ color: 'var(--color-muted)' }}>/mo</span>
-                            {row.subPaused && (
-                              <div className="mt-0.5">
+                      {/* Subscription info + inline date edit */}
+                      <td className="px-4 py-3 text-left min-w-[200px]">
+                        {row.monthlyRate > 0 && row.subId ? (
+                          <div className="space-y-1.5">
+                            {/* Rate + paused badge */}
+                            <div className="flex items-center gap-1.5">
+                              <span className="font-mono text-xs font-semibold" style={{ color: 'var(--color-ink)' }}>
+                                {currency} {row.monthlyRate.toFixed(2)}<span style={{ color: 'var(--color-muted)' }}>/mo</span>
+                              </span>
+                              {row.subPaused && (
                                 <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-[4px]"
                                   style={{ background: '#FEF3C7', color: '#92400E' }}>
                                   PAUSED
                                 </span>
-                              </div>
+                              )}
+                            </div>
+
+                            {/* Start date */}
+                            <div className="flex items-center gap-1 text-[11px]" style={{ color: 'var(--color-muted)' }}>
+                              <span className="w-[44px] font-semibold flex-shrink-0">Start</span>
+                              {editingDate?.customerId === row.id && editingDate.field === 'start' ? (
+                                <div className="flex items-center gap-1">
+                                  <input
+                                    type="date"
+                                    value={editingDate.value}
+                                    onChange={e => setEditingDate({ ...editingDate, value: e.target.value })}
+                                    className="rounded-[5px] px-1.5 py-0.5 text-[11px] focus:outline-none focus:ring-1"
+                                    style={{ border: '1px solid var(--color-border)', color: 'var(--color-ink)', background: 'var(--color-cream)', width: 120 }}
+                                  />
+                                  <button onClick={handleSaveDate} disabled={savingDate}
+                                    className="p-0.5 rounded hover:opacity-70 disabled:opacity-40"
+                                    style={{ color: 'var(--color-green)' }}>
+                                    <Check size={13} />
+                                  </button>
+                                  <button onClick={() => { setEditingDate(null); setDateError(null) }}
+                                    className="p-0.5 rounded hover:opacity-70"
+                                    style={{ color: 'var(--color-red)' }}>
+                                    <X size={13} />
+                                  </button>
+                                </div>
+                              ) : (
+                                <button
+                                  className="flex items-center gap-1 group"
+                                  onClick={() => { setDateError(null); setEditingDate({ subId: row.subId!, field: 'start', value: row.subStartDate!, customerId: row.id }) }}
+                                >
+                                  <span style={{ color: 'var(--color-ink)' }}>{row.subStartDate ? fmtDateShort(row.subStartDate) : '—'}</span>
+                                  <Pencil size={10} className="opacity-0 group-hover:opacity-60 transition-opacity" />
+                                </button>
+                              )}
+                            </div>
+
+                            {/* Pause date */}
+                            <div className="flex items-center gap-1 text-[11px]" style={{ color: 'var(--color-muted)' }}>
+                              <span className="w-[44px] font-semibold flex-shrink-0">Paused</span>
+                              {editingDate?.customerId === row.id && editingDate.field === 'end' ? (
+                                <div className="flex items-center gap-1">
+                                  <input
+                                    type="date"
+                                    value={editingDate.value}
+                                    onChange={e => setEditingDate({ ...editingDate, value: e.target.value })}
+                                    className="rounded-[5px] px-1.5 py-0.5 text-[11px] focus:outline-none focus:ring-1"
+                                    style={{ border: '1px solid var(--color-border)', color: 'var(--color-ink)', background: 'var(--color-cream)', width: 120 }}
+                                  />
+                                  <button onClick={handleSaveDate} disabled={savingDate}
+                                    className="p-0.5 rounded hover:opacity-70 disabled:opacity-40"
+                                    style={{ color: 'var(--color-green)' }}>
+                                    <Check size={13} />
+                                  </button>
+                                  <button onClick={() => { setEditingDate(null); setDateError(null) }}
+                                    className="p-0.5 rounded hover:opacity-70"
+                                    style={{ color: 'var(--color-red)' }}>
+                                    <X size={13} />
+                                  </button>
+                                </div>
+                              ) : (
+                                <button
+                                  className="flex items-center gap-1 group"
+                                  onClick={() => { setDateError(null); setEditingDate({ subId: row.subId!, field: 'end', value: row.subEndDate ?? '', customerId: row.id }) }}
+                                >
+                                  <span style={{ color: row.subEndDate ? 'var(--color-ink)' : 'var(--color-muted)' }}>
+                                    {row.subEndDate ? fmtDateShort(row.subEndDate) : 'Not set'}
+                                  </span>
+                                  <Pencil size={10} className="opacity-0 group-hover:opacity-60 transition-opacity" />
+                                </button>
+                              )}
+                            </div>
+
+                            {/* Inline error */}
+                            {dateError && editingDate?.customerId === row.id && (
+                              <p className="text-[10px]" style={{ color: 'var(--color-red)' }}>{dateError}</p>
                             )}
                           </div>
                         ) : (
-                          <span className="text-[10px]" style={{ color: 'var(--color-muted)' }}>—</span>
+                          <span className="text-[11px]" style={{ color: 'var(--color-muted)' }}>—</span>
                         )}
                       </td>
                       {/* Billed */}
