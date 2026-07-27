@@ -5,7 +5,7 @@ import { Search, Pencil, Check, X } from 'lucide-react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { DatePresetPicker } from '@/components/ui/date-preset-picker'
-import { updateSubscriptionDates } from '@/lib/fixed-menu/actions'
+import { updateSubscriptionStartDate, updateSubscriptionPauseDate } from '@/lib/fixed-menu/actions'
 
 export type CustomerBasic = {
   id: string
@@ -113,6 +113,7 @@ interface Props {
   payments:      PaymentBasic[]
   subscriptions: SubscriptionBasic[]
   currency:      string
+  userRole:      string
 }
 
 type DateEdit = { subId: string; field: 'start' | 'end'; value: string; customerId: string }
@@ -121,7 +122,9 @@ function fmtDateShort(d: string) {
   return new Date(d + 'T00:00:00Z').toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
 }
 
-export function OutstandingModule({ customers, orders, payments, subscriptions, currency }: Props) {
+export function OutstandingModule({ customers, orders, payments, subscriptions, currency, userRole }: Props) {
+  const canEditStartDate = userRole === 'owner'
+  const canEditPauseDate = ['owner', 'manager', 'data_entry'].includes(userRole)
   const router = useRouter()
   const [search,      setSearch]      = useState('')
   const [fromDate,    setFromDate]    = useState('')
@@ -135,12 +138,9 @@ export function OutstandingModule({ customers, orders, payments, subscriptions, 
     if (!editingDate) return
     setSavingDate(true)
     setDateError(null)
-    const isStart = editingDate.field === 'start'
-    // We need the OTHER date value to keep it intact — find from rows
-    const row = filtered.find(r => r.id === editingDate.customerId)
-    const startDate = isStart ? editingDate.value : (row?.subStartDate ?? '')
-    const endDate   = isStart ? (row?.subEndDate ?? null) : (editingDate.value || null)
-    const res = await updateSubscriptionDates(editingDate.subId, startDate, endDate)
+    const res = editingDate.field === 'start'
+      ? await updateSubscriptionStartDate(editingDate.subId, editingDate.value)
+      : await updateSubscriptionPauseDate(editingDate.subId, editingDate.value || null)
     setSavingDate(false)
     if (res.error) { setDateError(res.error); return }
     setEditingDate(null)
@@ -405,13 +405,15 @@ export function OutstandingModule({ customers, orders, payments, subscriptions, 
                                   </button>
                                 </div>
                               ) : (
-                                <button
-                                  className="flex items-center gap-1 group"
-                                  onClick={() => { setDateError(null); setEditingDate({ subId: row.subId!, field: 'start', value: row.subStartDate!, customerId: row.id }) }}
-                                >
+                                <div className="flex items-center gap-1 group">
                                   <span style={{ color: 'var(--color-ink)' }}>{row.subStartDate ? fmtDateShort(row.subStartDate) : '—'}</span>
-                                  <Pencil size={10} className="opacity-0 group-hover:opacity-60 transition-opacity" />
-                                </button>
+                                  {canEditStartDate && (
+                                    <button onClick={() => { setDateError(null); setEditingDate({ subId: row.subId!, field: 'start', value: row.subStartDate!, customerId: row.id }) }}
+                                      className="opacity-0 group-hover:opacity-60 transition-opacity">
+                                      <Pencil size={10} />
+                                    </button>
+                                  )}
+                                </div>
                               )}
                             </div>
 
@@ -439,15 +441,17 @@ export function OutstandingModule({ customers, orders, payments, subscriptions, 
                                   </button>
                                 </div>
                               ) : (
-                                <button
-                                  className="flex items-center gap-1 group"
-                                  onClick={() => { setDateError(null); setEditingDate({ subId: row.subId!, field: 'end', value: row.subEndDate ?? '', customerId: row.id }) }}
-                                >
+                                <div className="flex items-center gap-1 group">
                                   <span style={{ color: row.subEndDate ? 'var(--color-ink)' : 'var(--color-muted)' }}>
                                     {row.subEndDate ? fmtDateShort(row.subEndDate) : 'Not set'}
                                   </span>
-                                  <Pencil size={10} className="opacity-0 group-hover:opacity-60 transition-opacity" />
-                                </button>
+                                  {canEditPauseDate && (
+                                    <button onClick={() => { setDateError(null); setEditingDate({ subId: row.subId!, field: 'end', value: row.subEndDate ?? '', customerId: row.id }) }}
+                                      className="opacity-0 group-hover:opacity-60 transition-opacity">
+                                      <Pencil size={10} />
+                                    </button>
+                                  )}
+                                </div>
                               )}
                             </div>
 

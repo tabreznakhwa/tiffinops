@@ -38,6 +38,7 @@ export default async function OutstandingPage() {
         payments={[]}
         subscriptions={[]}
         currency={settings.currency}
+        userRole={user.role}
       />
     )
   }
@@ -95,6 +96,7 @@ export default async function OutstandingPage() {
       payments={allPayments}
       subscriptions={allSubscriptions}
       currency={settings.currency}
+      userRole={user.role}
     />
   )
 }

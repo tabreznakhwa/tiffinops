@@ -193,9 +193,27 @@ export async function updateSubscriptionStatus(
   return {}
 }
 
-export async function updateSubscriptionDates(
+export async function updateSubscriptionStartDate(
   id: string,
   startDate: string,
+): Promise<FixedMenuActionResult> {
+  const user = await requireAuth()
+  if (user.role !== 'owner') return { error: 'Only Owner can change the start date' }
+
+  const admin = createAdminClient()
+  const { error } = await admin
+    .from('customer_subscriptions')
+    .update({ start_date: startDate })
+    .eq('id', id)
+
+  if (error) return { error: error.message }
+  revalidatePath('/outstanding')
+  revalidatePath('/fixed-menu')
+  return {}
+}
+
+export async function updateSubscriptionPauseDate(
+  id: string,
   endDate: string | null,
 ): Promise<FixedMenuActionResult> {
   const user = await requireAuth()
@@ -204,7 +222,7 @@ export async function updateSubscriptionDates(
   const admin = createAdminClient()
   const { error } = await admin
     .from('customer_subscriptions')
-    .update({ start_date: startDate, end_date: endDate })
+    .update({ end_date: endDate })
     .eq('id', id)
 
   if (error) return { error: error.message }
