@@ -51,9 +51,8 @@ export default async function PrintInvoicePage({
 
   const admin = createAdminClient()
 
-  const [settings, [{ data: invoice }, { data: items }]] = await Promise.all([
+  const [settings, { data: invoice }, { data: items }] = await Promise.all([
     getSettings(),
-    Promise.all([
     admin
       .from('invoices')
       .select(`
@@ -72,8 +71,23 @@ export default async function PrintInvoicePage({
       .select('id, description, quantity, unit_price, total_price, order_id')
       .eq('invoice_id', id)
       .order('id'),
-    ]),
   ])
+
+  // For A La Carte invoices, aggregate item quantities across all orders in the invoice
+  const itemSummary = new Map<string, number>()
+  if (invoice?.invoice_type === 'a_la_carte_cycle') {
+    const orderIds = (items ?? []).map(it => it.order_id).filter((x): x is string => x !== null)
+    if (orderIds.length > 0) {
+      const { data: orderItemRows } = await admin
+        .from('order_items')
+        .select('item_name_snapshot, quantity')
+        .in('order_id', orderIds)
+      for (const oi of orderItemRows ?? []) {
+        const qty = parseFloat(String(oi.quantity))
+        itemSummary.set(oi.item_name_snapshot, (itemSummary.get(oi.item_name_snapshot) ?? 0) + qty)
+      }
+    }
+  }
 
   if (!invoice) notFound()
 
@@ -350,6 +364,49 @@ export default async function PrintInvoicePage({
             </div>
           </div>
         </>
+      )}
+
+      {/* ── Item Summary (A La Carte only) ── */}
+      {invoice.invoice_type === 'a_la_carte_cycle' && itemSummary.size > 0 && (
+        <div style={{ marginTop: 24, pageBreakInside: 'avoid' }}>
+          <p
+            style={{
+              fontSize: 10, fontWeight: 800, letterSpacing: '0.1em',
+              textTransform: 'uppercase', color: '#7C7063', margin: '0 0 6px',
+            }}
+          >
+            Item Summary
+          </p>
+          <div
+            style={{
+              display: 'grid', gridTemplateColumns: '1fr 60px',
+              gap: 8, padding: '5px 0', borderBottom: '2px solid #221A13',
+              fontSize: 10, fontWeight: 700, letterSpacing: '0.06em',
+              textTransform: 'uppercase', color: '#7C7063',
+            }}
+          >
+            <span>Item</span>
+            <span style={{ textAlign: 'right' }}>Total Qty</span>
+          </div>
+          {[...itemSummary.entries()]
+            .sort(([a], [b]) => a.localeCompare(b))
+            .map(([name, qty]) => (
+              <div
+                key={name}
+                style={{
+                  display: 'grid', gridTemplateColumns: '1fr 60px',
+                  gap: 8, padding: '5px 0', borderBottom: '1px solid #ECE2D3',
+                  fontSize: 12, alignItems: 'center',
+                }}
+              >
+                <span style={{ fontWeight: 500 }}>{name}</span>
+                <span style={{ textAlign: 'right', fontWeight: 700, fontFamily: 'var(--font-display)' }}>
+                  {qty % 1 === 0 ? qty : qty.toFixed(2)}
+                </span>
+              </div>
+            ))
+          }
+        </div>
       )}
 
       {/* ── Bank payment details ── */}
