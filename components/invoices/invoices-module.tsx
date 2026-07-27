@@ -14,6 +14,7 @@ import {
   triggerMonthlyInvoices,
   triggerAlaCarteInvoices,
   getInvoiceItems,
+  bulkDeleteDraftInvoices,
   type CreateInvoiceInput,
   type UpdateInvoiceInput,
 } from '@/lib/invoices/actions'
@@ -1114,6 +1115,67 @@ function BulkAlaCarteModal({ onClose }: { onClose: () => void }) {
   )
 }
 
+// ── Bulk Delete Confirm Dialog ────────────────────────────────────────────────
+
+function BulkDeleteConfirmDialog({
+  count,
+  error,
+  isPending,
+  onClose,
+  onConfirm,
+}: {
+  count: number
+  error: string
+  isPending: boolean
+  onClose: () => void
+  onConfirm: () => void
+}) {
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center px-4"
+      style={{ background: 'rgba(34,26,19,0.5)' }}
+      onClick={(e) => { if (e.target === e.currentTarget && !isPending) onClose() }}
+    >
+      <div
+        className="w-full max-w-[400px] rounded-[18px] p-5"
+        style={{ background: 'var(--color-surface)', border: '1px solid var(--color-border)' }}
+      >
+        <h3 className="font-bold text-[16px] mb-1" style={{ color: 'var(--color-ink)' }}>
+          Delete {count} draft invoice{count !== 1 ? 's' : ''}?
+        </h3>
+        <p className="text-xs mb-4" style={{ color: 'var(--color-muted)' }}>
+          This permanently deletes the selected draft invoices and all their line items. Issued invoices cannot be deleted — cancel them instead.
+        </p>
+        {error && (
+          <p className="text-xs font-semibold mb-3" style={{ color: 'var(--color-red)' }}>
+            {error}
+          </p>
+        )}
+        <div className="flex gap-2">
+          <button
+            type="button"
+            onClick={onClose}
+            disabled={isPending}
+            className="flex-1 py-2 rounded-[10px] text-sm font-bold"
+            style={{ background: 'var(--color-border)', color: 'var(--color-muted)' }}
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={onConfirm}
+            disabled={isPending}
+            className="flex-1 py-2 rounded-[10px] text-sm font-bold transition-opacity"
+            style={{ background: 'var(--color-red)', color: '#fff', opacity: isPending ? 0.6 : 1 }}
+          >
+            {isPending ? 'Deleting…' : `Delete ${count}`}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ── Cancel Confirmation Dialog ─────────────────────────────────────────────────
 
 function CancelDialog({
@@ -1207,6 +1269,10 @@ export function InvoicesModule({
   const [showModal, setShowModal] = useState(false)
   const [showBulkModal, setShowBulkModal] = useState(false)
   const [showAlaCarteModal, setShowAlaCarteModal] = useState(false)
+  const [selectedDraftIds, setSelectedDraftIds] = useState<Set<string>>(new Set())
+  const [showBulkDeleteConfirm, setShowBulkDeleteConfirm] = useState(false)
+  const [bulkDeleteError, setBulkDeleteError] = useState('')
+  const [isBulkDeleting, startBulkDelete] = useTransition()
   const [cancelTarget, setCancelTarget] = useState<{ id: string; invoice_number: string } | null>(null)
   const [editingInvoice, setEditingInvoice] = useState<InvoiceWithCustomer | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<{ id: string; invoice_number: string } | null>(null)
@@ -1275,6 +1341,47 @@ export function InvoicesModule({
     })
   }
 
+  const draftIdsInFiltered = useMemo(
+    () => filtered.filter(inv => inv.status === 'draft').map(inv => inv.id),
+    [filtered]
+  )
+  const allDraftsSelected = draftIdsInFiltered.length > 0 && draftIdsInFiltered.every(id => selectedDraftIds.has(id))
+  const someDraftsSelected = draftIdsInFiltered.some(id => selectedDraftIds.has(id)) && !allDraftsSelected
+
+  function toggleSelectAll() {
+    if (allDraftsSelected) {
+      setSelectedDraftIds(new Set())
+    } else {
+      setSelectedDraftIds(new Set(draftIdsInFiltered))
+    }
+  }
+
+  function toggleDraftSelect(id: string) {
+    setSelectedDraftIds(prev => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id); else next.add(id)
+      return next
+    })
+  }
+
+  function handleBulkDelete() {
+    setBulkDeleteError('')
+    startBulkDelete(async () => {
+      const ids = [...selectedDraftIds]
+      const res = await bulkDeleteDraftInvoices(ids)
+      if (res.error) {
+        setBulkDeleteError(res.error)
+        return
+      }
+      setSelectedDraftIds(new Set())
+      setShowBulkDeleteConfirm(false)
+    })
+  }
+
+  const gridCols = isOwner
+    ? '28px 120px 90px 90px 1fr 110px 80px 80px auto'
+    : '120px 90px 90px 1fr 110px 80px 80px auto'
+
   return (
     <div>
       {/* Header */}
@@ -1294,6 +1401,15 @@ export function InvoicesModule({
           </h1>
         </div>
         <div className="flex items-center gap-2">
+          {isOwner && selectedDraftIds.size > 0 && (
+            <button
+              onClick={() => { setBulkDeleteError(''); setShowBulkDeleteConfirm(true) }}
+              className="flex items-center gap-1.5 px-4 py-2.5 rounded-[10px] text-sm font-bold transition-opacity"
+              style={{ background: 'var(--color-red)', color: '#fff' }}
+            >
+              Delete {selectedDraftIds.size} Draft{selectedDraftIds.size !== 1 ? 's' : ''}
+            </button>
+          )}
           {isOwner && (
             <button
               onClick={() => setShowAlaCarteModal(true)}
@@ -1398,12 +1514,26 @@ export function InvoicesModule({
           <div
             className="hidden md:grid text-[10px] font-bold uppercase tracking-wider px-4 py-2.5"
             style={{
-              gridTemplateColumns: '120px 90px 90px 1fr 110px 80px 80px auto',
+              gridTemplateColumns: gridCols,
               background: 'var(--color-cream)',
               color: 'var(--color-muted)',
               borderBottom: '1px solid var(--color-border)',
             }}
           >
+            {isOwner && (
+              <span className="flex items-center">
+                <input
+                  type="checkbox"
+                  title="Select all drafts"
+                  checked={allDraftsSelected}
+                  ref={(el) => { if (el) el.indeterminate = someDraftsSelected }}
+                  onChange={toggleSelectAll}
+                  disabled={draftIdsInFiltered.length === 0}
+                  className="w-3.5 h-3.5 cursor-pointer accent-red-600"
+                  style={{ accentColor: 'var(--color-red)' }}
+                />
+              </span>
+            )}
             <span>Invoice #</span>
             <span>Date</span>
             <span>Due Date</span>
@@ -1425,10 +1555,27 @@ export function InvoicesModule({
                 key={inv.id}
                 className="px-4 py-3 md:grid md:items-center md:gap-2"
                 style={{
-                  gridTemplateColumns: '120px 90px 90px 1fr 110px 80px 80px auto',
+                  gridTemplateColumns: gridCols,
                   borderTop: idx > 0 ? '1px solid var(--color-border)' : undefined,
                 }}
               >
+                {/* Checkbox (owner + draft only) */}
+                {isOwner && (
+                  <span className="hidden md:flex items-center">
+                    {isDraft ? (
+                      <input
+                        type="checkbox"
+                        checked={selectedDraftIds.has(inv.id)}
+                        onChange={() => toggleDraftSelect(inv.id)}
+                        className="w-3.5 h-3.5 cursor-pointer"
+                        style={{ accentColor: 'var(--color-red)' }}
+                      />
+                    ) : (
+                      <span className="w-3.5 h-3.5" />
+                    )}
+                  </span>
+                )}
+
                 {/* Invoice # */}
                 <p className="num font-bold text-[13px]" style={{ color: 'var(--color-ink)' }}>
                   {inv.invoice_number}
@@ -1568,6 +1715,17 @@ export function InvoicesModule({
             )
           })}
         </div>
+      )}
+
+      {/* Bulk Delete Confirm Dialog */}
+      {showBulkDeleteConfirm && (
+        <BulkDeleteConfirmDialog
+          count={selectedDraftIds.size}
+          error={bulkDeleteError}
+          isPending={isBulkDeleting}
+          onClose={() => setShowBulkDeleteConfirm(false)}
+          onConfirm={handleBulkDelete}
+        />
       )}
 
       {/* Bulk A La Carte Invoice Modal */}

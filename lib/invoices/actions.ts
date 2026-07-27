@@ -339,6 +339,29 @@ export async function updateInvoice(
   return { invoice_id: id }
 }
 
+// ── bulkDeleteDraftInvoices ───────────────────────────────────────────────────
+
+export async function bulkDeleteDraftInvoices(ids: string[]): Promise<InvoiceActionResult> {
+  const user = await requireAuth()
+  if (user.role !== 'owner') return { error: 'Only the owner can delete invoices' }
+  if (!ids.length) return {}
+
+  const admin = createAdminClient()
+
+  const { data: found } = await admin.from('invoices').select('id, status').in('id', ids)
+  const nonDrafts = (found ?? []).filter(inv => inv.status !== 'draft')
+  if (nonDrafts.length > 0) {
+    return { error: `${nonDrafts.length} selected invoice(s) are not drafts and cannot be deleted` }
+  }
+
+  await admin.from('invoice_items').delete().in('invoice_id', ids)
+  const { error } = await admin.from('invoices').delete().in('id', ids)
+  if (error) return { error: error.message }
+
+  revalidatePath('/invoices')
+  return {}
+}
+
 // ── deleteInvoice ─────────────────────────────────────────────────────────────
 
 export async function deleteInvoice(id: string): Promise<InvoiceActionResult> {
