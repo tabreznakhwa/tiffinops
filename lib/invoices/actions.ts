@@ -36,9 +36,13 @@ export async function triggerAlaCarteInvoices(
   const currentDubaiMonth = formatInTimeZone(new Date(), 'Asia/Dubai', 'yyyy-MM')
   const month = targetMonth ?? currentDubaiMonth
 
-  const result = await generateAlaCarteInvoices(month, user.id, { periodStart, periodEnd })
-  revalidatePath('/invoices')
-  return result
+  try {
+    const result = await generateAlaCarteInvoices(month, user.id, { periodStart, periodEnd })
+    revalidatePath('/invoices')
+    return result
+  } catch (err: unknown) {
+    return { error: err instanceof Error ? err.message : 'Generation failed — check server logs' }
+  }
 }
 
 import type { Enums } from '@/lib/supabase/types'

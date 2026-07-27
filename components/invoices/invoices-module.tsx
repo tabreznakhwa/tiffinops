@@ -957,7 +957,7 @@ function BulkAlaCarteModal({ onClose }: { onClose: () => void }) {
       >
         <div className="flex items-start justify-between mb-4">
           <div>
-            <p className="text-[10px] font-bold uppercase tracking-widest mb-0.5" style={{ color: 'var(--color-teal)' }}>
+            <p className="text-[10px] font-bold uppercase tracking-widest mb-0.5" style={{ color: '#1A6B6B' }}>
               Bulk Action
             </p>
             <h3 className="font-display font-bold text-[18px]" style={{ color: 'var(--color-ink)' }}>
@@ -1051,7 +1051,7 @@ function BulkAlaCarteModal({ onClose }: { onClose: () => void }) {
                 disabled={isPending || !isValid}
                 className="flex-1 py-2.5 rounded-[10px] text-sm font-bold transition-opacity"
                 style={{
-                  background: 'var(--color-teal)',
+                  background: '#1A6B6B',
                   color: '#fff',
                   opacity: isPending || !isValid ? 0.6 : 1,
                 }}
@@ -1090,7 +1090,7 @@ function BulkAlaCarteModal({ onClose }: { onClose: () => void }) {
               type="button"
               onClick={onClose}
               className="w-full py-2.5 rounded-[10px] text-sm font-bold"
-              style={{ background: 'var(--color-teal)', color: '#fff' }}
+              style={{ background: '#1A6B6B', color: '#fff' }}
             >
               Done — View Invoices
             </button>
@@ -1285,7 +1285,7 @@ export function InvoicesModule({
             <button
               onClick={() => setShowAlaCarteModal(true)}
               className="flex items-center gap-1.5 px-4 py-2.5 rounded-[10px] text-sm font-bold transition-opacity"
-              style={{ background: 'var(--color-teal)', color: '#fff' }}
+              style={{ background: '#1A6B6B', color: '#fff' }}
             >
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-4 h-4" aria-hidden="true">
                 <circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/>
