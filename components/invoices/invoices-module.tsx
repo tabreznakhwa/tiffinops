@@ -1154,14 +1154,26 @@ function BulkAlaCarteModal({ onClose }: { onClose: () => void }) {
                 </div>
               )}
             </div>
-            <button
-              type="button"
-              onClick={onClose}
-              className="w-full py-2.5 rounded-[10px] text-sm font-bold"
-              style={{ background: '#1A6B6B', color: '#fff' }}
-            >
-              Done — View Invoices
-            </button>
+            <div className="flex flex-col gap-2 mt-1">
+              <a
+                href={`/print/alacarte-summary?period_start=${periodStart}&period_end=${periodEnd}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="w-full py-2.5 rounded-[10px] text-sm font-bold text-center flex items-center justify-center gap-2"
+                style={{ background: 'var(--color-cream)', color: '#1A6B6B', border: '1.5px solid #1A6B6B' }}
+              >
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>
+                Print Summary Report
+              </a>
+              <button
+                type="button"
+                onClick={onClose}
+                className="w-full py-2.5 rounded-[10px] text-sm font-bold"
+                style={{ background: '#1A6B6B', color: '#fff' }}
+              >
+                Done — View Invoices
+              </button>
+            </div>
           </div>
         )}
       </div>
