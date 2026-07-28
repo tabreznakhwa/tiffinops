@@ -15,6 +15,7 @@ import {
   triggerAlaCarteInvoices,
   getInvoiceItems,
   bulkDeleteDraftInvoices,
+  bulkIssueDraftInvoices,
   getAlaCarteCustomers,
   type CreateInvoiceInput,
   type UpdateInvoiceInput,
@@ -211,6 +212,15 @@ function GenerateInvoiceModal({
   // Notes
   const [notes, setNotes] = useState(editingInvoice?.notes ?? '')
 
+  // Discount %
+  const [discountPctStr, setDiscountPctStr] = useState(() => {
+    if (!editingInvoice) return '0'
+    const sub  = parseFloat(String(editingInvoice.subtotal  ?? '0'))
+    const disc = parseFloat(String(editingInvoice.discount_amount ?? '0'))
+    if (!sub || !disc) return '0'
+    return ((disc / sub) * 100).toFixed(1)
+  })
+
   // Line items — fetched lazily when editing (invoice_items not in list query)
   const [items, setItems] = useState<LineItem[]>([{ description: '', quantity: '1', unit_price: '' }])
   const [itemsLoading, setItemsLoading] = useState(!!editingInvoice)
@@ -325,8 +335,11 @@ function GenerateInvoiceModal({
     const price = parseFloat(item.unit_price) || 0
     return sum + qty * price
   }, 0)
-  const vatAmount = (subtotal * vatRate) / (100 + vatRate)
-  const exclVAT = subtotal - vatAmount
+  const discountPct    = Math.min(100, Math.max(0, parseFloat(discountPctStr) || 0))
+  const discountAmount = subtotal * discountPct / 100
+  const totalAfterDisc = Math.max(0, subtotal - discountAmount)
+  const vatAmount      = (totalAfterDisc * vatRate) / (100 + vatRate)
+  const exclVAT        = totalAfterDisc - vatAmount
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -358,6 +371,7 @@ function GenerateInvoiceModal({
         : null,
       due_date: dueDate,
       notes: notes.trim() || null,
+      discountPercent: discountPct > 0 ? discountPct : undefined,
       items: validItems.map((item) => ({
         description: item.description.trim(),
         quantity: parseFloat(item.quantity) || 1,
@@ -690,15 +704,49 @@ function GenerateInvoiceModal({
             />
           </div>
 
+          {/* Discount */}
+          <div>
+            <label className="block text-xs font-bold mb-1.5" style={{ color: 'var(--color-ink)' }}>
+              Discount (optional)
+            </label>
+            <div className="relative">
+              <input
+                type="number"
+                min="0"
+                max="100"
+                step="0.5"
+                value={discountPctStr}
+                onChange={(e) => setDiscountPctStr(e.target.value)}
+                placeholder="0"
+                className="w-full rounded-[10px] px-3 py-2.5 pr-8 text-sm focus:outline-none focus:ring-1 focus:ring-saffron"
+                style={{
+                  background: 'var(--color-cream)',
+                  border: '1px solid var(--color-border)',
+                  color: 'var(--color-ink)',
+                }}
+              />
+              <span
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-sm font-bold pointer-events-none"
+                style={{ color: 'var(--color-muted)' }}
+              >%</span>
+            </div>
+          </div>
+
           {/* Summary */}
           <div
             className="rounded-[12px] px-4 py-3 space-y-1"
             style={{ background: 'var(--color-cream)', border: '1px solid var(--color-border)' }}
           >
             <div className="flex justify-between text-xs" style={{ color: 'var(--color-muted)' }}>
-              <span>Subtotal (excl. VAT)</span>
-              <span className="font-semibold num">{currency} {exclVAT.toFixed(2)}</span>
+              <span>Subtotal (incl. VAT)</span>
+              <span className="font-semibold num">{currency} {subtotal.toFixed(2)}</span>
             </div>
+            {discountPct > 0 && (
+              <div className="flex justify-between text-xs" style={{ color: 'var(--color-green)' }}>
+                <span>Discount ({discountPct}%)</span>
+                <span className="font-semibold num">- {currency} {discountAmount.toFixed(2)}</span>
+              </div>
+            )}
             <div className="flex justify-between text-xs" style={{ color: 'var(--color-muted)' }}>
               <span>VAT {vatRate}% (back-calculated, inclusive)</span>
               <span className="font-semibold num">{currency} {vatAmount.toFixed(2)}</span>
@@ -708,7 +756,7 @@ function GenerateInvoiceModal({
               style={{ color: 'var(--color-ink)', borderTop: '1px solid var(--color-border)' }}
             >
               <span>Total (VAT Inclusive)</span>
-              <span className="num">{currency} {subtotal.toFixed(2)}</span>
+              <span className="num">{currency} {totalAfterDisc.toFixed(2)}</span>
             </div>
           </div>
 
@@ -1330,6 +1378,67 @@ function BulkDeleteConfirmDialog({
   )
 }
 
+// ── Bulk Issue Confirm Dialog ─────────────────────────────────────────────────
+
+function BulkIssueConfirmDialog({
+  count,
+  error,
+  isPending,
+  onClose,
+  onConfirm,
+}: {
+  count: number
+  error: string
+  isPending: boolean
+  onClose: () => void
+  onConfirm: () => void
+}) {
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center px-4"
+      style={{ background: 'rgba(34,26,19,0.5)' }}
+      onClick={(e) => { if (e.target === e.currentTarget && !isPending) onClose() }}
+    >
+      <div
+        className="w-full max-w-[400px] rounded-[18px] p-5"
+        style={{ background: 'var(--color-surface)', border: '1px solid var(--color-border)' }}
+      >
+        <h3 className="font-bold text-[16px] mb-1" style={{ color: 'var(--color-ink)' }}>
+          Issue {count} draft invoice{count !== 1 ? 's' : ''}?
+        </h3>
+        <p className="text-xs mb-4" style={{ color: 'var(--color-muted)' }}>
+          This marks the selected drafts as Issued and creates a ledger debit entry for each customer.
+        </p>
+        {error && (
+          <p className="text-xs font-semibold mb-3" style={{ color: 'var(--color-red)' }}>
+            {error}
+          </p>
+        )}
+        <div className="flex gap-2">
+          <button
+            type="button"
+            onClick={onClose}
+            disabled={isPending}
+            className="flex-1 py-2 rounded-[10px] text-sm font-bold"
+            style={{ background: 'var(--color-border)', color: 'var(--color-muted)' }}
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={onConfirm}
+            disabled={isPending}
+            className="flex-1 py-2 rounded-[10px] text-sm font-bold transition-opacity"
+            style={{ background: '#1A6B6B', color: '#fff', opacity: isPending ? 0.6 : 1 }}
+          >
+            {isPending ? 'Issuing…' : `Issue ${count}`}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ── Cancel Confirmation Dialog ─────────────────────────────────────────────────
 
 function CancelDialog({
@@ -1427,6 +1536,9 @@ export function InvoicesModule({
   const [showBulkDeleteConfirm, setShowBulkDeleteConfirm] = useState(false)
   const [bulkDeleteError, setBulkDeleteError] = useState('')
   const [isBulkDeleting, startBulkDelete] = useTransition()
+  const [showBulkIssueConfirm, setShowBulkIssueConfirm] = useState(false)
+  const [bulkIssueError, setBulkIssueError] = useState('')
+  const [isBulkIssuing, startBulkIssue] = useTransition()
   const [cancelTarget, setCancelTarget] = useState<{ id: string; invoice_number: string } | null>(null)
   const [editingInvoice, setEditingInvoice] = useState<InvoiceWithCustomer | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<{ id: string; invoice_number: string } | null>(null)
@@ -1532,6 +1644,20 @@ export function InvoicesModule({
     })
   }
 
+  function handleBulkIssue() {
+    setBulkIssueError('')
+    startBulkIssue(async () => {
+      const ids = [...selectedDraftIds]
+      const res = await bulkIssueDraftInvoices(ids)
+      if (res.error) {
+        setBulkIssueError(res.error)
+        return
+      }
+      setSelectedDraftIds(new Set())
+      setShowBulkIssueConfirm(false)
+    })
+  }
+
   const gridCols = isOwner
     ? '28px 120px 90px 90px 1fr 110px 80px 80px auto'
     : '120px 90px 90px 1fr 110px 80px 80px auto'
@@ -1557,12 +1683,33 @@ export function InvoicesModule({
         <div className="flex items-center gap-2">
           {isOwner && selectedDraftIds.size > 0 && (
             <button
+              onClick={() => { setBulkIssueError(''); setShowBulkIssueConfirm(true) }}
+              className="flex items-center gap-1.5 px-4 py-2.5 rounded-[10px] text-sm font-bold transition-opacity"
+              style={{ background: '#1A6B6B', color: '#fff' }}
+            >
+              Issue {selectedDraftIds.size} Draft{selectedDraftIds.size !== 1 ? 's' : ''}
+            </button>
+          )}
+          {isOwner && selectedDraftIds.size > 0 && (
+            <button
               onClick={() => { setBulkDeleteError(''); setShowBulkDeleteConfirm(true) }}
               className="flex items-center gap-1.5 px-4 py-2.5 rounded-[10px] text-sm font-bold transition-opacity"
               style={{ background: 'var(--color-red)', color: '#fff' }}
             >
               Delete {selectedDraftIds.size} Draft{selectedDraftIds.size !== 1 ? 's' : ''}
             </button>
+          )}
+          {isOwner && (
+            <a
+              href="/print/alacarte-summary"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center gap-1.5 px-4 py-2.5 rounded-[10px] text-sm font-bold transition-opacity"
+              style={{ background: 'var(--color-cream)', color: '#1A6B6B', border: '1.5px solid #1A6B6B' }}
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>
+              Print Summary
+            </a>
           )}
           {isOwner && (
             <button
@@ -1869,6 +2016,17 @@ export function InvoicesModule({
             )
           })}
         </div>
+      )}
+
+      {/* Bulk Issue Confirm Dialog */}
+      {showBulkIssueConfirm && (
+        <BulkIssueConfirmDialog
+          count={selectedDraftIds.size}
+          error={bulkIssueError}
+          isPending={isBulkIssuing}
+          onClose={() => setShowBulkIssueConfirm(false)}
+          onConfirm={handleBulkIssue}
+        />
       )}
 
       {/* Bulk Delete Confirm Dialog */}

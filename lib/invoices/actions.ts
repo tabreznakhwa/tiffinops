@@ -49,6 +49,58 @@ export async function triggerAlaCarteInvoices(
 
 export type AlaCarteCustomer = { id: string; full_name: string; customer_code: string }
 
+// ── bulkIssueDraftInvoices ────────────────────────────────────────────────────
+
+export async function bulkIssueDraftInvoices(ids: string[]): Promise<InvoiceActionResult> {
+  const user = await requireAuth()
+  if (!['owner', 'manager'].includes(user.role)) {
+    return { error: 'Only owners and managers can issue invoices' }
+  }
+  if (!ids.length) return {}
+
+  const admin = createAdminClient()
+  const today = formatInTimeZone(new Date(), 'Asia/Dubai', 'yyyy-MM-dd')
+
+  const { data: invoices } = await admin
+    .from('invoices')
+    .select('id, invoice_number, customer_id, total_amount, status')
+    .in('id', ids)
+
+  const nonDrafts = (invoices ?? []).filter(inv => inv.status !== 'draft')
+  if (nonDrafts.length > 0) {
+    return { error: `${nonDrafts.length} selected invoice(s) are not drafts` }
+  }
+
+  const { error: updateErr } = await admin
+    .from('invoices')
+    .update({ status: 'issued' })
+    .in('id', ids)
+  if (updateErr) return { error: updateErr.message }
+
+  const ledgerEntries = (invoices ?? []).map(inv => ({
+    customer_id:     inv.customer_id,
+    entry_date:      today,
+    entry_type:      'invoice' as const,
+    debit_amount:    parseFloat(String(inv.total_amount)).toFixed(2),
+    credit_amount:   '0.00',
+    description:     `Invoice ${inv.invoice_number}`,
+    reference_table: 'invoices',
+    reference_id:    inv.id,
+    created_by:      user.id,
+  }))
+
+  const { error: ledgerErr } = await admin.from('ledger_entries').insert(ledgerEntries)
+  if (ledgerErr) {
+    await admin.from('invoices').update({ status: 'draft' }).in('id', ids)
+    return { error: ledgerErr.message }
+  }
+
+  revalidatePath('/invoices')
+  return {}
+}
+
+// ── getAlaCarteCustomers ──────────────────────────────────────────────────────
+
 export async function getAlaCarteCustomers(): Promise<AlaCarteCustomer[]> {
   await requireAuth()
   const admin = createAdminClient()
@@ -93,6 +145,7 @@ export type CreateInvoiceInput = {
   billing_period_end?: string | null
   due_date: string
   notes?: string | null
+  discountPercent?: number
   items: {
     description: string
     quantity: number
@@ -122,9 +175,10 @@ export async function createInvoice(input: CreateInvoiceInput): Promise<InvoiceA
     return sum + item.quantity * item.unit_price
   }, 0)
 
-  // VAT back-calculated from inclusive total: total × rate / (100 + rate)
-  const taxAmount = (subtotal * vatRate) / (100 + vatRate)
-  const totalAmount = subtotal // total = subtotal (VAT already included)
+  const discountPct    = Math.min(100, Math.max(0, input.discountPercent ?? 0))
+  const discountAmount = parseFloat((subtotal * discountPct / 100).toFixed(2))
+  const totalAmount    = Math.max(0, subtotal - discountAmount)
+  const taxAmount      = (totalAmount * vatRate) / (100 + vatRate)
 
   // Generate invoice number via DB sequence
   const { data: invoiceNumber, error: numErr } = await admin.rpc('next_invoice_number')
@@ -146,7 +200,7 @@ export async function createInvoice(input: CreateInvoiceInput): Promise<InvoiceA
       billing_period_start: input.billing_period_start ?? null,
       billing_period_end: input.billing_period_end ?? null,
       subtotal: subtotal.toFixed(2),
-      discount_amount: '0.00',
+      discount_amount: discountAmount.toFixed(2),
       tax_amount: taxAmount.toFixed(2),
       total_amount: totalAmount.toFixed(2),
       status: 'draft',
@@ -272,6 +326,7 @@ export type UpdateInvoiceInput = {
   billing_period_end?: string | null
   due_date: string
   notes?: string | null
+  discountPercent?: number
   items: {
     description: string
     quantity: number
@@ -307,9 +362,11 @@ export async function updateInvoice(
   const { data: settingsRow } = await admin.from('app_settings').select('vat_percent').eq('id', 1).single()
   const vatRate = parseFloat(String(settingsRow?.vat_percent ?? '5'))
 
-  const subtotal = input.items.reduce((sum, item) => sum + item.quantity * item.unit_price, 0)
-  const taxAmount = (subtotal * vatRate) / (100 + vatRate)
-  const totalAmount = subtotal
+  const subtotal       = input.items.reduce((sum, item) => sum + item.quantity * item.unit_price, 0)
+  const discountPct    = Math.min(100, Math.max(0, input.discountPercent ?? 0))
+  const discountAmount = parseFloat((subtotal * discountPct / 100).toFixed(2))
+  const totalAmount    = Math.max(0, subtotal - discountAmount)
+  const taxAmount      = (totalAmount * vatRate) / (100 + vatRate)
 
   const { error: updateErr } = await admin
     .from('invoices')
@@ -320,6 +377,7 @@ export async function updateInvoice(
       billing_period_end: input.billing_period_end ?? null,
       due_date: input.due_date,
       subtotal: subtotal.toFixed(2),
+      discount_amount: discountAmount.toFixed(2),
       tax_amount: taxAmount.toFixed(2),
       total_amount: totalAmount.toFixed(2),
       notes: input.notes ?? null,
