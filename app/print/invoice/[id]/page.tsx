@@ -365,49 +365,6 @@ export default async function PrintInvoicePage({
         </>
       )}
 
-      {/* ── Item Summary (A La Carte only) ── */}
-      {invoice.invoice_type === 'a_la_carte_cycle' && itemSummary.size > 0 && (
-        <div style={{ marginTop: 24, pageBreakInside: 'avoid' }}>
-          <p
-            style={{
-              fontSize: 10, fontWeight: 800, letterSpacing: '0.1em',
-              textTransform: 'uppercase', color: '#7C7063', margin: '0 0 6px',
-            }}
-          >
-            Item Summary
-          </p>
-          <div
-            style={{
-              display: 'grid', gridTemplateColumns: '1fr 60px',
-              gap: 8, padding: '5px 0', borderBottom: '2px solid #221A13',
-              fontSize: 10, fontWeight: 700, letterSpacing: '0.06em',
-              textTransform: 'uppercase', color: '#7C7063',
-            }}
-          >
-            <span>Item</span>
-            <span style={{ textAlign: 'right' }}>Total Qty</span>
-          </div>
-          {[...itemSummary.entries()]
-            .sort(([a], [b]) => a.localeCompare(b))
-            .map(([name, qty]) => (
-              <div
-                key={name}
-                style={{
-                  display: 'grid', gridTemplateColumns: '1fr 60px',
-                  gap: 8, padding: '5px 0', borderBottom: '1px solid #ECE2D3',
-                  fontSize: 12, alignItems: 'center',
-                }}
-              >
-                <span style={{ fontWeight: 500 }}>{name}</span>
-                <span style={{ textAlign: 'right', fontWeight: 700, fontFamily: 'var(--font-display)' }}>
-                  {qty % 1 === 0 ? qty : qty.toFixed(2)}
-                </span>
-              </div>
-            ))
-          }
-        </div>
-      )}
-
       {/* ── Bank payment details ── */}
       <div
         style={{
