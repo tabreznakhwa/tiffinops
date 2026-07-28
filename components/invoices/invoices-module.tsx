@@ -15,8 +15,10 @@ import {
   triggerAlaCarteInvoices,
   getInvoiceItems,
   bulkDeleteDraftInvoices,
+  getAlaCarteCustomers,
   type CreateInvoiceInput,
   type UpdateInvoiceInput,
+  type AlaCarteCustomer,
 } from '@/lib/invoices/actions'
 import type { GenerateResult } from '@/lib/invoices/generateMonthlyInvoices'
 import type { AlaCarteGenerateResult } from '@/lib/invoices/generateAlaCarteInvoices'
@@ -940,24 +942,54 @@ function BulkAlaCarteModal({ onClose }: { onClose: () => void }) {
   const [periodStart,    setPeriodStart]    = useState(initStart)
   const [periodEnd,      setPeriodEnd]      = useState(initEnd)
   const [discountPctStr, setDiscountPctStr] = useState('0')
+  const [perCustomerMode, setPerCustomerMode] = useState(false)
+  const [customerList,    setCustomerList]    = useState<AlaCarteCustomer[]>([])
+  const [customerDiscounts, setCustomerDiscounts] = useState<Record<string, string>>({})
 
   function fmtDate(d: string) {
     return new Date(d + 'T00:00:00Z').toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
   }
 
-  // Derive forMonth from periodEnd for the server action
   function forMonthOf(pe: string) { return pe.slice(0, 7) }
 
   const discountPct = Math.min(100, Math.max(0, parseFloat(discountPctStr) || 0))
   const isValid = periodStart && periodEnd && periodStart <= periodEnd
 
+  // Fetch customers when per-customer mode is enabled
+  useEffect(() => {
+    if (!perCustomerMode || customerList.length > 0) return
+    getAlaCarteCustomers().then(list => {
+      setCustomerList(list)
+      setCustomerDiscounts(prev => {
+        const next: Record<string, string> = {}
+        for (const c of list) next[c.id] = prev[c.id] ?? discountPctStr
+        return next
+      })
+    })
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [perCustomerMode])
+
+  function applyGlobalToAll() {
+    setCustomerDiscounts(prev => {
+      const next: Record<string, string> = {}
+      for (const id of Object.keys(prev)) next[id] = discountPctStr
+      return next
+    })
+  }
+
   function handleGenerate() {
     setError('')
     setResult(null)
     startTransition(async () => {
+      const perCustomer = perCustomerMode && customerList.length > 0
+        ? Object.fromEntries(
+            customerList.map(c => [c.id, Math.min(100, Math.max(0, parseFloat(customerDiscounts[c.id] ?? '0') || 0))])
+          )
+        : undefined
       const res = await triggerAlaCarteInvoices(
         forMonthOf(periodEnd), periodStart, periodEnd,
         discountPct > 0 ? discountPct : undefined,
+        perCustomer,
       )
       if (res.error) { setError(res.error); return }
       setResult(res as AlaCarteGenerateResult)
@@ -1071,25 +1103,81 @@ function BulkAlaCarteModal({ onClose }: { onClose: () => void }) {
                       color: 'var(--color-ink)',
                     }}
                   />
-                  <span
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-sm font-bold pointer-events-none"
-                    style={{ color: 'var(--color-muted)' }}
-                  >
-                    %
-                  </span>
+                  <span className="absolute right-3 top-1/2 -translate-y-1/2 text-sm font-bold pointer-events-none" style={{ color: 'var(--color-muted)' }}>%</span>
                 </div>
-                {discountPct > 0 && (
-                  <div
+                {perCustomerMode ? (
+                  <button
+                    type="button"
+                    onClick={applyGlobalToAll}
                     className="px-3 py-2.5 rounded-[10px] text-xs font-bold whitespace-nowrap"
-                    style={{ background: 'var(--color-green-soft)', color: 'var(--color-green)' }}
+                    style={{ background: 'var(--color-cream)', border: '1px solid var(--color-border)', color: 'var(--color-ink)' }}
                   >
-                    {discountPct}% off all invoices
+                    Apply to all
+                  </button>
+                ) : discountPct > 0 ? (
+                  <div className="px-3 py-2.5 rounded-[10px] text-xs font-bold whitespace-nowrap" style={{ background: 'var(--color-green-soft)', color: 'var(--color-green)' }}>
+                    {discountPct}% off all
                   </div>
-                )}
+                ) : null}
               </div>
-              <p className="text-[11px] mt-1" style={{ color: 'var(--color-muted)' }}>
-                Applied to every invoice in this batch. Enter 0 for no discount.
-              </p>
+
+              {/* Per-customer toggle */}
+              <label className="flex items-center gap-2 mt-2 cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  checked={perCustomerMode}
+                  onChange={(e) => setPerCustomerMode(e.target.checked)}
+                  className="rounded"
+                />
+                <span className="text-[11px] font-semibold" style={{ color: 'var(--color-ink)' }}>
+                  Set discount per customer
+                </span>
+              </label>
+
+              {/* Per-customer discount list */}
+              {perCustomerMode && (
+                <div
+                  className="mt-2 rounded-[10px] overflow-hidden"
+                  style={{ border: '1px solid var(--color-border)', maxHeight: 220, overflowY: 'auto' }}
+                >
+                  {customerList.length === 0 ? (
+                    <p className="text-xs p-3" style={{ color: 'var(--color-muted)' }}>Loading customers…</p>
+                  ) : (
+                    customerList.map((c, i) => (
+                      <div
+                        key={c.id}
+                        className="flex items-center gap-2 px-3 py-2"
+                        style={{
+                          borderBottom: i < customerList.length - 1 ? '1px solid var(--color-border)' : undefined,
+                          background: 'var(--color-cream)',
+                        }}
+                      >
+                        <div className="flex-1 min-w-0">
+                          <p className="text-xs font-semibold truncate" style={{ color: 'var(--color-ink)' }}>{c.full_name}</p>
+                          <p className="text-[10px]" style={{ color: 'var(--color-muted)' }}>{c.customer_code}</p>
+                        </div>
+                        <div className="relative w-16 flex-shrink-0">
+                          <input
+                            type="number"
+                            min="0"
+                            max="100"
+                            step="0.5"
+                            value={customerDiscounts[c.id] ?? '0'}
+                            onChange={(e) => setCustomerDiscounts(prev => ({ ...prev, [c.id]: e.target.value }))}
+                            className="w-full rounded-[8px] px-2 py-1.5 pr-5 text-xs text-right focus:outline-none focus:ring-1"
+                            style={{
+                              background: 'var(--color-surface)',
+                              border: '1px solid var(--color-border)',
+                              color: 'var(--color-ink)',
+                            }}
+                          />
+                          <span className="absolute right-1.5 top-1/2 -translate-y-1/2 text-[10px] pointer-events-none" style={{ color: 'var(--color-muted)' }}>%</span>
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+              )}
             </div>
 
             {error && (

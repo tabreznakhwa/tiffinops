@@ -28,6 +28,7 @@ export async function triggerAlaCarteInvoices(
   periodStart?: string,
   periodEnd?: string,
   discountPercent?: number,
+  customerDiscounts?: Record<string, number>,
 ): Promise<{ error?: string } & Partial<AlaCarteGenerateResult>> {
   const user = await requireAuth()
   if (user.role !== 'owner') return { error: 'Only the owner can generate A La Carte invoices' }
@@ -36,12 +37,28 @@ export async function triggerAlaCarteInvoices(
   const month = targetMonth ?? currentDubaiMonth
 
   try {
-    const result = await generateAlaCarteInvoices(month, user.id, { periodStart, periodEnd, discountPercent })
+    const result = await generateAlaCarteInvoices(month, user.id, {
+      periodStart, periodEnd, discountPercent, customerDiscounts,
+    })
     revalidatePath('/invoices')
     return result
   } catch (err: unknown) {
     return { error: err instanceof Error ? err.message : 'Generation failed — check server logs' }
   }
+}
+
+export type AlaCarteCustomer = { id: string; full_name: string; customer_code: string }
+
+export async function getAlaCarteCustomers(): Promise<AlaCarteCustomer[]> {
+  await requireAuth()
+  const admin = createAdminClient()
+  const { data } = await admin
+    .from('customers')
+    .select('id, full_name, customer_code')
+    .in('customer_type', ['a_la_carte', 'hybrid'])
+    .eq('status', 'active')
+    .order('full_name')
+  return (data ?? []) as AlaCarteCustomer[]
 }
 
 import type { Enums } from '@/lib/supabase/types'

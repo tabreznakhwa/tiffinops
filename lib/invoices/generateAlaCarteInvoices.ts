@@ -24,7 +24,12 @@ export type AlaCarteGenerateResult = {
 export async function generateAlaCarteInvoices(
   forMonth: string,
   createdBy: string,
-  options?: { periodStart?: string; periodEnd?: string; discountPercent?: number },
+  options?: {
+    periodStart?: string
+    periodEnd?: string
+    discountPercent?: number
+    customerDiscounts?: Record<string, number>  // customer_id → % override
+  },
 ): Promise<AlaCarteGenerateResult> {
   const admin = createAdminClient()
 
@@ -117,7 +122,8 @@ export async function generateAlaCarteInvoices(
     byCustomer.get(order.customer_id)!.push(order)
   }
 
-  const discountPct = Math.min(100, Math.max(0, options?.discountPercent ?? 0))
+  const globalDiscountPct   = Math.min(100, Math.max(0, options?.discountPercent ?? 0))
+  const customerDiscountsMap = options?.customerDiscounts ?? {}
 
   const today    = formatInTimeZone(new Date(), 'Asia/Dubai', 'yyyy-MM-dd')
   const dueDate  = periodEnd
@@ -135,9 +141,13 @@ export async function generateAlaCarteInvoices(
     const customer = customerMap.get(customerId)
     if (!customer) { skipped++; continue }
 
-    const subtotal        = orders.reduce((s, o) => s + parseFloat(o.total_amount), 0)
+    const subtotal = orders.reduce((s, o) => s + parseFloat(o.total_amount), 0)
     if (subtotal < 0.01) { skipped++; continue }
 
+    // Per-customer discount overrides the global default
+    const discountPct     = customerId in customerDiscountsMap
+      ? Math.min(100, Math.max(0, customerDiscountsMap[customerId]))
+      : globalDiscountPct
     const discountAmount  = parseFloat((subtotal * discountPct / 100).toFixed(2))
     const discountedTotal = Math.max(0, subtotal - discountAmount)
     const taxAmount       = (discountedTotal * vatRate) / (100 + vatRate)
