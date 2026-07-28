@@ -363,7 +363,10 @@ export function BillsModule({
 
                 {/* View bill */}
                 <Link
-                  href={`/bills/${bill.customerId}?month=${activeMonth}`}
+                  href={rangeFrom && rangeTo
+                    ? `/bills/${bill.customerId}?from=${rangeFrom}&to=${rangeTo}`
+                    : `/bills/${bill.customerId}?month=${activeMonth}`
+                  }
                   className="flex items-center gap-1 px-3 py-1.5 rounded-[8px] text-xs font-bold flex-shrink-0 transition-colors hover:bg-cream"
                   style={{ color: 'var(--color-saffron)', border: '1px solid var(--color-border)' }}
                 >
