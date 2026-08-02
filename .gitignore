@@ -31,3 +31,6 @@ Thumbs.db
 # Customer data — never commit raw data files
 *.xlsx
 *.csv
+
+.vercel
+.env*

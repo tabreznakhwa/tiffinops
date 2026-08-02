@@ -21,6 +21,7 @@ export type EditableSubscription = {
   fixed_plan_id: string
   start_date: string
   agreed_monthly_price: string
+  meal_prices: Record<string, string> | null
   notes: string | null
   customers: Customer | null
 }
@@ -28,10 +29,31 @@ export type EditableSubscription = {
 const PERIOD_ICONS: Record<string, string> = {
   breakfast: '🌅', lunch: '☀️', dinner: '🌙',
 }
+const PERIOD_LABEL: Record<string, string> = {
+  breakfast: 'Breakfast', lunch: 'Lunch', dinner: 'Dinner',
+}
 
 function todayDubai() {
   const now = new Date()
   return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Dubai', year: 'numeric', month: '2-digit', day: '2-digit' }).format(now)
+}
+
+// Splits a total price evenly across meals, keeping 2dp and no rounding drift
+// (the last meal absorbs whatever cents are left over).
+function evenSplit(mealPeriods: string[], totalPrice: number): Record<string, string> {
+  if (mealPeriods.length === 0 || !Number.isFinite(totalPrice)) return {}
+  const result: Record<string, string> = {}
+  let allocated = 0
+  mealPeriods.forEach((m, i) => {
+    if (i === mealPeriods.length - 1) {
+      result[m] = Math.max(0, totalPrice - allocated).toFixed(2)
+    } else {
+      const share = Math.round((totalPrice / mealPeriods.length) * 100) / 100
+      result[m] = share.toFixed(2)
+      allocated += share
+    }
+  })
+  return result
 }
 
 export function SubscribeModal({
@@ -65,12 +87,44 @@ export function SubscribeModal({
   const [loading, setLoading]                   = useState(false)
   const [error, setError]                       = useState('')
 
+  // Per-meal price breakdown — only relevant for plans covering 2+ meals.
+  const [mealPrices, setMealPrices]             = useState<Record<string, string>>(
+    subscription?.meal_prices ?? {}
+  )
+  const [mealPricesTouched, setMealPricesTouched] = useState(!!subscription?.meal_prices)
+
   // Pre-fill price when plan changes (only if not edit mode or plan changed)
   useEffect(() => {
     if (selectedPlan && !isEdit) {
       setPrice(parseFloat(String(selectedPlan.default_monthly_price)).toFixed(2))
     }
   }, [selectedPlan, isEdit])
+
+  // Keep the meal-price split in sync with plan/price until the user edits it directly.
+  useEffect(() => {
+    if (!selectedPlan) return
+    if (selectedPlan.meal_periods.length <= 1) { setMealPrices({}); return }
+    if (mealPricesTouched) return
+    const p = parseFloat(price)
+    if (!Number.isFinite(p) || p < 0) return
+    setMealPrices(evenSplit(selectedPlan.meal_periods, p))
+  }, [selectedPlan, price, mealPricesTouched])
+
+  function handleMealPriceChange(meal: string, val: string) {
+    setMealPricesTouched(true)
+    setMealPrices(prev => ({ ...prev, [meal]: val }))
+  }
+
+  function resetMealSplit() {
+    if (!selectedPlan) return
+    const p = parseFloat(price)
+    setMealPricesTouched(false)
+    if (Number.isFinite(p) && p >= 0) setMealPrices(evenSplit(selectedPlan.meal_periods, p))
+  }
+
+  const mealPricesSum = Object.values(mealPrices).reduce((s, v) => s + (parseFloat(v) || 0), 0)
+  const needsMealSplit = !!selectedPlan && selectedPlan.meal_periods.length > 1
+  const mealSplitValid = !needsMealSplit || Math.abs(mealPricesSum - (parseFloat(price) || 0)) <= 0.02
 
   const filteredCustomers = customers.filter(c => {
     if (!query.trim()) return true
@@ -99,6 +153,7 @@ export function SubscribeModal({
       fixed_plan_id:         selectedPlan.id,
       start_date:            startDate,
       agreed_monthly_price:  parseFloat(price),
+      meal_prices:           needsMealSplit ? mealPrices : undefined,
       notes:                 notes.trim() || undefined,
     }
 
@@ -111,7 +166,7 @@ export function SubscribeModal({
     onClose()
   }
 
-  const canSubmit = !!selectedCustomer && !!selectedPlan && startDate !== '' && price !== '' && !loading
+  const canSubmit = !!selectedCustomer && !!selectedPlan && startDate !== '' && price !== '' && mealSplitValid && !loading
 
   return (
     <div
@@ -277,6 +332,54 @@ export function SubscribeModal({
               />
             </div>
           </div>
+
+          {/* Per-meal price breakdown — required for multi-meal plans */}
+          {needsMealSplit && selectedPlan && (
+            <div>
+              <div className="flex items-center justify-between mb-1.5">
+                <label className="block text-xs font-semibold" style={{ color: 'var(--color-muted)' }}>
+                  Per-Meal Price Split *
+                </label>
+                <button
+                  type="button"
+                  onClick={resetMealSplit}
+                  className="text-[11px] font-semibold"
+                  style={{ color: 'var(--color-saffron)' }}
+                >
+                  Even split
+                </button>
+              </div>
+              <p className="text-[11px] mb-2" style={{ color: 'var(--color-muted)' }}>
+                Needed so a single paused meal (e.g. Breakfast) can be billed separately.
+              </p>
+              <div className="grid grid-cols-3 gap-2">
+                {selectedPlan.meal_periods.map(m => (
+                  <div key={m}>
+                    <label className="block text-[10.5px] font-semibold mb-1" style={{ color: 'var(--color-muted)' }}>
+                      {PERIOD_ICONS[m]} {PERIOD_LABEL[m]}
+                    </label>
+                    <input
+                      type="number"
+                      value={mealPrices[m] ?? ''}
+                      onChange={e => handleMealPriceChange(m, e.target.value)}
+                      placeholder="0.00"
+                      min="0"
+                      step="0.01"
+                      className="w-full rounded-[8px] px-2 py-2 text-xs focus:outline-none focus:ring-1 focus:ring-saffron num"
+                      style={{ background: 'var(--color-cream)', border: '1px solid var(--color-border)', color: 'var(--color-ink)' }}
+                    />
+                  </div>
+                ))}
+              </div>
+              <p
+                className="text-[11px] font-semibold mt-1.5"
+                style={{ color: mealSplitValid ? 'var(--color-muted)' : 'var(--color-red)' }}
+              >
+                Total {currency} {mealPricesSum.toFixed(2)} of {currency} {(parseFloat(price) || 0).toFixed(2)}
+                {!mealSplitValid && ' — must match the agreed price'}
+              </p>
+            </div>
+          )}
 
           {/* Notes */}
           <div>

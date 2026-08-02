@@ -287,6 +287,7 @@ export type Database = {
           start_date: string
           end_date: string | null
           agreed_monthly_price: string
+          meal_prices: Record<string, string> | null
           status: string
           notes: string | null
           created_by: string | null
@@ -299,6 +300,7 @@ export type Database = {
           start_date: string
           end_date?: string | null
           agreed_monthly_price: string
+          meal_prices?: Record<string, string> | null
           status?: string
           notes?: string | null
           created_by?: string | null
@@ -311,12 +313,48 @@ export type Database = {
           start_date?: string
           end_date?: string | null
           agreed_monthly_price?: string
+          meal_prices?: Record<string, string> | null
           status?: string
           notes?: string | null
           created_by?: string | null
           created_at?: string
         }
         Relationships: []
+      }
+      subscription_meal_pauses: {
+        Row: {
+          id: string
+          subscription_id: string
+          meal_period: Database['public']['Enums']['meal_period']
+          pause_start: string
+          pause_end: string | null
+          reason: string | null
+          created_by: string | null
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          subscription_id: string
+          meal_period: Database['public']['Enums']['meal_period']
+          pause_start: string
+          pause_end?: string | null
+          reason?: string | null
+          created_by?: string | null
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          subscription_id?: string
+          meal_period?: Database['public']['Enums']['meal_period']
+          pause_start?: string
+          pause_end?: string | null
+          reason?: string | null
+          created_by?: string | null
+          created_at?: string
+        }
+        Relationships: [
+          { foreignKeyName: 'subscription_meal_pauses_subscription_id_fkey'; columns: ['subscription_id']; referencedRelation: 'customer_subscriptions'; referencedColumns: ['id'] }
+        ]
       }
       orders: {
         Row: {
