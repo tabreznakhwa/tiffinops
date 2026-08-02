@@ -3,10 +3,11 @@
 import { useState, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 import { Plus, Search, Pencil } from 'lucide-react'
-import { togglePlanStatus, updateSubscriptionStatus } from '@/lib/fixed-menu/actions'
+import { togglePlanStatus, updateSubscriptionStatus, resumeSubscriptionMeal } from '@/lib/fixed-menu/actions'
 import { PlanModal } from './plan-modal'
 import { SubscribeModal } from './subscribe-modal'
 import type { EditableSubscription } from './subscribe-modal'
+import { MealPauseModal } from './meal-pause-modal'
 import { useAppSettings } from '@/components/settings/settings-context'
 import type { Tables } from '@/lib/supabase/types'
 
@@ -28,10 +29,20 @@ export type SubscriptionRow = {
   start_date: string
   end_date: string | null
   agreed_monthly_price: string
+  meal_prices: Record<string, string> | null
   status: string
   notes: string | null
   created_at: string
   customers: CustomerSummary | null
+}
+
+export type MealPause = {
+  id: string
+  subscription_id: string
+  meal_period: string
+  pause_start: string
+  pause_end: string | null
+  reason: string | null
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -62,10 +73,12 @@ export function FixedMenuModule({
   plans,
   subscriptions,
   customers,
+  mealPauses,
 }: {
   plans: Plan[]
   subscriptions: SubscriptionRow[]
   customers: CustomerSummary[]
+  mealPauses: MealPause[]
 }) {
   const router = useRouter()
   const { currency } = useAppSettings()
@@ -77,6 +90,7 @@ export function FixedMenuModule({
   const [editPlan, setEditPlan]                 = useState<Plan | undefined>()
   const [showSubscribeModal, setShowSubscribeModal] = useState(false)
   const [editSubscription, setEditSubscription]     = useState<EditableSubscription | undefined>()
+  const [pauseMealSub, setPauseMealSub] = useState<{ id: string; meals: string[] } | undefined>()
   const [busy, setBusy]                 = useState<string | null>(null)
 
   // ── Derived counts ──────────────────────────────────────────────────────────
@@ -92,6 +106,14 @@ export function FixedMenuModule({
     })
     return map
   }, [subscriptions])
+
+  const pausesBySub = useMemo(() => {
+    const map: Record<string, MealPause[]> = {}
+    mealPauses.forEach(p => {
+      ;(map[p.subscription_id] ??= []).push(p)
+    })
+    return map
+  }, [mealPauses])
 
   // ── Filtered subscriptions ──────────────────────────────────────────────────
 
@@ -115,6 +137,13 @@ export function FixedMenuModule({
   async function handleSubStatus(id: string, status: 'active' | 'paused' | 'cancelled' | 'completed') {
     setBusy(id)
     await updateSubscriptionStatus(id, status)
+    setBusy(null)
+    router.refresh()
+  }
+
+  async function handleResumeMeal(pauseId: string) {
+    setBusy('pause-' + pauseId)
+    await resumeSubscriptionMeal(pauseId)
     setBusy(null)
     router.refresh()
   }
@@ -300,9 +329,15 @@ export function FixedMenuModule({
           ) : (
             <div className="space-y-3">
               {filtered.map(sub => {
-                const plan    = plans.find(p => p.id === sub.fixed_plan_id)
-                const scfg    = SUB_STATUS[sub.status] ?? SUB_STATUS.active
-                const loading = busy === sub.id
+                const plan       = plans.find(p => p.id === sub.fixed_plan_id)
+                const scfg       = SUB_STATUS[sub.status] ?? SUB_STATUS.active
+                const loading    = busy === sub.id
+                const subPauses  = pausesBySub[sub.id] ?? []
+                const pausedMeals = new Set(subPauses.map(p => p.meal_period))
+                const canPauseMeal =
+                  sub.status === 'active' &&
+                  !!plan && plan.meal_periods.length > 1 &&
+                  plan.meal_periods.some(m => !pausedMeals.has(m))
 
                 return (
                   <div
@@ -370,6 +405,32 @@ export function FixedMenuModule({
                       )}
                     </div>
 
+                    {/* Paused-meal pills */}
+                    {subPauses.length > 0 && (
+                      <div className="flex flex-wrap items-center gap-2 mb-3">
+                        {subPauses.map(p => (
+                          <div
+                            key={p.id}
+                            className="flex items-center gap-2 text-[10.5px] font-semibold px-2 py-1 rounded-pill"
+                            style={{ background: '#FEF3C7', color: 'var(--color-gold)', border: '1px solid #FDE68A' }}
+                          >
+                            <span>
+                              {PERIOD_ICON[p.meal_period]} {PERIOD_LABEL[p.meal_period]} paused since {fmtDate(p.pause_start)}
+                              {p.pause_end ? ` · resumes ${fmtDate(p.pause_end)}` : ''}
+                            </span>
+                            <button
+                              onClick={() => handleResumeMeal(p.id)}
+                              disabled={busy === 'pause-' + p.id}
+                              className="font-bold underline disabled:opacity-50"
+                              style={{ color: 'var(--color-green)' }}
+                            >
+                              {busy === 'pause-' + p.id ? '…' : 'Resume'}
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
                     {/* Date row + action buttons */}
                     <div className="flex items-center justify-between gap-3">
                       <p className="text-xs" style={{ color: 'var(--color-muted)' }}>
@@ -391,6 +452,19 @@ export function FixedMenuModule({
                           >
                             <Pencil size={11} />
                             Edit
+                          </button>
+                        )}
+                        {canPauseMeal && plan && (
+                          <button
+                            onClick={() => setPauseMealSub({
+                              id: sub.id,
+                              meals: plan.meal_periods.filter(m => !pausedMeals.has(m)),
+                            })}
+                            disabled={loading}
+                            className="px-3 py-1.5 rounded-[8px] text-xs font-semibold disabled:opacity-50"
+                            style={{ color: 'var(--color-gold)', border: '1px solid #FDE68A', background: 'transparent' }}
+                          >
+                            Pause a Meal
                           </button>
                         )}
                         {sub.status === 'active' && (
@@ -585,6 +659,13 @@ export function FixedMenuModule({
           customers={customers}
           subscription={editSubscription}
           onClose={() => { setShowSubscribeModal(false); setEditSubscription(undefined); router.refresh() }}
+        />
+      )}
+      {pauseMealSub && (
+        <MealPauseModal
+          subscriptionId={pauseMealSub.id}
+          availableMeals={pauseMealSub.meals}
+          onClose={() => { setPauseMealSub(undefined); router.refresh() }}
         />
       )}
     </div>
