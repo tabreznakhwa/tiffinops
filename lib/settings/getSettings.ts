@@ -1,3 +1,4 @@
+import { cache } from 'react'
 import { createAdminClient } from '@/lib/supabase/admin'
 
 export type AppSettings = {
@@ -46,11 +47,12 @@ export const FALLBACK: AppSettings = {
   updated_at: new Date().toISOString(),
 }
 
-export async function getSettings(): Promise<AppSettings> {
+// Cached per request — the layout and most pages both need settings.
+export const getSettings = cache(async (): Promise<AppSettings> => {
   const admin = createAdminClient()
   const { data } = await admin.from('app_settings').select('*').eq('id', 1).single()
   return (data as AppSettings | null) ?? FALLBACK
-}
+})
 
 // VAT back-calculation: total × rate / (100 + rate)
 // All prices are VAT-inclusive — never add VAT on top

@@ -1,3 +1,4 @@
+import { cache } from 'react'
 import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
@@ -6,7 +7,11 @@ import type { Tables, Enums } from '@/lib/supabase/types'
 export type AppUser = Tables<'users'>
 export type UserRole = Enums<'user_role'>
 
-export async function getCurrentUser(): Promise<AppUser | null> {
+// Resolves the signed-in app user. Wrapped in React cache() so the auth call
+// and the users lookup happen ONCE per request — the layout and the page both
+// call requireAuth(), which previously meant four network round-trips before
+// any page data started loading.
+const loadUser = cache(async (): Promise<AppUser | null> => {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return null
@@ -22,21 +27,16 @@ export async function getCurrentUser(): Promise<AppUser | null> {
     .single()
 
   return data
+})
+
+export async function getCurrentUser(): Promise<AppUser | null> {
+  return loadUser()
 }
 
 // Redirects to /login if not authenticated, to /pending if not active.
 // Returns the active user.
 export async function requireAuth(): Promise<AppUser> {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) redirect('/login')
-
-  const admin = createAdminClient()
-  const { data: appUser } = await admin
-    .from('users')
-    .select('*')
-    .eq('id', user.id)
-    .single()
+  const appUser = await loadUser()
 
   if (!appUser) redirect('/login')
   if (appUser.status === 'pending') redirect('/pending')

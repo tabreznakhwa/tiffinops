@@ -6,6 +6,25 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { ReportsModule } from '@/components/reports/reports-module'
 import type { ReportData } from '@/components/reports/reports-module'
 
+// Supabase caps a single select at 1,000 rows. Without paging, any report
+// covering more than 1,000 orders silently reported wrong totals.
+const PAGE = 1000
+
+async function fetchAllPages<T>(
+  build: (from: number, to: number) => PromiseLike<{ data: T[] | null }>,
+): Promise<T[]> {
+  const out: T[] = []
+  let offset = 0
+  while (true) {
+    const { data } = await build(offset, offset + PAGE - 1)
+    const batch = data ?? []
+    out.push(...batch)
+    if (batch.length < PAGE) break
+    offset += PAGE
+  }
+  return out
+}
+
 export default async function ReportsPage({
   searchParams,
 }: {
@@ -39,8 +58,8 @@ export default async function ReportsPage({
     { data: allCustomers },
     { data: newCustomers },
     { data: rawSubs },
-    { data: allOrders },
-    { data: rawItems },
+    allOrders,
+    rawItems,
     { data: allSubsMonth },
   ] = await Promise.all([
     // Payments in selected range (non-voided)
@@ -72,19 +91,25 @@ export default async function ReportsPage({
       .select('id, customer_id, status, agreed_monthly_price, start_date, fixed_plans(plan_name), customers(full_name, customer_code)')
       .order('created_at', { ascending: false }),
 
-    // Orders in range
-    admin.from('orders')
-      .select('id, order_date, meal_period, total_amount, customer_id')
-      .gte('order_date', from)
-      .lte('order_date', to)
-      .not('order_status', 'in', '(cancelled,voided,draft)'),
+    // Orders in range — paged, reports can span more than 1,000 orders
+    fetchAllPages<{ id: string; order_date: string; meal_period: string; total_amount: string; customer_id: string }>(
+      (f, t) => admin.from('orders')
+        .select('id, order_date, meal_period, total_amount, customer_id')
+        .gte('order_date', from)
+        .lte('order_date', to)
+        .not('order_status', 'in', '(cancelled,voided,draft)')
+        .range(f, t) as never,
+    ),
 
-    // Order items in range (for top items)
-    admin.from('order_items')
-      .select('item_name_snapshot, quantity, total_price, orders!inner(order_date, order_status)')
-      .gte('orders.order_date', from)
-      .lte('orders.order_date', to)
-      .not('orders.order_status', 'in', '(cancelled,voided,draft)'),
+    // Order items in range (for top items) — paged
+    fetchAllPages<{ item_name_snapshot: string; quantity: string; total_price: string }>(
+      (f, t) => admin.from('order_items')
+        .select('item_name_snapshot, quantity, total_price, orders!inner(order_date, order_status)')
+        .gte('orders.order_date', from)
+        .lte('orders.order_date', to)
+        .not('orders.order_status', 'in', '(cancelled,voided,draft)')
+        .range(f, t) as never,
+    ),
 
     // This month's payments (for balance calculation)
     admin.from('payments')

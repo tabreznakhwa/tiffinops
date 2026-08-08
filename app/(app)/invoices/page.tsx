@@ -50,25 +50,42 @@ export default async function InvoicesPage({
   const currentDubaiMonth = formatInTimeZone(new Date(), 'Asia/Dubai', 'yyyy-MM')
   const defaultGenerateMonth = nextMonth(currentDubaiMonth)
 
-  const [{ data: rawInvoices }, { count: activeSubCount }] = await Promise.all([
-    admin
-      .from('invoices')
-      .select(`
-        id, invoice_number, customer_id, invoice_date, due_date,
-        invoice_type, billing_period_start, billing_period_end,
-        subtotal, discount_amount, tax_amount, total_amount,
-        status, notes, created_at,
-        customers(full_name, customer_code)
-      `)
-      .order('invoice_date', { ascending: false })
-      .order('created_at', { ascending: false }),
+  // Supabase caps a select at 1,000 rows. Without paging the list silently
+  // truncated once the business passed 1,000 invoices, which also made the
+  // status tab counts wrong.
+  const PAGE = 1000
+
+  async function fetchAllInvoices(): Promise<InvoiceWithCustomer[]> {
+    const out: InvoiceWithCustomer[] = []
+    let offset = 0
+    while (true) {
+      const { data } = await admin
+        .from('invoices')
+        .select(`
+          id, invoice_number, customer_id, invoice_date, due_date,
+          invoice_type, billing_period_start, billing_period_end,
+          subtotal, discount_amount, tax_amount, total_amount,
+          status, notes, created_at,
+          customers(full_name, customer_code)
+        `)
+        .order('invoice_date', { ascending: false })
+        .order('created_at', { ascending: false })
+        .range(offset, offset + PAGE - 1)
+      const batch = (data ?? []) as unknown as InvoiceWithCustomer[]
+      out.push(...batch)
+      if (batch.length < PAGE) break
+      offset += PAGE
+    }
+    return out
+  }
+
+  const [invoices, { count: activeSubCount }] = await Promise.all([
+    fetchAllInvoices(),
     admin
       .from('customer_subscriptions')
       .select('*', { count: 'exact', head: true })
       .eq('status', 'active'),
   ])
-
-  const invoices = (rawInvoices ?? []) as unknown as InvoiceWithCustomer[]
 
   const STATUS_LIST: Enums<'invoice_status'>[] = [
     'draft', 'issued', 'partial', 'paid', 'overdue', 'cancelled', 'written_off',

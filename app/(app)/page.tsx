@@ -3,25 +3,14 @@ import { requireAuth } from '@/lib/auth'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { DashboardModule } from '@/components/dashboard/dashboard-module'
 import type { DashboardData } from '@/components/dashboard/dashboard-module'
+import {
+  getCustomerBalances,
+  getOrderTotalInRange,
+  getOrderDailyTotals,
+} from '@/lib/db/aggregates'
+import { chargeForCustomer, groupSubscriptionsByCustomer } from '@/lib/billing/subscription-charge'
 
 export const dynamic = 'force-dynamic'
-
-// Supabase default row limit is 1,000. Use this for any query over a large table.
-async function fetchAllPages<T>(
-  buildQuery: (range: { from: number; to: number }) => PromiseLike<{ data: T[] | null }>
-): Promise<T[]> {
-  const PAGE = 1000
-  const results: T[] = []
-  let offset = 0
-  while (true) {
-    const { data } = await buildQuery({ from: offset, to: offset + PAGE - 1 })
-    const batch = data ?? []
-    results.push(...batch)
-    if (batch.length < PAGE) break
-    offset += PAGE
-  }
-  return results
-}
 
 export default async function DashboardPage({
   searchParams,
@@ -86,14 +75,16 @@ export default async function DashboardPage({
 
   const EXCLUDE_STATUSES = '(cancelled,voided,draft)'
 
-  // ── Small queries (always < 1,000 rows) ────────────────────────────────────
+  // ── Everything in ONE parallel wave ────────────────────────────────────────
+  // All heavy aggregation happens in Postgres (migration 031) rather than by
+  // pulling every order and payment row into Node.
   const [
     { data: todayPayments },
     { data: monthPayments },
     { data: lastMonthPay },
     { data: allCustomers },
     { data: newCustomers },
-    { data: activeSubs },
+    { data: allSubs },
     { data: todayOrders },
     { count: pendingApprovals },
     { data: recentPayments },
@@ -101,6 +92,13 @@ export default async function DashboardPage({
     { data: todayOrderAmounts },
     { data: draftInvoices },
     { data: issuedInvoices },
+    { data: periodPayRows },
+    { data: monthPayWithCust },
+    balances,
+    monthBilledTotal,
+    lastMonthBilledTotal,
+    periodBilled,
+    billedDayMap,
   ] = await Promise.all([
     admin.from('payments').select('amount').is('voided_at', null).eq('payment_date', todayStr),
     admin.from('payments').select('amount').is('voided_at', null)
@@ -109,9 +107,10 @@ export default async function DashboardPage({
       .gte('payment_date', lastMonthStart).lt('payment_date', lastMonthEnd),
     admin.from('customers').select('id, status, customer_type, full_name, customer_code'),
     admin.from('customers').select('id').gte('created_at', monthStart + 'T00:00:00Z'),
+    // ALL subscriptions (not just active) — needed so overlapping rows can be
+    // clamped before charges are summed. See lib/billing/subscription-charge.
     admin.from('customer_subscriptions')
-      .select('customer_id, agreed_monthly_price, customers(full_name, customer_code)')
-      .eq('status', 'active'),
+      .select('id, customer_id, start_date, end_date, status, agreed_monthly_price, customers(full_name, customer_code)'),
     admin.from('orders').select('id, meal_period')
       .eq('order_date', todayStr).not('order_status', 'in', EXCLUDE_STATUSES),
     admin.from('approval_requests').select('*', { count: 'exact', head: true }).eq('status', 'pending'),
@@ -125,107 +124,68 @@ export default async function DashboardPage({
       .eq('order_date', todayStr).not('order_status', 'in', EXCLUDE_STATUSES),
     admin.from('invoices').select('total_amount').eq('status', 'draft'),
     admin.from('invoices').select('total_amount').in('status', ['issued', 'overdue', 'partial']),
+    admin.from('payments').select('amount').is('voided_at', null)
+      .gte('payment_date', periodStart).lt('payment_date', periodEnd),
+    admin.from('payments').select('customer_id, amount').is('voided_at', null)
+      .gte('payment_date', monthStart).lt('payment_date', monthEnd),
+
+    // Aggregated server-side — constant cost regardless of order volume
+    getCustomerBalances(admin),
+    getOrderTotalInRange(admin, monthStart, monthEnd),
+    getOrderTotalInRange(admin, lastMonthStart, lastMonthEnd),
+    getOrderTotalInRange(admin, periodStart, periodEnd),
+    getOrderDailyTotals(admin, d30Start, todayStr),
   ])
 
-  // ── Large order queries — paginated to bypass 1,000-row limit ──────────────
-  const [monthOrderRows, lastMonthOrderRows, allOrderRows, billed30dRows, periodOrderRows, allPaymentRows] = await Promise.all([
-    fetchAllPages(({ from, to }) =>
-      admin.from('orders').select('total_amount')
-        .gte('order_date', monthStart).lt('order_date', monthEnd)
-        .not('order_status', 'in', EXCLUDE_STATUSES)
-        .range(from, to) as any
-    ) as Promise<{ total_amount: string }[]>,
-
-    fetchAllPages(({ from, to }) =>
-      admin.from('orders').select('total_amount')
-        .gte('order_date', lastMonthStart).lt('order_date', lastMonthEnd)
-        .not('order_status', 'in', EXCLUDE_STATUSES)
-        .range(from, to) as any
-    ) as Promise<{ total_amount: string }[]>,
-
-    // All-time orders (for outstanding netting) — no payment_status filter
-    fetchAllPages(({ from, to }) =>
-      admin.from('orders')
-        .select('customer_id, total_amount, customers(full_name, customer_code)')
-        .not('order_status', 'in', EXCLUDE_STATUSES)
-        .range(from, to) as any
-    ) as Promise<{ customer_id: string; total_amount: string; customers: { full_name: string; customer_code: string } | null }[]>,
-
-    fetchAllPages(({ from, to }) =>
-      admin.from('orders').select('order_date, total_amount')
-        .gte('order_date', d30Start).lte('order_date', todayStr)
-        .not('order_status', 'in', EXCLUDE_STATUSES)
-        .range(from, to) as any
-    ) as Promise<{ order_date: string; total_amount: string }[]>,
-
-    fetchAllPages(({ from, to }) =>
-      admin.from('orders').select('total_amount')
-        .gte('order_date', periodStart).lt('order_date', periodEnd)
-        .not('order_status', 'in', EXCLUDE_STATUSES)
-        .range(from, to) as any
-    ) as Promise<{ total_amount: string }[]>,
-
-    // All-time payments for outstanding netting
-    fetchAllPages(({ from, to }) =>
-      admin.from('payments')
-        .select('customer_id, amount')
-        .is('voided_at', null)
-        .range(from, to) as any
-    ) as Promise<{ customer_id: string; amount: string }[]>,
-  ])
-
-  // Period payments (always < 1,000 for single period)
-  const { data: periodPayRows } = await admin.from('payments').select('amount')
-    .is('voided_at', null).gte('payment_date', periodStart).lt('payment_date', periodEnd)
-
-  const periodBilled    = periodOrderRows.reduce((s, o) => s + parseFloat(String(o.total_amount)), 0)
   const periodCollected = (periodPayRows ?? []).reduce((s, p) => s + parseFloat(String(p.amount)), 0)
 
   // ── Payment KPIs ───────────────────────────────────────────────────────────
-  const todayRevenue  = (todayPayments  ?? []).reduce((s, p) => s + parseFloat(String(p.amount)), 0)
-  const monthRevenue  = (monthPayments  ?? []).reduce((s, p) => s + parseFloat(String(p.amount)), 0)
-  const lastMonthRev  = (lastMonthPay   ?? []).reduce((s, p) => s + parseFloat(String(p.amount)), 0)
-  const mrr           = (activeSubs     ?? []).reduce((s, p) => s + parseFloat(String(p.agreed_monthly_price)), 0)
+  type SubRow = {
+    id: string
+    customer_id: string
+    start_date: string
+    end_date: string | null
+    status: string
+    agreed_monthly_price: string
+    customers: { full_name: string; customer_code: string } | null
+  }
+  const allSubRows = (allSubs ?? []) as unknown as SubRow[]
+  const activeSubRows = allSubRows.filter(s => s.status === 'active')
+
+  const todayRevenue  = (todayPayments ?? []).reduce((s, p) => s + parseFloat(String(p.amount)), 0)
+  const monthRevenue  = (monthPayments ?? []).reduce((s, p) => s + parseFloat(String(p.amount)), 0)
+  const lastMonthRev  = (lastMonthPay  ?? []).reduce((s, p) => s + parseFloat(String(p.amount)), 0)
+  const mrr           = activeSubRows.reduce((s, p) => s + parseFloat(String(p.agreed_monthly_price)), 0)
   const activeCount             = (allCustomers ?? []).filter(c => c.status === 'active').length
   const pausedCount             = (allCustomers ?? []).filter(c => c.status === 'paused').length
   const fixedMenuActiveCustomers = (allCustomers ?? []).filter(c => c.status === 'active' && c.customer_type === 'fixed_menu').length
   const alaCarteActiveCustomers  = (allCustomers ?? []).filter(c => c.status === 'active' && c.customer_type === 'a_la_carte').length
 
-  // Build customer_id → customer_type map for outstanding split
+  // Build customer_id → {type, name, code} map
   const customerTypeMap = new Map<string, string>()
-  for (const c of allCustomers ?? []) customerTypeMap.set(c.id, c.customer_type)
+  const customerInfo = new Map<string, { full_name: string; customer_code: string }>()
+  for (const c of allCustomers ?? []) {
+    customerTypeMap.set(c.id, c.customer_type)
+    customerInfo.set(c.id, { full_name: c.full_name, customer_code: c.customer_code })
+  }
 
-  // ── Order KPIs (paginated) ─────────────────────────────────────────────────
+  // ── Order KPIs (aggregated in Postgres) ────────────────────────────────────
   const todayBilled     = (todayOrderAmounts ?? []).reduce((s, o) => s + parseFloat(String(o.total_amount)), 0)
-  const monthBilled     = monthOrderRows.reduce((s, o) => s + parseFloat(String(o.total_amount)), 0)
-  const lastMonthBilled = lastMonthOrderRows.reduce((s, o) => s + parseFloat(String(o.total_amount)), 0)
+  const monthBilled     = monthBilledTotal
+  const lastMonthBilled = lastMonthBilledTotal
 
-  // ── True outstanding: per-customer (all orders billed − all payments received) ──
-  const custOrderTotals = new Map<string, { total: number; full_name: string; customer_code: string }>()
-  for (const o of allOrderRows) {
-    const cust = o.customers
-    if (!cust || !o.customer_id) continue
-    const amt = parseFloat(String(o.total_amount))
-    const existing = custOrderTotals.get(o.customer_id)
-    if (existing) { existing.total += amt }
-    else { custOrderTotals.set(o.customer_id, { total: amt, full_name: cust.full_name, customer_code: cust.customer_code }) }
-  }
-
-  const custPayTotals = new Map<string, number>()
-  for (const p of allPaymentRows) {
-    custPayTotals.set(p.customer_id, (custPayTotals.get(p.customer_id) ?? 0) + parseFloat(String(p.amount)))
-  }
-
+  // ── True outstanding: per-customer (orders billed − payments received) ─────
   let totalOutstandingOrders = 0
   let alaCarteOutstanding = 0
   const debtorMap = new Map<string, { full_name: string; customer_code: string; outstanding: number }>()
-  for (const [customerId, data] of custOrderTotals) {
-    const paid = custPayTotals.get(customerId) ?? 0
-    const outstanding = Math.max(0, data.total - paid)
+  for (const b of balances) {
+    const info = customerInfo.get(b.customer_id)
+    if (!info) continue
+    const outstanding = Math.max(0, b.order_total - b.payment_total)
     if (outstanding > 0.01) {
       totalOutstandingOrders += outstanding
-      debtorMap.set(customerId, { full_name: data.full_name, customer_code: data.customer_code, outstanding })
-      const ctype = customerTypeMap.get(customerId)
+      debtorMap.set(b.customer_id, { ...info, outstanding })
+      const ctype = customerTypeMap.get(b.customer_id)
       if (ctype === 'a_la_carte' || ctype === 'hybrid') alaCarteOutstanding += outstanding
     }
   }
@@ -234,27 +194,37 @@ export default async function DashboardPage({
     .sort((a, b) => b.outstanding - a.outstanding)
     .slice(0, 5)
 
-  // ── Subscription outstanding ───────────────────────────────────────────────
-  const { data: monthPayWithCust } = await admin.from('payments')
-    .select('customer_id, amount').is('voided_at', null)
-    .gte('payment_date', monthStart).lt('payment_date', monthEnd)
-
+  // ── Subscription outstanding (pro-rated) ───────────────────────────────────
+  // Charge the days actually covered this month, not a flat monthly rate — a
+  // customer who joined on the 11th owes ~2/3 of a month, not a whole one.
   const monthPayMap = new Map<string, number>()
   for (const p of monthPayWithCust ?? []) {
     monthPayMap.set(p.customer_id, (monthPayMap.get(p.customer_id) ?? 0) + parseFloat(String(p.amount)))
   }
 
-  type SubRow = { customer_id: string; agreed_monthly_price: string; customers: { full_name: string; customer_code: string } | null }
-  const subs = (activeSubs ?? []) as unknown as SubRow[]
+  const monthLastDay = new Date(new Date(monthEnd + 'T00:00:00Z').getTime() - 86400000)
+    .toISOString().split('T')[0]
+  const billToday = todayStr < monthLastDay ? todayStr : monthLastDay
 
-  const balanceRows = subs.map(s => ({
-    customer_id:   s.customer_id,
-    full_name:     s.customers?.full_name ?? 'Unknown',
-    customer_code: s.customers?.customer_code ?? '',
-    monthlyCharge: parseFloat(String(s.agreed_monthly_price)),
-    monthPaid:     monthPayMap.get(s.customer_id) ?? 0,
-    balance:       parseFloat(String(s.agreed_monthly_price)) - (monthPayMap.get(s.customer_id) ?? 0),
-  })).filter(r => r.balance > 0.005).sort((a, b) => b.balance - a.balance)
+  const subsByCustomer = groupSubscriptionsByCustomer(allSubRows)
+
+  const balanceRows = [...subsByCustomer.entries()]
+    .map(([customerId, custSubs]) => {
+      const charge = chargeForCustomer(custSubs, monthStart, billToday)
+      const info   = customerInfo.get(customerId)
+        ?? { full_name: custSubs[0].customers?.full_name ?? 'Unknown', customer_code: custSubs[0].customers?.customer_code ?? '' }
+      const paid   = monthPayMap.get(customerId) ?? 0
+      return {
+        customer_id:   customerId,
+        full_name:     info.full_name,
+        customer_code: info.customer_code,
+        monthlyCharge: charge,
+        monthPaid:     paid,
+        balance:       charge - paid,
+      }
+    })
+    .filter(r => r.balance > 0.005)
+    .sort((a, b) => b.balance - a.balance)
 
   const subOutstanding = balanceRows.reduce((s, r) => s + r.balance, 0)
   const fixedMenuOutstanding = balanceRows
@@ -265,11 +235,6 @@ export default async function DashboardPage({
   const payDayMap = new Map<string, number>()
   for (const p of pay30d ?? []) {
     payDayMap.set(p.payment_date, (payDayMap.get(p.payment_date) ?? 0) + parseFloat(String(p.amount)))
-  }
-
-  const billedDayMap = new Map<string, number>()
-  for (const o of billed30dRows) {
-    billedDayMap.set(o.order_date, (billedDayMap.get(o.order_date) ?? 0) + parseFloat(String(o.total_amount)))
   }
 
   const rev30d = Array.from({ length: 30 }, (_, i) => {
@@ -321,7 +286,7 @@ export default async function DashboardPage({
     draftInvoiceTotal,
     issuedOutstanding,
     mrr,
-    activeSubscriptions: subs.length,
+    activeSubscriptions: activeSubRows.length,
     totalOutstanding:    subOutstanding,
     topBalances:         balanceRows.slice(0, 5),
     activeCustomers:           activeCount,

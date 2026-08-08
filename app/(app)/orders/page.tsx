@@ -31,38 +31,48 @@ export default async function OrdersPage({
 
   const admin = createAdminClient()
 
-  const { data: rawOrders } = await admin
-    .from('orders')
-    .select(`
-      id,
-      order_number,
-      customer_id,
-      order_date,
-      meal_period,
-      subtotal,
-      discount_amount,
-      delivery_charge,
-      total_amount,
-      order_status,
-      payment_status,
-      voided_at,
-      void_reason,
-      notes,
-      customers (
-        full_name,
-        customer_code
-      ),
-      order_items (
-        item_name_snapshot,
-        quantity
-      )
-    `)
-    .gte('order_date', from)
-    .lte('order_date', to)
-    .order('order_date', { ascending: false })
-    .order('created_at', { ascending: false })
-
-  const orders = (rawOrders ?? []) as unknown as OrderRow[]
+  // Paged — a busy month can exceed the 1,000-row cap, which used to silently
+  // drop the oldest orders in the range.
+  const PAGE = 1000
+  const orders: OrderRow[] = []
+  let offset = 0
+  while (true) {
+    const { data } = await admin
+      .from('orders')
+      .select(`
+        id,
+        order_number,
+        customer_id,
+        order_date,
+        meal_period,
+        subtotal,
+        discount_amount,
+        delivery_charge,
+        total_amount,
+        order_status,
+        payment_status,
+        voided_at,
+        void_reason,
+        notes,
+        customers (
+          full_name,
+          customer_code
+        ),
+        order_items (
+          item_name_snapshot,
+          quantity
+        )
+      `)
+      .gte('order_date', from)
+      .lte('order_date', to)
+      .order('order_date', { ascending: false })
+      .order('created_at', { ascending: false })
+      .range(offset, offset + PAGE - 1)
+    const batch = (data ?? []) as unknown as OrderRow[]
+    orders.push(...batch)
+    if (batch.length < PAGE) break
+    offset += PAGE
+  }
 
   return (
     <div>
