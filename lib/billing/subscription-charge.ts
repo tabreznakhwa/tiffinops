@@ -16,9 +16,6 @@ export type ChargeableSubscription = {
 
 const MS_PER_DAY = 86_400_000
 
-/** Statuses where end_date acts as a hard billing cutoff. */
-const CUTOFF_STATUSES = new Set(['paused', 'cancelled', 'completed'])
-
 function toMs(d: string): number {
   const [y, m, day] = d.split('-').map(Number)
   return Date.UTC(y, m - 1, day)
@@ -34,20 +31,21 @@ function toStr(ms: number): string {
  * Partial months at either end are charged by the day:
  *   activeDaysInMonth / daysInThatMonth * monthlyPrice
  *
- * Paused / cancelled / completed subscriptions stop billing on end_date.
+ * An end_date always caps billing, whatever `status` says. Real data is full of
+ * rows left as 'active' with an end_date set — a subscription was replaced but
+ * never closed out — and those must not keep billing past that date. A row with
+ * no end_date bills through the end of the range.
  */
 export function chargeForRange(
   subStart: string,
   subEnd: string | null,
-  subStatus: string,
   monthlyPrice: number,
   rangeFrom: string,
   rangeTo: string,
 ): number {
   if (!monthlyPrice || !subStart || subStart > rangeTo) return 0
 
-  const hasCutoff  = CUTOFF_STATUSES.has(subStatus)
-  const subLastDay = hasCutoff && subEnd ? subEnd : rangeTo
+  const subLastDay = subEnd ?? rangeTo
 
   // Active window = intersection of the subscription period and the range
   const wFrom = subStart > rangeFrom ? subStart : rangeFrom
@@ -116,11 +114,7 @@ export function chargeForCustomer(
       if (!effectiveEnd || effectiveEnd > dayBeforeNext) effectiveEnd = dayBeforeNext
     }
 
-    // A clamped subscription always has a hard cutoff, even if its own status
-    // is still 'active' (stale row that was never closed out).
-    const status = effectiveEnd !== sub.end_date ? 'cancelled' : sub.status
-
-    total += chargeForRange(sub.start_date, effectiveEnd, status, rate, rangeFrom, rangeTo)
+    total += chargeForRange(sub.start_date, effectiveEnd, rate, rangeFrom, rangeTo)
   }
 
   return total
