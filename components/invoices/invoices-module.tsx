@@ -4,6 +4,7 @@ import { useState, useMemo, useTransition, useEffect } from 'react'
 import Link from 'next/link'
 import { Plus, Search, Printer, X } from 'lucide-react'
 import { DatePresetPicker } from '@/components/ui/date-preset-picker'
+import { AreaFilter, collectAreas } from '@/components/ui/area-filter'
 import {
   createInvoice,
   updateInvoice,
@@ -1529,6 +1530,7 @@ export function InvoicesModule({
   const [search, setSearch] = useState('')
   const [fromDate, setFromDate] = useState('')
   const [toDate,   setToDate]   = useState('')
+  const [areaFilter, setAreaFilter] = useState('')
   const [showModal, setShowModal] = useState(false)
   const [showBulkModal, setShowBulkModal] = useState(false)
   const [showAlaCarteModal, setShowAlaCarteModal] = useState(false)
@@ -1549,14 +1551,17 @@ export function InvoicesModule({
   const canManage = ['owner', 'manager'].includes(userRole)
   const isOwner = userRole === 'owner'
 
+  const areas = useMemo(() => collectAreas(invoices, inv => inv.customers?.area), [invoices])
+
   // Client-side filter
   const filtered = useMemo(() => {
     let result = invoices
     if (activeStatus !== 'all') {
       result = result.filter((inv) => inv.status === activeStatus)
     }
-    if (fromDate) result = result.filter(inv => inv.invoice_date >= fromDate)
-    if (toDate)   result = result.filter(inv => inv.invoice_date <= toDate)
+    if (fromDate)   result = result.filter(inv => inv.invoice_date >= fromDate)
+    if (toDate)     result = result.filter(inv => inv.invoice_date <= toDate)
+    if (areaFilter) result = result.filter(inv => inv.customers?.area === areaFilter)
     const q = search.toLowerCase().trim()
     if (q) {
       result = result.filter(
@@ -1567,7 +1572,7 @@ export function InvoicesModule({
       )
     }
     return result
-  }, [invoices, activeStatus, search, fromDate, toDate])
+  }, [invoices, activeStatus, search, fromDate, toDate, areaFilter])
 
   function handleIssue(id: string) {
     startTransition(async () => {
@@ -1780,6 +1785,7 @@ export function InvoicesModule({
           }}
         />
         </div>
+        <AreaFilter areas={areas} value={areaFilter} onChange={setAreaFilter} />
         <DatePresetPicker
           fromDate={fromDate}
           toDate={toDate}

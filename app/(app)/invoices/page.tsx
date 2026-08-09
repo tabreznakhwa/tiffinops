@@ -26,6 +26,7 @@ export type InvoiceWithCustomer = {
   customers: {
     full_name: string
     customer_code: string
+    area: string | null
   } | null
   invoice_items?: {
     description: string
@@ -66,7 +67,7 @@ export default async function InvoicesPage({
           invoice_type, billing_period_start, billing_period_end,
           subtotal, discount_amount, tax_amount, total_amount,
           status, notes, created_at,
-          customers(full_name, customer_code)
+          customers(full_name, customer_code, area)
         `)
         .order('invoice_date', { ascending: false })
         .order('created_at', { ascending: false })

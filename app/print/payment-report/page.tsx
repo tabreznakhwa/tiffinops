@@ -30,28 +30,35 @@ type PayRow = {
   mode: PaymentMode
   reference_number: string | null
   notes: string | null
-  customers: { full_name: string; customer_code: string } | null
+  customers: { full_name: string; customer_code: string; area: string | null } | null
 }
 
 export default async function PaymentReportPrintPage({
   searchParams,
 }: {
-  searchParams: Promise<{ from?: string; to?: string }>
+  searchParams: Promise<{ from?: string; to?: string; area?: string }>
 }) {
   await requireAuth()
 
-  const { from, to } = await searchParams
+  const { from, to, area } = await searchParams
   const admin = createAdminClient()
+
+  // Filtering on an embedded column only excludes parent rows when the embed is
+  // an inner join — otherwise non-matching payments come back with customers:null.
+  const customerJoin = area
+    ? 'customers!inner(full_name, customer_code, area)'
+    : 'customers(full_name, customer_code, area)'
 
   let query = admin
     .from('payments')
-    .select('id, payment_number, payment_date, amount, mode, reference_number, notes, customers(full_name, customer_code)')
+    .select(`id, payment_number, payment_date, amount, mode, reference_number, notes, ${customerJoin}`)
     .is('voided_at', null)
     .order('payment_date', { ascending: false })
     .order('created_at', { ascending: false })
 
   if (from) query = query.gte('payment_date', from)
   if (to)   query = query.lte('payment_date', to)
+  if (area) query = query.eq('customers.area', area)
 
   const { data: rawPayments } = await query
   const payments = (rawPayments ?? []) as unknown as PayRow[]
@@ -111,7 +118,9 @@ export default async function PaymentReportPrintPage({
           <h1 style={{ fontFamily: 'var(--font-display)', fontSize: 22, fontWeight: 800, margin: '0 0 2px' }}>
             Payment Report
           </h1>
-          <p style={{ fontSize: 13, color: '#7C7063' }}>{dateRangeLabel}</p>
+          <p style={{ fontSize: 13, color: '#7C7063' }}>
+            {dateRangeLabel}{area ? ` · Area: ${area}` : ''}
+          </p>
         </div>
         <div style={{ textAlign: 'right' }}>
           <p style={{ fontSize: 11, color: '#7C7063' }}>Printed: {printedAt} (Dubai)</p>

@@ -5,6 +5,7 @@ import { Search, Pencil, Check, X } from 'lucide-react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { DatePresetPicker } from '@/components/ui/date-preset-picker'
+import { AreaFilter, collectAreas } from '@/components/ui/area-filter'
 import { updateSubscriptionStartDate, updateSubscriptionPauseDate } from '@/lib/fixed-menu/actions'
 
 // One fully-computed table row. All aggregation happens on the server so the
@@ -61,6 +62,7 @@ export function OutstandingModule({ rows, totalCustomers, currency, userRole, ra
   const router = useRouter()
   const [search,      setSearch]      = useState('')
   const [typeFilter,  setTypeFilter]  = useState<string>('')
+  const [areaFilter,  setAreaFilter]  = useState<string>('')
   const [editingDate, setEditingDate] = useState<DateEdit | null>(null)
   const [savingDate,  setSavingDate]  = useState(false)
   const [dateError,   setDateError]   = useState<string | null>(null)
@@ -86,9 +88,12 @@ export function OutstandingModule({ rows, totalCustomers, currency, userRole, ra
     router.refresh()
   }
 
+  const areas = useMemo(() => collectAreas(rows, r => r.area), [rows])
+
   const filtered = useMemo(() => {
     let result = rows
     if (typeFilter) result = result.filter(r => r.customer_type === typeFilter)
+    if (areaFilter) result = result.filter(r => r.area === areaFilter)
     if (search.trim()) {
       const q = search.toLowerCase()
       result = result.filter(r =>
@@ -98,13 +103,13 @@ export function OutstandingModule({ rows, totalCustomers, currency, userRole, ra
       )
     }
     return result
-  }, [rows, search, typeFilter])
+  }, [rows, search, typeFilter, areaFilter])
 
   const grandTotal  = filtered.reduce((s, r) => s + r.outstanding, 0)
   const grandBilled = filtered.reduce((s, r) => s + r.totalBilled, 0)
   const grandPaid   = filtered.reduce((s, r) => s + r.totalPaid,   0)
   const hasDateRange = !!(rangeFrom || rangeTo)
-  const isFiltered   = !!(hasDateRange || search.trim() || typeFilter)
+  const isFiltered   = !!(hasDateRange || search.trim() || typeFilter || areaFilter)
 
   return (
     <div style={{ opacity: isFiltering ? 0.6 : 1, transition: 'opacity 120ms' }}>
@@ -178,6 +183,7 @@ export function OutstandingModule({ rows, totalCustomers, currency, userRole, ra
             style={{ background: 'var(--color-surface)', border: '1px solid var(--color-border)', color: 'var(--color-ink)' }}
           />
         </div>
+        <AreaFilter areas={areas} value={areaFilter} onChange={setAreaFilter} />
         <DatePresetPicker
           fromDate={rangeFrom}
           toDate={rangeTo}
