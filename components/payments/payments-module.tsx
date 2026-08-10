@@ -4,7 +4,7 @@ import { useState, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 import { Plus, Search, AlertTriangle, FileSpreadsheet, Printer } from 'lucide-react'
 import { DatePresetPicker } from '@/components/ui/date-preset-picker'
-import { AreaFilter, collectAreas } from '@/components/ui/area-filter'
+import { AreaFilter, collectAreas, matchesArea } from '@/components/ui/area-filter'
 import { voidPayment, deletePayment } from '@/lib/payments/actions'
 import { requestApproval } from '@/lib/approvals/actions'
 import { RecordPaymentModal } from './record-payment-modal'
@@ -106,7 +106,7 @@ export function PaymentsModule({
   const [search, setSearch]           = useState('')
   const [fromDate, setFromDate]       = useState('')
   const [toDate, setToDate]           = useState('')
-  const [areaFilter, setAreaFilter]   = useState('')
+  const [areaFilter, setAreaFilter]   = useState<string[]>([])
   const [showVoided, setShowVoided]   = useState(false)
   const [showModal, setShowModal]     = useState(false)
   const [voidingId, setVoidingId]         = useState<string | null>(null)
@@ -134,7 +134,7 @@ export function PaymentsModule({
     let list = showVoided ? payments : nonVoided
     if (fromDate)   list = list.filter(p => p.payment_date >= fromDate)
     if (toDate)     list = list.filter(p => p.payment_date <= toDate)
-    if (areaFilter) list = list.filter(p => p.customers?.area === areaFilter)
+    if (areaFilter.length) list = list.filter(p => matchesArea(areaFilter, p.customers?.area))
     if (!search.trim()) return list
     const q = search.toLowerCase()
     return list.filter(p =>
@@ -150,7 +150,7 @@ export function PaymentsModule({
     let list = nonVoided
     if (fromDate)   list = list.filter(p => p.payment_date >= fromDate)
     if (toDate)     list = list.filter(p => p.payment_date <= toDate)
-    if (areaFilter) list = list.filter(p => p.customers?.area === areaFilter)
+    if (areaFilter.length) list = list.filter(p => matchesArea(areaFilter, p.customers?.area))
     return list
   }, [nonVoided, fromDate, toDate, areaFilter])
 
@@ -353,9 +353,10 @@ export function PaymentsModule({
               <button
                 onClick={() => {
                   const params = new URLSearchParams()
-                  if (fromDate)   params.set('from', fromDate)
-                  if (toDate)     params.set('to', toDate)
-                  if (areaFilter) params.set('area', areaFilter)
+                  if (fromDate) params.set('from', fromDate)
+                  if (toDate)   params.set('to', toDate)
+                  // repeated params rather than comma-joined — area names can contain commas
+                  areaFilter.forEach(a => params.append('area', a))
                   window.open(`/print/payment-report?${params.toString()}`, '_blank')
                 }}
                 className="flex items-center gap-1.5 px-3 py-1.5 rounded-[8px] text-xs font-bold"

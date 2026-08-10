@@ -36,16 +36,19 @@ type PayRow = {
 export default async function PaymentReportPrintPage({
   searchParams,
 }: {
-  searchParams: Promise<{ from?: string; to?: string; area?: string }>
+  searchParams: Promise<{ from?: string; to?: string; area?: string | string[] }>
 }) {
   await requireAuth()
 
   const { from, to, area } = await searchParams
   const admin = createAdminClient()
 
+  // `area` is repeated once per selected area, so it arrives as string | string[]
+  const areaList = area ? (Array.isArray(area) ? area : [area]) : []
+
   // Filtering on an embedded column only excludes parent rows when the embed is
   // an inner join — otherwise non-matching payments come back with customers:null.
-  const customerJoin = area
+  const customerJoin = areaList.length
     ? 'customers!inner(full_name, customer_code, area)'
     : 'customers(full_name, customer_code, area)'
 
@@ -58,7 +61,7 @@ export default async function PaymentReportPrintPage({
 
   if (from) query = query.gte('payment_date', from)
   if (to)   query = query.lte('payment_date', to)
-  if (area) query = query.eq('customers.area', area)
+  if (areaList.length) query = query.in('customers.area', areaList)
 
   const { data: rawPayments } = await query
   const payments = (rawPayments ?? []) as unknown as PayRow[]
@@ -119,7 +122,8 @@ export default async function PaymentReportPrintPage({
             Payment Report
           </h1>
           <p style={{ fontSize: 13, color: '#7C7063' }}>
-            {dateRangeLabel}{area ? ` · Area: ${area}` : ''}
+            {dateRangeLabel}
+            {areaList.length ? ` · ${areaList.length > 1 ? 'Areas' : 'Area'}: ${areaList.join(', ')}` : ''}
           </p>
         </div>
         <div style={{ textAlign: 'right' }}>

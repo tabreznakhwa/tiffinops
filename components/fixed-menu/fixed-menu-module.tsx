@@ -3,6 +3,7 @@
 import { useState, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 import { Plus, Search, Pencil } from 'lucide-react'
+import { AreaFilter, collectAreas, matchesArea } from '@/components/ui/area-filter'
 import { togglePlanStatus, updateSubscriptionStatus, resumeSubscriptionMeal } from '@/lib/fixed-menu/actions'
 import { PlanModal } from './plan-modal'
 import { SubscribeModal } from './subscribe-modal'
@@ -86,6 +87,7 @@ export function FixedMenuModule({
   const [tab, setTab]                   = useState<'subscriptions' | 'plans'>('subscriptions')
   const [statusFilter, setStatusFilter] = useState('active')
   const [search, setSearch]             = useState('')
+  const [areaFilter, setAreaFilter]     = useState<string[]>([])
   const [showPlanModal, setShowPlanModal]       = useState(false)
   const [editPlan, setEditPlan]                 = useState<Plan | undefined>()
   const [showSubscribeModal, setShowSubscribeModal] = useState(false)
@@ -117,11 +119,19 @@ export function FixedMenuModule({
 
   // ── Filtered subscriptions ──────────────────────────────────────────────────
 
+  const areas = useMemo(
+    () => collectAreas(subscriptions, s => s.customers?.area),
+    [subscriptions]
+  )
+
   const filtered = useMemo(() => {
     let list = statusFilter === 'all'
       ? subscriptions
       : subscriptions.filter(s => s.status === statusFilter)
 
+    if (areaFilter.length) {
+      list = list.filter(s => matchesArea(areaFilter, s.customers?.area))
+    }
     if (search.trim()) {
       const q = search.toLowerCase()
       list = list.filter(s =>
@@ -130,7 +140,7 @@ export function FixedMenuModule({
       )
     }
     return list
-  }, [subscriptions, statusFilter, search])
+  }, [subscriptions, statusFilter, search, areaFilter])
 
   // ── Actions ─────────────────────────────────────────────────────────────────
 
@@ -308,6 +318,7 @@ export function FixedMenuModule({
                 style={{ background: 'var(--color-surface)', border: '1px solid var(--color-border)', color: 'var(--color-ink)' }}
               />
             </div>
+            <AreaFilter areas={areas} value={areaFilter} onChange={setAreaFilter} />
           </div>
 
           {filtered.length === 0 ? (

@@ -4,7 +4,7 @@ import { useState, useMemo, useTransition, useEffect } from 'react'
 import Link from 'next/link'
 import { Plus, Search, Printer, X } from 'lucide-react'
 import { DatePresetPicker } from '@/components/ui/date-preset-picker'
-import { AreaFilter, collectAreas } from '@/components/ui/area-filter'
+import { AreaFilter, collectAreas, matchesArea } from '@/components/ui/area-filter'
 import {
   createInvoice,
   updateInvoice,
@@ -1530,7 +1530,7 @@ export function InvoicesModule({
   const [search, setSearch] = useState('')
   const [fromDate, setFromDate] = useState('')
   const [toDate,   setToDate]   = useState('')
-  const [areaFilter, setAreaFilter] = useState('')
+  const [areaFilter, setAreaFilter] = useState<string[]>([])
   const [showModal, setShowModal] = useState(false)
   const [showBulkModal, setShowBulkModal] = useState(false)
   const [showAlaCarteModal, setShowAlaCarteModal] = useState(false)
@@ -1561,7 +1561,7 @@ export function InvoicesModule({
     }
     if (fromDate)   result = result.filter(inv => inv.invoice_date >= fromDate)
     if (toDate)     result = result.filter(inv => inv.invoice_date <= toDate)
-    if (areaFilter) result = result.filter(inv => inv.customers?.area === areaFilter)
+    if (areaFilter.length) result = result.filter(inv => matchesArea(areaFilter, inv.customers?.area))
     const q = search.toLowerCase().trim()
     if (q) {
       result = result.filter(
