@@ -107,6 +107,44 @@ export function PasteOrdersModule() {
 
   const included = useMemo(() => drafts?.filter(d => d.include) ?? [], [drafts])
 
+  // Unmatched lines grouped by what the customer actually wrote. "pulao" on its
+  // own is genuinely ambiguous — the menu carries a dozen of them — and which
+  // one it means changes daily, so it is resolved per import rather than being
+  // baked into the parser as a permanent rule.
+  const unresolved = useMemo(() => {
+    const map = new Map<string, { raw: string; spots: { ref: number; idx: number }[] }>()
+    for (const d of drafts ?? []) {
+      if (!d.include) continue
+      d.items.forEach((it, idx) => {
+        if (it.menu_item_id) return
+        const key = it.raw.toLowerCase().replace(/\s+/g, ' ').trim()
+        const g = map.get(key) ?? { raw: it.raw, spots: [] }
+        g.spots.push({ ref: d.ref, idx })
+        map.set(key, g)
+      })
+    }
+    return [...map.values()].sort((a, b) => b.spots.length - a.spots.length)
+  }, [drafts])
+
+  const [bulkPick, setBulkPick] = useState<Record<string, string>>({})
+
+  function resolveAll(spots: { ref: number; idx: number }[], menuItemId: string) {
+    const m = menu.find(x => x.id === menuItemId)
+    if (!m) return
+    setDrafts(d => d?.map(o => {
+      const mine = spots.filter(s => s.ref === o.ref)
+      if (!mine.length) return o
+      return {
+        ...o,
+        items: o.items.map((it, i) =>
+          mine.some(s => s.idx === i)
+            ? { ...it, menu_item_id: m.id, name: m.name, unit_price: m.price, needsAttention: false }
+            : it,
+        ),
+      }
+    }) ?? null)
+  }
+
   const blockers = useMemo(
     () => included.filter(d => !d.customer_id || !d.items.length || d.items.some(i => !i.menu_item_id)),
     [included],
@@ -304,6 +342,63 @@ export function PasteOrdersModule() {
                     {p.name} <strong className="num">×{p.qty}</strong>
                   </span>
                 ))}
+              </div>
+            </div>
+          )}
+
+          {/* Resolve repeated unknowns once */}
+          {unresolved.length > 0 && (
+            <div
+              className="rounded-[14px] p-4 mb-4"
+              style={{ background: 'var(--color-surface)', border: '1px solid var(--color-gold, #D4A96A)' }}
+            >
+              <p className="text-[10px] font-bold uppercase tracking-wide mb-1" style={{ color: 'var(--color-muted)' }}>
+                Needs a menu item
+              </p>
+              <p className="text-xs mb-3" style={{ color: 'var(--color-muted)' }}>
+                Set each one once and it applies to every line that says the same thing. This is for
+                today&apos;s import only — nothing is remembered for next time.
+              </p>
+              <div className="space-y-2">
+                {unresolved.map(g => {
+                  const key = g.raw.toLowerCase().trim()
+                  return (
+                    <div key={key} className="flex flex-wrap items-center gap-2">
+                      <span
+                        className="text-xs font-mono px-2 py-1 rounded"
+                        style={{ background: 'var(--color-red-soft)', color: 'var(--color-red)' }}
+                      >
+                        {g.raw}
+                      </span>
+                      <span
+                        className="text-[10px] font-bold px-1.5 py-0.5 rounded-full"
+                        style={{ background: 'var(--color-border)', color: 'var(--color-muted)' }}
+                      >
+                        {g.spots.length} line{g.spots.length !== 1 ? 's' : ''}
+                      </span>
+                      <span style={{ color: 'var(--color-muted)' }}>→</span>
+                      <select
+                        value={bulkPick[key] ?? ''}
+                        onChange={e => setBulkPick(p => ({ ...p, [key]: e.target.value }))}
+                        className="rounded-[8px] px-2 py-1 text-xs font-semibold focus:outline-none focus:ring-1 max-w-[280px]"
+                        style={{ background: 'var(--color-cream)', border: '1px solid var(--color-border)', color: 'var(--color-ink)' }}
+                      >
+                        <option value="">— pick menu item —</option>
+                        {menu.map(m => (
+                          <option key={m.id} value={m.id}>{m.name} — {currency} {m.price.toFixed(2)}</option>
+                        ))}
+                      </select>
+                      <button
+                        onClick={() => { resolveAll(g.spots, bulkPick[key]); setBulkPick(p => ({ ...p, [key]: '' })) }}
+                        disabled={!bulkPick[key]}
+                        className="px-3 py-1 rounded-[8px] text-xs font-bold transition-opacity"
+                        style={{ background: '#1A6B6B', color: '#fff', opacity: bulkPick[key] ? 1 : 0.45 }}
+                      >
+                        Apply to all {g.spots.length}
+                      </button>
+                    </div>
+                  )
+                })}
               </div>
             </div>
           )}

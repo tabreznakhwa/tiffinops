@@ -264,6 +264,14 @@ function matchCustomer(
   }
 
   // 3. Fuzzy
+  //
+  // The trailing number in a name is an ID, not a spelling. "Micheal3284" and
+  // "MICHEL 3264" differ by one digit and score high on any string measure, but
+  // they are two different people — so when both sides carry a number and the
+  // numbers disagree, the candidate is dropped no matter how close the letters
+  // are. Better to ask than to bill the wrong customer.
+  const queryDigits = key.replace(/\D/g, '')
+
   const scored = customers
     .map(c => ({
       c,
@@ -274,7 +282,12 @@ function matchCustomer(
         tokenScore(cleaned, norm(c.full_name)),
       ),
     }))
-    .filter(s => s.score >= CUSTOMER_ACCEPT)
+    .filter(s => {
+      if (s.score < CUSTOMER_ACCEPT) return false
+      const candDigits = squash(s.c.full_name).replace(/\D/g, '')
+      if (queryDigits && candDigits && queryDigits !== candDigits) return false
+      return true
+    })
     .sort((a, b) => b.score - a.score)
 
   if (scored.length === 0) return { id: null, label: null, match: 'none', candidates: [] }
