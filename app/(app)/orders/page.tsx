@@ -1,7 +1,7 @@
 export const dynamic = 'force-dynamic'
 
 import Link from 'next/link'
-import { ArrowLeft } from 'lucide-react'
+import { ArrowLeft, ClipboardPaste } from 'lucide-react'
 import { formatInTimeZone } from 'date-fns-tz'
 import { requireAuth } from '@/lib/auth'
 import { createAdminClient } from '@/lib/supabase/admin'
@@ -76,15 +76,27 @@ export default async function OrdersPage({
 
   return (
     <div>
-      {/* Back link */}
-      <Link
-        href="/customers"
-        className="inline-flex items-center gap-1.5 text-sm font-semibold mb-5 transition-opacity hover:opacity-70"
-        style={{ color: 'var(--color-muted)' }}
-      >
-        <ArrowLeft size={15} />
-        Customers
-      </Link>
+      {/* Back link + WhatsApp import */}
+      <div className="flex items-center justify-between gap-3 mb-5">
+        <Link
+          href="/customers"
+          className="inline-flex items-center gap-1.5 text-sm font-semibold transition-opacity hover:opacity-70"
+          style={{ color: 'var(--color-muted)' }}
+        >
+          <ArrowLeft size={15} />
+          Customers
+        </Link>
+        {['owner', 'manager', 'data_entry'].includes(user.role) && (
+          <Link
+            href="/orders/paste"
+            className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-[10px] text-sm font-bold transition-opacity"
+            style={{ background: '#1A6B6B', color: '#fff' }}
+          >
+            <ClipboardPaste size={14} />
+            Import from WhatsApp
+          </Link>
+        )}
+      </div>
 
       <OrdersModule
         orders={orders}
