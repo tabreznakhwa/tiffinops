@@ -106,7 +106,9 @@ const TOKEN_FIXES: Record<string, string> = {
   alo: 'aloo', aalo: 'aloo', allo: 'aloo',
   chkn: 'chicken', chiken: 'chicken', chikn: 'chicken',
   kadhi: 'kadai', kadi: 'kadai',
-  mutter: 'matar', muttar: 'matar', mater: 'matar',
+  // NB: no mutter→matar mapping. The menu spells it "ALOO MUTTER", so
+  // normalising to "matar" moved the text away from the row it should match.
+  muter: 'mutter', mattar: 'mutter',
   biriyani: 'biryani', briyani: 'biryani', biriani: 'biryani',
   pulav: 'pulao', pilao: 'pulao', pulaw: 'pulao',
   tarka: 'tadka', tadaka: 'tadka',
@@ -129,9 +131,22 @@ const PHRASE_SYNONYMS: string[][] = [
   ['white rice', 'steam rice', 'steamed rice', 'plain rice', 'rice'],
 ]
 
-/** Spelling normalisation — safe to apply to menu names as well as order text. */
+const SIZE_UNITS = new Set(['ml', 'ltr', 'l', 'g', 'gm', 'kg'])
+
+/**
+ * Spelling normalisation — safe to apply to menu names as well as order text.
+ * Also joins a size onto its unit so the menu's "DAL TADKA - 500 ML" and a
+ * customer's "dal tadka 500ml" reduce to the same string.
+ */
 function applyTokenFixes(s: string): string {
-  return norm(s).split(' ').map(t => TOKEN_FIXES[t] ?? t).join(' ')
+  const tokens = norm(s).split(' ').filter(Boolean)
+  const out: string[] = []
+  for (const t of tokens) {
+    const prev = out[out.length - 1]
+    if (SIZE_UNITS.has(t) && prev && /^\d+$/.test(prev)) out[out.length - 1] = prev + t
+    else out.push(TOKEN_FIXES[t] ?? t)
+  }
+  return out.join(' ')
 }
 
 /** Every name the customer's text could be referring to, including itself. */
@@ -319,7 +334,14 @@ function matchMenuItem(text: string, menu: MenuItemRef[]): { item: MenuItemRef |
 
 // ── Item line parsing ────────────────────────────────────────────────────────
 
-type Extracted = { text: string; quantity: number | null; note: string | null; price: number | null }
+type Extracted = {
+  text: string
+  /** Same text but with the size left in, so "DAL TADKA - 500 ML" can match. */
+  textWithSize: string
+  quantity: number | null
+  note: string | null
+  price: number | null
+}
 
 /** Pull size, explicit price and quantity out of one item segment. */
 function extract(segment: string): Extracted {
@@ -327,6 +349,7 @@ function extract(segment: string): Extracted {
   let note: string | null = null
   let price: number | null = null
   let quantity: number | null = null
+  let withSize = s
 
   // "500ml" / "1 ltr" — a size, never a quantity
   const size = s.match(/(\d+\s*(?:ml|ltr|l|g|kg|gm))\b/i)
@@ -340,6 +363,7 @@ function extract(segment: string): Extracted {
   if (priceMatch) {
     price = parseFloat(priceMatch[1] ?? priceMatch[2])
     s = s.replace(priceMatch[0], ' ')
+    withSize = withSize.replace(priceMatch[0], ' ')
   }
 
   // Whatever standalone number is left is the quantity
@@ -347,9 +371,18 @@ function extract(segment: string): Extracted {
   if (qty) {
     quantity = parseInt(qty[1], 10)
     s = s.replace(qty[0], ' ')
+    // Remove the quantity from the size-preserving variant too, but only the
+    // standalone one — "500" in "500ml" must survive.
+    withSize = withSize.replace(new RegExp(`\\b${qty[1]}\\b(?!\\s*(?:ml|ltr|l|g|gm|kg))`, 'i'), ' ')
   }
 
-  return { text: s.replace(/\s+/g, ' ').trim(), quantity, note, price }
+  return {
+    text: s.replace(/\s+/g, ' ').trim(),
+    textWithSize: withSize.replace(/\s+/g, ' ').trim(),
+    quantity,
+    note,
+    price,
+  }
 }
 
 /**
@@ -373,6 +406,29 @@ function splitSegments(line: string): { text: string; quantity: number | null }[
 }
 
 function parseItemLine(line: string, menu: MenuItemRef[]): ParsedItem[] {
+  // The menu carries combo rows ("WHITE RICE + CHICKEN KORMA") and size rows
+  // ("DAL TADKA - 500 ML" at double the price), so the whole line is tried as a
+  // single item before "+" is treated as a separator and before the size is
+  // discarded. Only a confident match wins; anything less falls through.
+  const whole = extract(line)
+  for (const candidate of [whole.textWithSize, whole.text]) {
+    if (!candidate) continue
+    const { item, match } = matchMenuItem(candidate, menu)
+    if (item && match === 'exact') {
+      const usedSize = candidate === whole.textWithSize && whole.note !== null
+      return [{
+        raw: line.trim(),
+        menu_item_id: item.id,
+        name: item.name,
+        quantity: whole.quantity && whole.quantity > 0 ? whole.quantity : 1,
+        unit_price: whole.price ?? item.price,
+        // Size already baked into the matched SKU — don't repeat it as a note.
+        note: usedSize ? null : whole.note,
+        match: 'exact',
+      }]
+    }
+  }
+
   const items: ParsedItem[] = []
   for (const seg of splitSegments(line)) {
     const ex = extract(seg.text)
