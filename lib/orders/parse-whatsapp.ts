@@ -113,8 +113,27 @@ const TOKEN_FIXES: Record<string, string> = {
   qorma: 'korma', kurma: 'korma',
 }
 
+/**
+ * Whole-line shorthands, applied only when the customer wrote nothing else.
+ *
+ * These are house conventions rather than spellings, so they cannot live in
+ * TOKEN_FIXES — "roti" on its own means Rumali, but the same word inside
+ * "moti roti" must be left alone.
+ */
+const PHRASE_ALIASES: Record<string, string> = {
+  roti: 'rumali roti',      // bare "roti" always means rumali
+  korma: 'chicken korma',   // there is only one korma on the menu
+}
+
+/** Spelling normalisation — safe to apply to menu names as well as order text. */
 function applyTokenFixes(s: string): string {
   return norm(s).split(' ').map(t => TOKEN_FIXES[t] ?? t).join(' ')
+}
+
+/** Order text only: spelling fixes plus the house shorthands above. */
+function normalizeQuery(s: string): string {
+  const fixed = applyTokenFixes(s)
+  return PHRASE_ALIASES[fixed] ?? fixed
 }
 
 // Trailing annotations staff add to customer names that are not part of the name.
@@ -257,7 +276,7 @@ const ITEM_AMBIGUOUS_GAP = 0.02
 const ITEM_CONFIDENT = 0.9
 
 function matchMenuItem(text: string, menu: MenuItemRef[]): { item: MenuItemRef | null; match: MatchQuality } {
-  const q = applyTokenFixes(text)
+  const q = normalizeQuery(text)
   if (!q) return { item: null, match: 'none' }
 
   const exact = menu.filter(m => applyTokenFixes(m.name) === q)
