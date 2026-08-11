@@ -114,26 +114,32 @@ const TOKEN_FIXES: Record<string, string> = {
 }
 
 /**
- * Whole-line shorthands, applied only when the customer wrote nothing else.
+ * Whole-line names that refer to the same dish. House conventions rather than
+ * spellings, so they cannot live in TOKEN_FIXES — "roti" on its own means
+ * rumali, but the same word inside "moti roti" must be left alone.
  *
- * These are house conventions rather than spellings, so they cannot live in
- * TOKEN_FIXES — "roti" on its own means Rumali, but the same word inside
- * "moti roti" must be left alone.
+ * Deliberately two-way rather than a rewrite: the menu might call it "Steam
+ * Rice" while customers write "white rice", or the reverse. Every name in a
+ * group is tried against the menu and the best match wins, so either naming
+ * works and adding a synonym can never break an existing match.
  */
-const PHRASE_ALIASES: Record<string, string> = {
-  roti: 'rumali roti',      // bare "roti" always means rumali
-  korma: 'chicken korma',   // there is only one korma on the menu
-}
+const PHRASE_SYNONYMS: string[][] = [
+  ['roti', 'rumali roti', 'rumali'],
+  ['korma', 'chicken korma'],
+  ['white rice', 'steam rice', 'steamed rice', 'plain rice', 'rice'],
+]
 
 /** Spelling normalisation — safe to apply to menu names as well as order text. */
 function applyTokenFixes(s: string): string {
   return norm(s).split(' ').map(t => TOKEN_FIXES[t] ?? t).join(' ')
 }
 
-/** Order text only: spelling fixes plus the house shorthands above. */
-function normalizeQuery(s: string): string {
-  const fixed = applyTokenFixes(s)
-  return PHRASE_ALIASES[fixed] ?? fixed
+/** Every name the customer's text could be referring to, including itself. */
+function expandQuery(q: string): string[] {
+  for (const group of PHRASE_SYNONYMS) {
+    if (group.includes(q)) return group
+  }
+  return [q]
 }
 
 // Trailing annotations staff add to customer names that are not part of the name.
@@ -276,10 +282,12 @@ const ITEM_AMBIGUOUS_GAP = 0.02
 const ITEM_CONFIDENT = 0.9
 
 function matchMenuItem(text: string, menu: MenuItemRef[]): { item: MenuItemRef | null; match: MatchQuality } {
-  const q = normalizeQuery(text)
+  const q = applyTokenFixes(text)
   if (!q) return { item: null, match: 'none' }
 
-  const exact = menu.filter(m => applyTokenFixes(m.name) === q)
+  const variants = expandQuery(q)
+
+  const exact = menu.filter(m => variants.includes(applyTokenFixes(m.name)))
   if (exact.length === 1) return { item: exact[0], match: 'exact' }
   if (exact.length > 1) return { item: null, match: 'ambiguous' }
 
@@ -289,8 +297,10 @@ function matchMenuItem(text: string, menu: MenuItemRef[]): { item: MenuItemRef |
       return {
         m,
         score: Math.max(
-          similarity(q.replace(/\s/g, ''), target.replace(/\s/g, '')),
-          tokenScore(q, target),
+          ...variants.map(v => Math.max(
+            similarity(v.replace(/\s/g, ''), target.replace(/\s/g, '')),
+            tokenScore(v, target),
+          )),
         ),
       }
     })
