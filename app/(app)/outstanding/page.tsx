@@ -56,20 +56,21 @@ export default async function OutstandingPage({
     // clamped before charges are summed.
     admin
       .from('customer_subscriptions')
-      .select('id, customer_id, start_date, end_date, agreed_monthly_price, status'),
+      .select('id, customer_id, start_date, end_date, agreed_monthly_price, status, fixed_plans(meal_periods)'),
     // Per-customer order and payment totals, aggregated in Postgres
     getCustomerBalancesInRange(admin, effectiveFrom, effectiveTo),
   ])
 
   const customerList = customers ?? []
-  const allSubs = (subsData ?? []) as {
+  const allSubs = ((subsData ?? []) as unknown as {
     id: string
     customer_id: string
     start_date: string
     end_date: string | null
     agreed_monthly_price: string
     status: string
-  }[]
+    fixed_plans: { meal_periods: string[] | null } | null
+  }[]).map(s => ({ ...s, meal_periods: s.fixed_plans?.meal_periods ?? null }))
 
   const balanceMap = new Map(balances.map(b => [b.customer_id, b]))
   const subsByCustomer = groupSubscriptionsByCustomer(allSubs)

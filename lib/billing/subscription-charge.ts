@@ -12,6 +12,12 @@ export type ChargeableSubscription = {
   end_date: string | null      // 'YYYY-MM-DD' — billing cutoff for paused/cancelled
   status: string
   agreed_monthly_price: string | number
+  /**
+   * Meals this plan covers, from fixed_plans.meal_periods. Only subscriptions
+   * covering the same meals supersede one another; a breakfast plan and a
+   * dinner plan run side by side. Omit and every row is treated as one series.
+   */
+  meal_periods?: string[] | null
 }
 
 const MS_PER_DAY = 86_400_000
@@ -98,23 +104,38 @@ export function chargeForCustomer(
 ): number {
   if (subs.length === 0) return 0
 
-  const ordered = [...subs].sort((a, b) => a.start_date.localeCompare(b.start_date))
+  // Only rows covering the same meals form a series. A customer can hold a
+  // breakfast plan and a dinner plan at once, and clamping one against the
+  // other would silently bill the earlier plan at zero.
+  const series = new Map<string, ChargeableSubscription[]>()
+  for (const s of subs) {
+    const key = s.meal_periods?.length ? [...s.meal_periods].sort().join('+') : ''
+    const list = series.get(key)
+    if (list) list.push(s)
+    else series.set(key, [s])
+  }
 
   let total = 0
-  for (let i = 0; i < ordered.length; i++) {
-    const sub  = ordered[i]
-    const next = ordered[i + 1]
-    const rate = parseFloat(String(sub.agreed_monthly_price)) || 0
-    if (!rate) continue
+  for (const [, group] of series) {
+    const ordered = [...group].sort((a, b) => a.start_date.localeCompare(b.start_date))
 
-    // Clamp this subscription so it stops the day before the next one starts.
-    let effectiveEnd = sub.end_date
-    if (next) {
-      const dayBeforeNext = toStr(toMs(next.start_date) - MS_PER_DAY)
-      if (!effectiveEnd || effectiveEnd > dayBeforeNext) effectiveEnd = dayBeforeNext
+    for (let i = 0; i < ordered.length; i++) {
+      const sub  = ordered[i]
+      const rate = parseFloat(String(sub.agreed_monthly_price)) || 0
+      if (!rate) continue
+
+      // Clamp so this row stops the day before its replacement begins. Rows
+      // sharing a start date are already concurrent duplicates rather than a
+      // succession, so only a strictly later start counts as a replacement.
+      const next = ordered.slice(i + 1).find(n => n.start_date > sub.start_date)
+      let effectiveEnd = sub.end_date
+      if (next) {
+        const dayBeforeNext = toStr(toMs(next.start_date) - MS_PER_DAY)
+        if (!effectiveEnd || effectiveEnd > dayBeforeNext) effectiveEnd = dayBeforeNext
+      }
+
+      total += chargeForRange(sub.start_date, effectiveEnd, rate, rangeFrom, rangeTo)
     }
-
-    total += chargeForRange(sub.start_date, effectiveEnd, rate, rangeFrom, rangeTo)
   }
 
   return total

@@ -110,7 +110,7 @@ export default async function DashboardPage({
     // ALL subscriptions (not just active) — needed so overlapping rows can be
     // clamped before charges are summed. See lib/billing/subscription-charge.
     admin.from('customer_subscriptions')
-      .select('id, customer_id, start_date, end_date, status, agreed_monthly_price, customers(full_name, customer_code)'),
+      .select('id, customer_id, start_date, end_date, status, agreed_monthly_price, customers(full_name, customer_code), fixed_plans(meal_periods)'),
     admin.from('orders').select('id, meal_period')
       .eq('order_date', todayStr).not('order_status', 'in', EXCLUDE_STATUSES),
     admin.from('approval_requests').select('*', { count: 'exact', head: true }).eq('status', 'pending'),
@@ -148,8 +148,11 @@ export default async function DashboardPage({
     status: string
     agreed_monthly_price: string
     customers: { full_name: string; customer_code: string } | null
+    fixed_plans: { meal_periods: string[] | null } | null
+    meal_periods?: string[] | null
   }
-  const allSubRows = (allSubs ?? []) as unknown as SubRow[]
+  const allSubRows = ((allSubs ?? []) as unknown as SubRow[])
+    .map(s => ({ ...s, meal_periods: s.fixed_plans?.meal_periods ?? null }))
   const activeSubRows = allSubRows.filter(s => s.status === 'active')
 
   const todayRevenue  = (todayPayments ?? []).reduce((s, p) => s + parseFloat(String(p.amount)), 0)

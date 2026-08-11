@@ -31,7 +31,7 @@ export default async function CustomersPage() {
     // Every subscription row — all statuses, so overlapping rows can be clamped
     admin
       .from('customer_subscriptions')
-      .select('id, customer_id, start_date, end_date, status, agreed_monthly_price'),
+      .select('id, customer_id, start_date, end_date, status, agreed_monthly_price, fixed_plans(meal_periods)'),
 
     // Orders billed and payments received this month, aggregated in Postgres
     getCustomerBalancesInRange(admin, monthStart, billTo),
@@ -42,7 +42,14 @@ export default async function CustomersPage() {
   // mid-month; chargeForCustomer also removes double-billing when an old
   // subscription overlaps its replacement.
   const subsByCustomer = groupSubscriptionsByCustomer(
-    (allSubs ?? []) as { customer_id: string; start_date: string; end_date: string | null; status: string; agreed_monthly_price: string }[]
+    ((allSubs ?? []) as unknown as {
+      customer_id: string
+      start_date: string
+      end_date: string | null
+      status: string
+      agreed_monthly_price: string
+      fixed_plans: { meal_periods: string[] | null } | null
+    }[]).map(s => ({ ...s, meal_periods: s.fixed_plans?.meal_periods ?? null }))
   )
 
   // positive = amount still due; negative = credit/overpaid
