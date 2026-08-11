@@ -105,7 +105,7 @@ const TOKEN_FIXES: Record<string, string> = {
   shmla: 'shimla', shimlaa: 'shimla', simla: 'shimla',
   alo: 'aloo', aalo: 'aloo', allo: 'aloo',
   chkn: 'chicken', chiken: 'chicken', chikn: 'chicken',
-  kadhi: 'kadai', kadi: 'kadai',
+  kadhi: 'kadhai', kadai: 'kadhai', kadi: 'kadhai',
   // NB: no mutter→matar mapping. The menu spells it "ALOO MUTTER", so
   // normalising to "matar" moved the text away from the row it should match.
   muter: 'mutter', mattar: 'mutter',
@@ -127,8 +127,16 @@ const TOKEN_FIXES: Record<string, string> = {
  */
 const PHRASE_SYNONYMS: string[][] = [
   ['roti', 'rumali roti', 'rumali'],
+  ['moti', 'moti roti'],
+  ['chapati', 'wheat chapati'],
+  ['kheema', 'tawa kheema'],
   ['korma', 'chicken korma'],
   ['white rice', 'steam rice', 'steamed rice', 'plain rice', 'rice'],
+  // Combo rows the kitchen sells as one dish
+  ['white rice korma', 'white rice chicken korma'],
+  // House name for the gajar version. Plain "aloo mutter" is a DIFFERENT dish
+  // and is deliberately absent here, so it never silently becomes the gajar one.
+  ['mix veg', 'mixveg', 'aloo mutter gajar'],
 ]
 
 const SIZE_UNITS = new Set(['ml', 'ltr', 'l', 'g', 'gm', 'kg'])
@@ -303,11 +311,6 @@ function matchCustomer(
 
 const ITEM_ACCEPT = 0.62
 const ITEM_AMBIGUOUS_GAP = 0.02
-// Above this the match is certain enough not to bother a human: it means every
-// word the customer wrote appears in the menu name ("Rumali" → "Rumali Roti").
-// Flagging those would put a warning on most orders and train people to ignore
-// warnings, which defeats the point of having them.
-const ITEM_CONFIDENT = 0.9
 
 function matchMenuItem(text: string, menu: MenuItemRef[]): { item: MenuItemRef | null; match: MatchQuality } {
   const q = applyTokenFixes(text)
@@ -342,7 +345,13 @@ function matchMenuItem(text: string, menu: MenuItemRef[]): { item: MenuItemRef |
   if (scored.length > 1 && scored[0].score - scored[1].score < ITEM_AMBIGUOUS_GAP) {
     return { item: null, match: 'ambiguous' }
   }
-  return { item: scored[0].m, match: scored[0].score >= ITEM_CONFIDENT ? 'exact' : 'fuzzy' }
+
+  // Anything that is not an outright name match is a suggestion, never a
+  // decision. Scoring a partial match as certain is what turned "aloo mutter"
+  // into ALOO MUTTER GAJAR — a different dish that happened to contain every
+  // word. House shorthands earn certainty by being listed in PHRASE_SYNONYMS,
+  // not by scoring well.
+  return { item: scored[0].m, match: 'fuzzy' }
 }
 
 // ── Item line parsing ────────────────────────────────────────────────────────
