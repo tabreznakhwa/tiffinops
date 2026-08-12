@@ -1,8 +1,8 @@
 'use client'
 
-import { useState, useTransition, useEffect } from 'react'
+import { useState, useMemo, useTransition, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
-import { ChevronLeft, ChevronRight, Printer, RefreshCw } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Printer, RefreshCw, ChefHat } from 'lucide-react'
 import { advanceOrderStatus } from '@/lib/packing/actions'
 import type { Enums } from '@/lib/supabase/types'
 
@@ -273,6 +273,29 @@ export function PackingModule({
 
   const activeCount = periodOrders.filter((o) => o.order_status !== 'delivered').length
 
+  // Cook-and-pack totals for the selected meal period. "Still to pack" drops
+  // anything already delivered, which is what the kitchen wants mid-service;
+  // "All orders" is the full prep count for the service.
+  const [totalsScope, setTotalsScope] = useState<'all' | 'pending'>('all')
+
+  const itemTotals = useMemo(() => {
+    const src = totalsScope === 'pending'
+      ? periodOrders.filter((o) => o.order_status !== 'delivered')
+      : periodOrders
+    const map = new Map<string, number>()
+    for (const o of src) {
+      for (const it of o.order_items ?? []) {
+        const qty = parseFloat(String(it.quantity)) || 0
+        map.set(it.item_name_snapshot, (map.get(it.item_name_snapshot) ?? 0) + qty)
+      }
+    }
+    return [...map.entries()]
+      .map(([name, quantity]) => ({ name, quantity }))
+      .sort((a, b) => b.quantity - a.quantity || a.name.localeCompare(b.name))
+  }, [periodOrders, totalsScope])
+
+  const totalPieces = itemTotals.reduce((s, i) => s + i.quantity, 0)
+
   return (
     <div>
       {/* Page header */}
@@ -419,6 +442,69 @@ export function PackingModule({
             </>
           )}
         </p>
+      )}
+
+      {/* Cook & pack totals */}
+      {itemTotals.length > 0 && (
+        <div
+          className="rounded-[14px] mb-4 overflow-hidden"
+          style={{ background: 'var(--color-surface)', border: '1px solid var(--color-border)', boxShadow: 'var(--shadow-card)' }}
+        >
+          <div
+            className="flex flex-wrap items-center justify-between gap-2 px-4 py-2.5"
+            style={{ background: 'var(--color-cream)', borderBottom: '1px solid var(--color-border)' }}
+          >
+            <div className="flex items-center gap-2">
+              <ChefHat size={15} style={{ color: 'var(--color-saffron)' }} />
+              <span className="text-[11px] font-bold uppercase tracking-wide" style={{ color: 'var(--color-ink)' }}>
+                Cook &amp; Pack Totals
+              </span>
+              <span className="text-[11px]" style={{ color: 'var(--color-muted)' }}>
+                {itemTotals.length} item{itemTotals.length !== 1 ? 's' : ''} · {totalPieces} piece{totalPieces !== 1 ? 's' : ''}
+              </span>
+            </div>
+            <div className="flex gap-1">
+              {([
+                { v: 'all',     label: 'All orders' },
+                { v: 'pending', label: 'Still to pack' },
+              ] as const).map((opt) => (
+                <button
+                  key={opt.v}
+                  onClick={() => setTotalsScope(opt.v)}
+                  className="px-2.5 py-1 rounded-[7px] text-[11px] font-bold transition-colors"
+                  style={
+                    totalsScope === opt.v
+                      ? { background: 'var(--color-ink)', color: '#fff' }
+                      : { background: 'var(--color-surface)', color: 'var(--color-muted)', border: '1px solid var(--color-border)' }
+                  }
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3">
+            {itemTotals.map((it, i) => (
+              <div
+                key={it.name}
+                className="flex items-center justify-between gap-3 px-4 py-2"
+                style={{ borderBottom: '1px solid var(--color-border)', borderRight: '1px solid var(--color-border)' }}
+              >
+                <span className="text-sm truncate" style={{ color: 'var(--color-ink)' }}>
+                  <span className="text-[10px] mr-1.5" style={{ color: 'var(--color-muted)' }}>{i + 1}</span>
+                  {it.name}
+                </span>
+                <span
+                  className="num font-display font-bold text-[17px] flex-shrink-0"
+                  style={{ color: 'var(--color-ember)' }}
+                >
+                  {Number.isInteger(it.quantity) ? it.quantity : it.quantity.toFixed(2)}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
       )}
 
       {/* Order cards */}

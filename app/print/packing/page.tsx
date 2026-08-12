@@ -206,6 +206,21 @@ function PeriodSection({
     (a, b) => (SORT[a.order_status] ?? 9) - (SORT[b.order_status] ?? 9)
   )
 
+  // What the kitchen actually cooks to: every line in this period, summed.
+  // Printed before the individual tickets so the totals are the first thing
+  // read, not something to be added up by hand off the tickets.
+  const totalsMap = new Map<string, number>()
+  for (const o of orders) {
+    for (const it of o.order_items ?? []) {
+      const qty = parseFloat(String(it.quantity)) || 0
+      totalsMap.set(it.item_name_snapshot, (totalsMap.get(it.item_name_snapshot) ?? 0) + qty)
+    }
+  }
+  const totals = [...totalsMap.entries()]
+    .map(([name, quantity]) => ({ name, quantity }))
+    .sort((a, b) => b.quantity - a.quantity || a.name.localeCompare(b.name))
+  const totalPieces = totals.reduce((s, t) => s + t.quantity, 0)
+
   return (
     <div className="period-section" style={{ marginBottom: 28 }}>
       {/* Section heading */}
@@ -236,6 +251,59 @@ function PeriodSection({
           {orders.length} order{orders.length !== 1 ? 's' : ''}
         </span>
       </div>
+
+      {/* Cook & pack totals for this service */}
+      {totals.length > 0 && (
+        <div
+          className="totals-block"
+          style={{
+            border: '1.5px solid #221A13',
+            borderRadius: 6,
+            margin: '10px 0 14px',
+            breakInside: 'avoid',
+          }}
+        >
+          <div
+            style={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'baseline',
+              padding: '5px 10px',
+              background: '#F5EDE0',
+              borderBottom: '1.5px solid #221A13',
+            }}
+          >
+            <span style={{ fontSize: 11, fontWeight: 800, letterSpacing: '.08em', textTransform: 'uppercase', color: '#221A13' }}>
+              Cook &amp; Pack Totals
+            </span>
+            <span style={{ fontSize: 10.5, color: '#7C7063', fontWeight: 600 }}>
+              {totals.length} item{totals.length !== 1 ? 's' : ''} · {totalPieces} piece{totalPieces !== 1 ? 's' : ''}
+            </span>
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)' }}>
+            {totals.map((t, i) => (
+              <div
+                key={t.name}
+                style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'baseline',
+                  gap: 8,
+                  padding: '4px 10px',
+                  borderRight: (i % 3) < 2 ? '1px solid #ECE2D3' : undefined,
+                  borderBottom: i < totals.length - (totals.length % 3 || 3) ? '1px solid #ECE2D3' : undefined,
+                  fontSize: 12,
+                }}
+              >
+                <span style={{ color: '#221A13' }}>{t.name}</span>
+                <span style={{ fontFamily: 'var(--font-display)', fontWeight: 800, fontSize: 14, color: '#221A13' }}>
+                  {Number.isInteger(t.quantity) ? t.quantity : t.quantity.toFixed(2)}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {sorted.map((order, idx) => (
         <OrderTicket key={order.id} order={order} index={idx + 1} />
