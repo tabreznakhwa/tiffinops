@@ -358,11 +358,27 @@ function matchMenuItem(text: string, menu: MenuItemRef[]): { item: MenuItemRef |
 
 type Extracted = {
   text: string
-  /** Same text but with the size left in, so "DAL TADKA - 500 ML" can match. */
+  /** Same text with the size appended, so "DAL TADKA - 500 ML" can match. */
   textWithSize: string
   quantity: number | null
   note: string | null
   price: number | null
+}
+
+/**
+ * Portion sizes that appear as a bare number, e.g. "spl chicken kadhai 250".
+ * Read as a size rather than a quantity — nobody orders 250 portions, and
+ * treating it as one produced a 250 × AED 7 line.
+ */
+const BARE_SIZES = new Set([250, 350, 500, 750, 1000])
+
+/** Above this a quantity is more likely a misread size than a real count. */
+const IMPLAUSIBLE_QUANTITY = 20
+
+/** House words for the two portions the kitchen sells. */
+const SIZE_WORDS: Record<string, string> = {
+  small: '250ml', sml: '250ml', smal: '250ml', chota: '250ml',
+  large: '500ml', larg: '500ml', lrg: '500ml', big: '500ml', bada: '500ml',
 }
 
 /** Pull size, explicit price and quantity out of one item segment. */
@@ -371,13 +387,20 @@ function extract(segment: string): Extracted {
   let note: string | null = null
   let price: number | null = null
   let quantity: number | null = null
-  let withSize = s
+
+  // "small" / "large" — the words customers actually use for 250ml and 500ml
+  for (const [word, ml] of Object.entries(SIZE_WORDS)) {
+    const re = new RegExp(`\\b${word}\\b`, 'i')
+    if (re.test(s)) { note = ml; s = s.replace(re, ' '); break }
+  }
 
   // "500ml" / "1 ltr" — a size, never a quantity
-  const size = s.match(/(\d+\s*(?:ml|ltr|l|g|kg|gm))\b/i)
-  if (size) {
-    note = size[1].replace(/\s+/g, '')
-    s = s.replace(size[0], ' ')
+  if (!note) {
+    const size = s.match(/(\d+)\s*(ml|ltr|l|g|kg|gm)\b/i)
+    if (size) {
+      note = size[1] + size[2].toLowerCase()
+      s = s.replace(size[0], ' ')
+    }
   }
 
   // "12aed" / "aed 12" / "12 dhs"
@@ -385,7 +408,15 @@ function extract(segment: string): Extracted {
   if (priceMatch) {
     price = parseFloat(priceMatch[1] ?? priceMatch[2])
     s = s.replace(priceMatch[0], ' ')
-    withSize = withSize.replace(priceMatch[0], ' ')
+  }
+
+  // A bare portion size written without its unit — "spl chicken kadhai 250"
+  if (!note) {
+    const bare = s.match(/\b(\d{3,4})\b/)
+    if (bare && BARE_SIZES.has(parseInt(bare[1], 10))) {
+      note = bare[1] + 'ml'
+      s = s.replace(bare[0], ' ')
+    }
   }
 
   // Whatever standalone number is left is the quantity
@@ -393,14 +424,15 @@ function extract(segment: string): Extracted {
   if (qty) {
     quantity = parseInt(qty[1], 10)
     s = s.replace(qty[0], ' ')
-    // Remove the quantity from the size-preserving variant too, but only the
-    // standalone one — "500" in "500ml" must survive.
-    withSize = withSize.replace(new RegExp(`\\b${qty[1]}\\b(?!\\s*(?:ml|ltr|l|g|gm|kg))`, 'i'), ' ')
   }
 
+  const text = s.replace(/\s+/g, ' ').trim()
+
   return {
-    text: s.replace(/\s+/g, ' ').trim(),
-    textWithSize: withSize.replace(/\s+/g, ' ').trim(),
+    text,
+    // Rebuilt from the normalised note rather than the original wording, so
+    // "500", "500 ML" and "large" all end up matching "… - 500ML".
+    textWithSize: note ? `${text} ${note}`.trim() : text,
     quantity,
     note,
     price,
@@ -586,6 +618,11 @@ export function parseWhatsAppOrders(raw: string, opts: ParseOptions): ParseResul
       else if (!it.menu_item_id)    issues.push(`Unknown item: "${it.raw}"`)
       else if (it.match === 'fuzzy') issues.push(`Item matched by similarity: "${it.raw}" → ${it.name}`)
       if (it.menu_item_id && it.unit_price <= 0) issues.push(`No price for "${it.name}"`)
+      // Backstop for a portion size read as a count. Legitimate bulk orders
+      // exist, so this asks rather than blocks.
+      if (it.quantity > IMPLAUSIBLE_QUANTITY) {
+        issues.push(`Quantity ${it.quantity} on "${it.raw}" looks like a size, not a count — confirm`)
+      }
     }
 
     orders.push({
