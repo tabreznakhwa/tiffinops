@@ -3,6 +3,7 @@
 import { useState, useMemo, useTransition } from 'react'
 import Link from 'next/link'
 import { ArrowLeft, ClipboardPaste, AlertTriangle, Check, X, Trash2 } from 'lucide-react'
+import { SearchableSelect } from '@/components/ui/searchable-select'
 import { parseOrderPaste, commitParsedOrders } from '@/lib/orders/whatsapp-actions'
 import type { CommitResult } from '@/lib/orders/whatsapp-actions'
 import type { MealPeriod, MenuItemRef, CustomerRef, ParsedOrder } from '@/lib/orders/parse-whatsapp'
@@ -127,6 +128,17 @@ export function PasteOrdersModule() {
   }, [drafts])
 
   const [bulkPick, setBulkPick] = useState<Record<string, string>>({})
+
+  // Built once rather than per row — there are ~90 menu items and ~190
+  // customers, and the review screen renders a dropdown for every single line.
+  const menuOptions = useMemo(
+    () => menu.map(m => ({ value: m.id, label: m.name, hint: `${currency} ${m.price.toFixed(2)}` })),
+    [menu, currency],
+  )
+  const customerOptions = useMemo(
+    () => customers.map(c => ({ value: c.id, label: c.full_name, hint: c.customer_code })),
+    [customers],
+  )
 
   function resolveAll(spots: { ref: number; idx: number }[], menuItemId: string) {
     const m = menu.find(x => x.id === menuItemId)
@@ -377,17 +389,13 @@ export function PasteOrdersModule() {
                         {g.spots.length} line{g.spots.length !== 1 ? 's' : ''}
                       </span>
                       <span style={{ color: 'var(--color-muted)' }}>→</span>
-                      <select
+                      <SearchableSelect
+                        options={menuOptions}
                         value={bulkPick[key] ?? ''}
-                        onChange={e => setBulkPick(p => ({ ...p, [key]: e.target.value }))}
-                        className="rounded-[8px] px-2 py-1 text-xs font-semibold focus:outline-none focus:ring-1 max-w-[280px]"
-                        style={{ background: 'var(--color-cream)', border: '1px solid var(--color-border)', color: 'var(--color-ink)' }}
-                      >
-                        <option value="">— pick menu item —</option>
-                        {menu.map(m => (
-                          <option key={m.id} value={m.id}>{m.name} — {currency} {m.price.toFixed(2)}</option>
-                        ))}
-                      </select>
+                        onChange={v => setBulkPick(p => ({ ...p, [key]: v }))}
+                        placeholder="— pick menu item —"
+                        width={240}
+                      />
                       <button
                         onClick={() => { resolveAll(g.spots, bulkPick[key]); setBulkPick(p => ({ ...p, [key]: '' })) }}
                         disabled={!bulkPick[key]}
@@ -434,21 +442,14 @@ export function PasteOrdersModule() {
                           {d.rawCustomer}
                         </span>
                         <span style={{ color: 'var(--color-muted)' }}>→</span>
-                        <select
+                        <SearchableSelect
+                          options={customerOptions}
                           value={d.customer_id ?? ''}
-                          onChange={e => update(d.ref, { customer_id: e.target.value || null, customerNeedsCheck: false })}
-                          className="rounded-[8px] px-2 py-1 text-xs font-semibold focus:outline-none focus:ring-1 max-w-[260px]"
-                          style={{
-                            background: d.customer_id ? 'var(--color-cream)' : 'var(--color-red-soft)',
-                            border: `1px solid ${d.customer_id ? 'var(--color-border)' : 'var(--color-red)'}`,
-                            color: 'var(--color-ink)',
-                          }}
-                        >
-                          <option value="">— pick customer —</option>
-                          {customers.map(c => (
-                            <option key={c.id} value={c.id}>{c.full_name} ({c.customer_code})</option>
-                          ))}
-                        </select>
+                          onChange={v => update(d.ref, { customer_id: v || null, customerNeedsCheck: false })}
+                          placeholder="— pick customer —"
+                          invalid={!d.customer_id}
+                          width={240}
+                        />
                         {d.customerNeedsCheck && d.customer_id && (
                           <span className="text-[10px] font-bold px-1.5 py-0.5 rounded" style={{ background: '#FEF3C7', color: '#92400E' }}>
                             CONFIRM
@@ -464,10 +465,11 @@ export function PasteOrdersModule() {
                               {it.raw}
                             </span>
                             <span style={{ color: 'var(--color-muted)' }}>→</span>
-                            <select
+                            <SearchableSelect
+                              options={menuOptions}
                               value={it.menu_item_id ?? ''}
-                              onChange={e => {
-                                const m = menu.find(x => x.id === e.target.value)
+                              onChange={v => {
+                                const m = menu.find(x => x.id === v)
                                 updateItem(d.ref, idx, {
                                   menu_item_id: m?.id ?? null,
                                   name: m?.name ?? it.name,
@@ -475,16 +477,10 @@ export function PasteOrdersModule() {
                                   needsAttention: false,
                                 })
                               }}
-                              className="rounded-[8px] px-2 py-1 text-xs font-semibold focus:outline-none focus:ring-1"
-                              style={{
-                                background: it.menu_item_id ? 'var(--color-cream)' : 'var(--color-red-soft)',
-                                border: `1px solid ${it.menu_item_id ? 'var(--color-border)' : 'var(--color-red)'}`,
-                                color: 'var(--color-ink)',
-                              }}
-                            >
-                              <option value="">— pick item —</option>
-                              {menu.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
-                            </select>
+                              placeholder="— pick item —"
+                              invalid={!it.menu_item_id}
+                              width={210}
+                            />
                             <input
                               type="number"
                               min={1}
