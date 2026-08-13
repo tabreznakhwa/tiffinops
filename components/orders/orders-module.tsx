@@ -104,6 +104,37 @@ function thisMonthStart() {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`
 }
 
+/** Monday of the week containing `d`. */
+function mondayOf(d: Date): Date {
+  const m = new Date(d)
+  const day = m.getDay() // 0 = Sun .. 6 = Sat
+  const diff = day === 0 ? -6 : 1 - day
+  m.setDate(m.getDate() + diff)
+  return m
+}
+
+function thisWeekRange() {
+  const mon = mondayOf(new Date())
+  const sun = new Date(mon)
+  sun.setDate(mon.getDate() + 6)
+  return { from: mon.toLocaleDateString('sv-SE'), to: sun.toLocaleDateString('sv-SE') }
+}
+
+function lastWeekRange() {
+  const mon = mondayOf(new Date())
+  mon.setDate(mon.getDate() - 7)
+  const sun = new Date(mon)
+  sun.setDate(mon.getDate() + 6)
+  return { from: mon.toLocaleDateString('sv-SE'), to: sun.toLocaleDateString('sv-SE') }
+}
+
+function lastMonthRange() {
+  const now = new Date()
+  const first = new Date(now.getFullYear(), now.getMonth() - 1, 1)
+  const last = new Date(now.getFullYear(), now.getMonth(), 0) // day 0 = last day of previous month
+  return { from: first.toLocaleDateString('sv-SE'), to: last.toLocaleDateString('sv-SE') }
+}
+
 // ── Tab / pill button ─────────────────────────────────────────────────────────
 
 function TabPill({
@@ -337,6 +368,13 @@ export function OrdersModule({
             Today
           </button>
           <button
+            onClick={() => setQuickRange(nDaysAgoStr(1), nDaysAgoStr(1))}
+            className="px-2.5 py-1 rounded-[7px] text-xs font-semibold transition-colors"
+            style={{ background: 'var(--color-border)', color: 'var(--color-muted)' }}
+          >
+            Yesterday
+          </button>
+          <button
             onClick={() => setQuickRange(nDaysAgoStr(6), todayStr())}
             className="px-2.5 py-1 rounded-[7px] text-xs font-semibold transition-colors"
             style={{ background: 'var(--color-border)', color: 'var(--color-muted)' }}
@@ -344,11 +382,32 @@ export function OrdersModule({
             Last 7d
           </button>
           <button
+            onClick={() => { const r = thisWeekRange(); setQuickRange(r.from, r.to) }}
+            className="px-2.5 py-1 rounded-[7px] text-xs font-semibold transition-colors"
+            style={{ background: 'var(--color-border)', color: 'var(--color-muted)' }}
+          >
+            This Week
+          </button>
+          <button
+            onClick={() => { const r = lastWeekRange(); setQuickRange(r.from, r.to) }}
+            className="px-2.5 py-1 rounded-[7px] text-xs font-semibold transition-colors"
+            style={{ background: 'var(--color-border)', color: 'var(--color-muted)' }}
+          >
+            Last Week
+          </button>
+          <button
             onClick={() => setQuickRange(thisMonthStart(), todayStr())}
             className="px-2.5 py-1 rounded-[7px] text-xs font-semibold transition-colors"
             style={{ background: 'var(--color-border)', color: 'var(--color-muted)' }}
           >
             This Month
+          </button>
+          <button
+            onClick={() => { const r = lastMonthRange(); setQuickRange(r.from, r.to) }}
+            className="px-2.5 py-1 rounded-[7px] text-xs font-semibold transition-colors"
+            style={{ background: 'var(--color-border)', color: 'var(--color-muted)' }}
+          >
+            Last Month
           </button>
 
           <div className="w-px self-stretch mx-1" style={{ background: 'var(--color-border)' }} />

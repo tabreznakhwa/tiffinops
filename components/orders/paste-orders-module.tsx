@@ -182,6 +182,7 @@ export function PasteOrdersModule() {
 
   function handleCommit() {
     if (!drafts) return
+    if (!parsedMeal) { setError('Meal period was not detected — set it above before importing.'); return }
     setError('')
     startSave(async () => {
       const res = await commitParsedOrders(
@@ -189,7 +190,7 @@ export function PasteOrdersModule() {
           ref: d.ref,
           customer_id: d.customer_id!,
           order_date: parsedDate,
-          meal_period: (parsedMeal ?? 'dinner') as MealPeriod,
+          meal_period: parsedMeal,
           notes: null,
           items: d.items.map(i => ({
             menu_item_id: i.menu_item_id!,
@@ -324,7 +325,24 @@ export function PasteOrdersModule() {
             <Divider />
             <Stat label="Date" value={parsedDate || '—'} />
             <Divider />
-            <Stat label="Meal" value={parsedMeal ? parsedMeal[0].toUpperCase() + parsedMeal.slice(1) : '—'} />
+            {parsedMeal ? (
+              <Stat label="Meal" value={parsedMeal[0].toUpperCase() + parsedMeal.slice(1)} />
+            ) : (
+              <div>
+                <p className="text-[11px] font-bold uppercase tracking-wide" style={{ color: 'var(--color-red)' }}>
+                  Meal — not detected
+                </p>
+                <select
+                  value=""
+                  onChange={e => setParsedMeal(e.target.value as MealPeriod)}
+                  className="mt-0.5 rounded-[6px] px-1.5 py-1 text-xs font-bold focus:outline-none focus:ring-1"
+                  style={{ background: 'var(--color-red-soft)', border: '1px solid var(--color-red)', color: 'var(--color-red)' }}
+                >
+                  <option value="" disabled>Pick meal…</option>
+                  {MEALS.map(m => <option key={m} value={m}>{m[0].toUpperCase() + m.slice(1)}</option>)}
+                </select>
+              </div>
+            )}
             <Divider />
             <Stat label="Value" value={`${currency} ${grandTotal.toFixed(2)}`} />
             {flaggedCount > 0 && (
@@ -544,12 +562,17 @@ export function PasteOrdersModule() {
               <p className="text-sm font-bold" style={{ color: '#fff' }}>
                 {included.length} order{included.length !== 1 ? 's' : ''} · {currency} {grandTotal.toFixed(2)}
               </p>
+              {!parsedMeal && (
+                <p className="text-[11px] flex items-center gap-1" style={{ color: '#FCA5A5' }}>
+                  <X size={11} /> Pick a meal period above before importing
+                </p>
+              )}
               {blockers.length > 0 && (
                 <p className="text-[11px] flex items-center gap-1" style={{ color: '#FCA5A5' }}>
                   <X size={11} /> {blockers.length} still need a customer or item
                 </p>
               )}
-              {blockers.length === 0 && included.length > 0 && (
+              {parsedMeal && blockers.length === 0 && included.length > 0 && (
                 <p className="text-[11px] flex items-center gap-1" style={{ color: '#86EFAC' }}>
                   <Check size={11} /> ready to import
                 </p>
@@ -557,12 +580,12 @@ export function PasteOrdersModule() {
             </div>
             <button
               onClick={handleCommit}
-              disabled={isSaving || included.length === 0 || blockers.length > 0}
+              disabled={isSaving || included.length === 0 || blockers.length > 0 || !parsedMeal}
               className="px-5 py-2.5 rounded-[10px] text-sm font-bold transition-opacity"
               style={{
                 background: 'var(--color-saffron)',
                 color: '#fff',
-                opacity: isSaving || included.length === 0 || blockers.length > 0 ? 0.5 : 1,
+                opacity: isSaving || included.length === 0 || blockers.length > 0 || !parsedMeal ? 0.5 : 1,
               }}
             >
               {isSaving ? 'Importing…' : `Import ${included.length} Order${included.length !== 1 ? 's' : ''}`}
