@@ -1,6 +1,6 @@
 import { createAdminClient } from '@/lib/supabase/admin'
 import { formatInTimeZone } from 'date-fns-tz'
-import type { Enums } from '@/lib/supabase/types'
+import { computeFixedInvoiceAmounts, buildFixedPlanLineItems } from './fixedPlanInvoiceLines'
 
 export type GenerateResult = {
   generated: number
@@ -39,14 +39,15 @@ export function prevMonth(yyyyMM: string): string {
 }
 
 /**
- * Generate draft fixed_monthly invoices for all active subscribers.
- * Designed to run on the 26th, when `targetMonth` is the upcoming calendar month.
+ * Generate draft fixed_monthly invoices for active POSTPAID subscribers only.
+ * Designed to run on the 26th, when `targetMonth` is the upcoming calendar
+ * month — postpaid customers are billed for the month that's about to
+ * complete (the month before `targetMonth`), due on the 1st of `targetMonth`,
+ * i.e. right after that billing month finishes.
  *
- * Billing depends on the customer's payment_terms:
- *  - prepaid  (default): billed in advance for targetMonth, due on the 1st of targetMonth.
- *  - postpaid: billed for the month that's about to complete (the month before
- *              targetMonth), due on the 1st of targetMonth — i.e. right after
- *              that billing month finishes.
+ * Prepaid subscribers are billed on their own anniversary date instead — see
+ * generatePrepaidInvoices.ts — since a shared calendar-month cycle leaves the
+ * days between a mid-month start and the next 1st unbilled.
  *
  * @param targetMonth  'YYYY-MM' of the upcoming month (defaults to next Dubai month)
  * @param createdBy    auth user ID to stamp on each invoice
@@ -71,39 +72,59 @@ export async function generateMonthlyInvoices(
       agreed_monthly_price,
       fixed_plan_id,
       fixed_plans(plan_name),
-      customers(full_name, customer_code, payment_terms)
+      customers(full_name, customer_code, payment_terms, customer_type)
     `)
     .eq('status', 'active')
 
   if (subsErr) return { generated: 0, skipped: 0, referralRewardsGenerated: 0, errors: [subsErr.message], month: targetMonth }
 
-  const priorMonth = prevMonth(targetMonth)
+  // Postpaid only — prepaid is billed on each customer's own anniversary date.
+  const postpaidSubs = (subs ?? []).filter(s =>
+    (s.customers as unknown as { payment_terms?: string } | null)?.payment_terms === 'postpaid'
+  )
 
-  const PERIOD_BY_TERMS: Record<Enums<'payment_terms'>, { periodStart: string; periodEnd: string; dueDate: string; monthLabel: string }> = {
-    prepaid: (() => {
-      const { start, end } = monthBounds(targetMonth)
-      // Due date = 1st of the target month (pay before month begins)
-      return { periodStart: start, periodEnd: end, dueDate: start, monthLabel: monthLabelFor(targetMonth) }
-    })(),
-    postpaid: (() => {
-      const { start, end } = monthBounds(priorMonth)
-      // Due date = 1st of the target month (pay right after the billed month completes)
-      return { periodStart: start, periodEnd: end, dueDate: monthBounds(targetMonth).start, monthLabel: monthLabelFor(priorMonth) }
-    })(),
+  const billingMonth = prevMonth(targetMonth)
+  const { start: periodStart, end: periodEnd } = monthBounds(billingMonth)
+  const dueDate   = monthBounds(targetMonth).start // 1st of targetMonth
+  const monthLabel = monthLabelFor(billingMonth)
+
+  // Fixed-menu customers pay a flat plan rate regardless of what they order, so
+  // their invoice shows the order usage + a matching "fixed-plan discount" line
+  // and always nets out to the agreed monthly price. Fetch their credit orders
+  // for the billing period once so each invoice can display its usage.
+  const fixedCustomerIds = postpaidSubs
+    .map(s => (s.customers as unknown as { customer_type?: string } | null)?.customer_type === 'fixed_menu' ? s.customer_id : null)
+    .filter((x): x is string => !!x)
+  type FixedOrderRow = { customer_id: string; order_date: string; total_amount: string }
+  const fixedOrders: FixedOrderRow[] = []
+  if (fixedCustomerIds.length) {
+    const PAGE = 1000
+    let offset = 0
+    while (true) {
+      const { data } = await admin
+        .from('orders')
+        .select('customer_id, order_date, total_amount')
+        .in('customer_id', fixedCustomerIds)
+        .eq('is_credit', true)
+        .not('order_status', 'in', '(cancelled,voided,draft)')
+        .gte('order_date', periodStart)
+        .lte('order_date', periodEnd)
+        .range(offset, offset + PAGE - 1)
+      const batch = (data ?? []) as unknown as FixedOrderRow[]
+      fixedOrders.push(...batch)
+      if (batch.length < PAGE) break
+      offset += PAGE
+    }
   }
 
-  const periodStarts = [PERIOD_BY_TERMS.prepaid.periodStart, PERIOD_BY_TERMS.postpaid.periodStart]
-
-  // Fetch existing invoices across both possible periods to skip duplicates
+  // Fetch existing invoices for this billing period to skip duplicates
   const { data: existingInvoices } = await admin
     .from('invoices')
-    .select('customer_id, billing_period_start')
+    .select('customer_id')
     .eq('invoice_type', 'fixed_monthly')
-    .in('billing_period_start', periodStarts)
+    .eq('billing_period_start', periodStart)
 
-  const alreadyInvoiced = new Set(
-    (existingInvoices ?? []).map((i) => `${i.customer_id}:${i.billing_period_start}`)
-  )
+  const alreadyInvoiced = new Set((existingInvoices ?? []).map((i) => i.customer_id))
 
   let generated = 0
   let skipped = 0
@@ -112,7 +133,7 @@ export async function generateMonthlyInvoices(
 
   const { data: rewardsCount, error: rewardsErr } = await admin.rpc(
     'generate_referral_rewards_for_month',
-    { p_month: PERIOD_BY_TERMS.prepaid.periodStart },
+    { p_month: monthBounds(targetMonth).start },
   )
   if (rewardsErr) {
     errors.push(`Referral rewards: ${rewardsErr.message}`)
@@ -120,12 +141,10 @@ export async function generateMonthlyInvoices(
     referralRewardsGenerated = rewardsCount ?? 0
   }
 
-  for (const sub of subs ?? []) {
-    const customer = sub.customers as unknown as { full_name: string; customer_code: string; payment_terms: Enums<'payment_terms'> } | null
-    const terms = customer?.payment_terms ?? 'prepaid'
-    const { periodStart, periodEnd, dueDate, monthLabel } = PERIOD_BY_TERMS[terms]
+  for (const sub of postpaidSubs) {
+    const customer = sub.customers as unknown as { full_name: string; customer_code: string; customer_type: string } | null
 
-    if (alreadyInvoiced.has(`${sub.customer_id}:${periodStart}`)) {
+    if (alreadyInvoiced.has(sub.customer_id)) {
       skipped++
       continue
     }
@@ -138,8 +157,13 @@ export async function generateMonthlyInvoices(
       continue
     }
 
-    const taxAmount = (amount * vatRate) / (100 + vatRate)
-    const description = `Monthly Fixed Plan — ${plan?.plan_name ?? 'Fixed Plan'} — ${monthLabel}`
+    // Extra credit orders this customer placed in their billing period. For a
+    // fixed-menu customer these are covered by the plan and shown as a discount.
+    const usage = customer?.customer_type === 'fixed_menu'
+      ? fixedOrders
+          .filter(o => o.customer_id === sub.customer_id && o.order_date >= periodStart && o.order_date <= periodEnd)
+          .reduce((s, o) => s + parseFloat(o.total_amount), 0)
+      : 0
 
     // Generate invoice number
     const { data: invoiceNumber, error: numErr } = await admin.rpc('next_invoice_number')
@@ -160,13 +184,10 @@ export async function generateMonthlyInvoices(
         invoice_type:          'fixed_monthly',
         billing_period_start:  periodStart,
         billing_period_end:    periodEnd,
-        subtotal:              amount.toFixed(2),
-        discount_amount:       '0.00',
-        tax_amount:            taxAmount.toFixed(2),
-        total_amount:          amount.toFixed(2),
+        ...computeFixedInvoiceAmounts(amount, usage, vatRate),
         status:                'draft',
         notes:                 null,
-        created_by:            createdBy,
+        created_by:            createdBy === 'system-cron' ? null : createdBy,
       })
       .select('id')
       .single()
@@ -176,15 +197,15 @@ export async function generateMonthlyInvoices(
       continue
     }
 
-    // Insert line item
-    const { error: itemErr } = await admin.from('invoice_items').insert({
-      invoice_id:  invoice.id,
-      order_id:    null,
-      description,
-      quantity:    '1',
-      unit_price:  amount.toFixed(2),
-      total_price: amount.toFixed(2),
+    const lineItems = buildFixedPlanLineItems({
+      invoiceId: invoice.id,
+      planName:  plan?.plan_name ?? 'Fixed Plan',
+      monthLabel,
+      amount,
+      usage,
     })
+
+    const { error: itemErr } = await admin.from('invoice_items').insert(lineItems)
 
     if (itemErr) {
       // Roll back the invoice

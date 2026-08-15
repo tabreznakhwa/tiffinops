@@ -420,12 +420,20 @@ export function NewOrderForm({
           selected={selectedCustomer}
           onSelect={setSelectedCustomer}
         />
-        {selectedCustomer?.customer_type !== 'a_la_carte' && selectedCustomer && (
+        {selectedCustomer?.customer_type === 'fixed_menu' && selectedCustomer && (
           <p
             className="mt-2 text-xs rounded-[8px] px-2.5 py-1.5"
             style={{ background: 'var(--color-saffron-soft)', color: 'var(--color-ember)' }}
           >
-            Fixed plan customer — extra items will be included in their end-of-month bill.
+            Fixed-menu customer — extra items are covered by their fixed plan (no extra charge).
+          </p>
+        )}
+        {selectedCustomer?.customer_type === 'hybrid' && selectedCustomer && (
+          <p
+            className="mt-2 text-xs rounded-[8px] px-2.5 py-1.5"
+            style={{ background: 'var(--color-saffron-soft)', color: 'var(--color-ember)' }}
+          >
+            Hybrid customer — extra items are added on top of their fixed plan.
           </p>
         )}
       </div>

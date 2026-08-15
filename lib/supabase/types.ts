@@ -848,6 +848,9 @@ export type Database = {
           cash_opening_balance: string
           bank_opening_balance: string
           opening_balance_date: string | null
+          purchase_prefix: string
+          supplier_prefix: string
+          inventory_item_prefix: string
           updated_at: string
         }
         Insert: {
@@ -870,6 +873,9 @@ export type Database = {
           cash_opening_balance?: string
           bank_opening_balance?: string
           opening_balance_date?: string | null
+          purchase_prefix?: string
+          supplier_prefix?: string
+          inventory_item_prefix?: string
           updated_at?: string
         }
         Update: {
@@ -892,9 +898,238 @@ export type Database = {
           cash_opening_balance?: string
           bank_opening_balance?: string
           opening_balance_date?: string | null
+          purchase_prefix?: string
+          supplier_prefix?: string
+          inventory_item_prefix?: string
           updated_at?: string
         }
         Relationships: []
+      }
+      suppliers: {
+        Row: {
+          id: string
+          supplier_code: string
+          name: string
+          contact_person: string | null
+          phone: string | null
+          email: string | null
+          address: string | null
+          notes: string | null
+          is_active: boolean
+          created_by: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          supplier_code: string
+          name: string
+          contact_person?: string | null
+          phone?: string | null
+          email?: string | null
+          address?: string | null
+          notes?: string | null
+          is_active?: boolean
+          created_by?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          supplier_code?: string
+          name?: string
+          contact_person?: string | null
+          phone?: string | null
+          email?: string | null
+          address?: string | null
+          notes?: string | null
+          is_active?: boolean
+          created_by?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      inventory_items: {
+        Row: {
+          id: string
+          item_code: string
+          name: string
+          category: string | null
+          unit_of_measure: string
+          current_stock: string
+          min_stock_level: string
+          purchase_price: string
+          storage_location: string | null
+          is_active: boolean
+          notes: string | null
+          created_by: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          item_code: string
+          name: string
+          category?: string | null
+          unit_of_measure: string
+          current_stock?: string
+          min_stock_level?: string
+          purchase_price?: string
+          storage_location?: string | null
+          is_active?: boolean
+          notes?: string | null
+          created_by?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          item_code?: string
+          name?: string
+          category?: string | null
+          unit_of_measure?: string
+          current_stock?: string
+          min_stock_level?: string
+          purchase_price?: string
+          storage_location?: string | null
+          is_active?: boolean
+          notes?: string | null
+          created_by?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      purchases: {
+        Row: {
+          id: string
+          purchase_number: string
+          supplier_id: string
+          purchase_date: string
+          payment_status: string
+          payment_method: Database['public']['Enums']['payment_mode'] | null
+          subtotal: string
+          total_amount: string
+          notes: string | null
+          created_by: string
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          purchase_number: string
+          supplier_id: string
+          purchase_date?: string
+          payment_status?: string
+          payment_method?: Database['public']['Enums']['payment_mode'] | null
+          subtotal?: string
+          total_amount?: string
+          notes?: string | null
+          created_by: string
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          purchase_number?: string
+          supplier_id?: string
+          purchase_date?: string
+          payment_status?: string
+          payment_method?: Database['public']['Enums']['payment_mode'] | null
+          subtotal?: string
+          total_amount?: string
+          notes?: string | null
+          created_by?: string
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: [
+          { foreignKeyName: 'purchases_supplier_id_fkey'; columns: ['supplier_id']; referencedRelation: 'suppliers'; referencedColumns: ['id'] }
+        ]
+      }
+      purchase_items: {
+        Row: {
+          id: string
+          purchase_id: string
+          inventory_item_id: string
+          quantity: string
+          unit_price: string
+          total_price: string
+        }
+        Insert: {
+          id?: string
+          purchase_id: string
+          inventory_item_id: string
+          quantity: string
+          unit_price: string
+          total_price: string
+        }
+        Update: {
+          id?: string
+          purchase_id?: string
+          inventory_item_id?: string
+          quantity?: string
+          unit_price?: string
+          total_price?: string
+        }
+        Relationships: [
+          { foreignKeyName: 'purchase_items_purchase_id_fkey'; columns: ['purchase_id']; referencedRelation: 'purchases'; referencedColumns: ['id'] },
+          { foreignKeyName: 'purchase_items_inventory_item_id_fkey'; columns: ['inventory_item_id']; referencedRelation: 'inventory_items'; referencedColumns: ['id'] }
+        ]
+      }
+      inventory_transactions: {
+        Row: {
+          id: string
+          item_id: string
+          transaction_type: Database['public']['Enums']['inventory_txn_type']
+          transaction_date: string
+          quantity: string
+          stock_before: string
+          stock_after: string
+          unit_price: string | null
+          total_value: string | null
+          reference_table: string | null
+          reference_id: string | null
+          notes: string | null
+          created_by: string
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          item_id: string
+          transaction_type: Database['public']['Enums']['inventory_txn_type']
+          transaction_date?: string
+          quantity: string
+          stock_before: string
+          stock_after: string
+          unit_price?: string | null
+          total_value?: string | null
+          reference_table?: string | null
+          reference_id?: string | null
+          notes?: string | null
+          created_by: string
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          item_id?: string
+          transaction_type?: Database['public']['Enums']['inventory_txn_type']
+          transaction_date?: string
+          quantity?: string
+          stock_before?: string
+          stock_after?: string
+          unit_price?: string | null
+          total_value?: string | null
+          reference_table?: string | null
+          reference_id?: string | null
+          notes?: string | null
+          created_by?: string
+          created_at?: string
+        }
+        Relationships: [
+          { foreignKeyName: 'inventory_transactions_item_id_fkey'; columns: ['item_id']; referencedRelation: 'inventory_items'; referencedColumns: ['id'] }
+        ]
       }
     }
     Views: {
@@ -945,6 +1180,18 @@ export type Database = {
         Args: { p_month?: string }
         Returns: number
       }
+      next_purchase_number: {
+        Args: Record<PropertyKey, never>
+        Returns: string
+      }
+      next_supplier_code: {
+        Args: Record<PropertyKey, never>
+        Returns: string
+      }
+      next_inventory_item_code: {
+        Args: Record<PropertyKey, never>
+        Returns: string
+      }
     }
     Enums: {
       user_role: 'owner' | 'manager' | 'data_entry' | 'accounts' | 'viewer' | 'packer'
@@ -963,6 +1210,7 @@ export type Database = {
       approval_request_type: 'delete' | 'edit'
       approval_status: 'pending' | 'approved' | 'rejected'
       approval_target: 'order' | 'payment' | 'invoice'
+      inventory_txn_type: 'purchase' | 'consumption' | 'adjustment' | 'damaged' | 'opening_stock'
     }
     CompositeTypes: Record<PropertyKey, never>
   }

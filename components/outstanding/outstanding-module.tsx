@@ -20,6 +20,7 @@ export type OutstandingRow = {
   area:          string | null
   orderBilled:   number
   subCharge:     number
+  fixedDiscount: number
   totalBilled:   number
   totalPaid:     number
   outstanding:   number
@@ -28,6 +29,11 @@ export type OutstandingRow = {
   subId:         string | null
   subStartDate:  string | null
   subEndDate:    string | null
+  lastPaymentDate:    string | null
+  lastPaymentAmount:  number | null
+  outstandingSince:   string | null
+  daysOutstanding:    number | null
+  daysSinceLastPayment: number | null
 }
 
 const TYPE_LABELS: Record<string, string> = {
@@ -207,10 +213,10 @@ export function OutstandingModule({ rows, totalCustomers, currency, userRole, ra
             <table className="w-full text-sm border-collapse">
               <thead>
                 <tr style={{ borderBottom: '1px solid var(--color-border)', background: 'var(--color-cream)' }}>
-                  {['#', 'Customer', 'Type', 'Contact', 'Subscription', 'Billed', 'Paid', 'Outstanding'].map(h => (
+                  {['#', 'Customer', 'Type', 'Contact', 'Subscription', 'Billed', 'Paid', 'Aging', 'Outstanding'].map(h => (
                     <th
                       key={h}
-                      className={`px-4 py-3 text-xs font-bold uppercase tracking-wide ${['Billed', 'Paid', 'Outstanding'].includes(h) ? 'text-right' : 'text-left'}`}
+                      className={`px-4 py-3 text-xs font-bold uppercase tracking-wide ${['Billed', 'Paid', 'Aging', 'Outstanding'].includes(h) ? 'text-right' : 'text-left'}`}
                       style={{ color: 'var(--color-muted)' }}
                     >{h}</th>
                   ))}
@@ -350,19 +356,53 @@ export function OutstandingModule({ rows, totalCustomers, currency, userRole, ra
                       {/* Billed */}
                       <td className="px-4 py-3 text-right font-mono" style={{ color: 'var(--color-ink)' }}>
                         <div>{currency} {row.totalBilled.toFixed(2)}</div>
-                        {row.subCharge > 0 && row.orderBilled > 0 && (
-                          <div className="text-[10px] mt-0.5" style={{ color: 'var(--color-muted)' }}>
-                            Sub {currency} {row.subCharge.toFixed(2)} + Orders {currency} {row.orderBilled.toFixed(2)}
-                          </div>
-                        )}
-                        {row.subCharge > 0 && row.orderBilled === 0 && (
-                          <div className="text-[10px] mt-0.5" style={{ color: 'var(--color-muted)' }}>
-                            {row.subPaused ? 'Prorated subscription (paused)' : 'Subscription charges'}
-                          </div>
+                        {row.fixedDiscount > 0 ? (
+                          <>
+                            <div className="text-[10px] mt-0.5" style={{ color: 'var(--color-muted)' }}>
+                              Plan {currency} {row.subCharge.toFixed(2)} + Orders {currency} {row.orderBilled.toFixed(2)}
+                            </div>
+                            <div className="text-[10px]" style={{ color: 'var(--color-green, #2E7D4F)' }}>
+                              Fixed-plan discount −{currency} {row.fixedDiscount.toFixed(2)}
+                            </div>
+                          </>
+                        ) : (
+                          <>
+                            {row.subCharge > 0 && row.orderBilled > 0 && (
+                              <div className="text-[10px] mt-0.5" style={{ color: 'var(--color-muted)' }}>
+                                Sub {currency} {row.subCharge.toFixed(2)} + Orders {currency} {row.orderBilled.toFixed(2)}
+                              </div>
+                            )}
+                            {row.subCharge > 0 && row.orderBilled === 0 && (
+                              <div className="text-[10px] mt-0.5" style={{ color: 'var(--color-muted)' }}>
+                                {row.subPaused ? 'Prorated subscription (paused)' : 'Subscription charges'}
+                              </div>
+                            )}
+                          </>
                         )}
                       </td>
                       <td className="px-4 py-3 text-right font-mono font-semibold" style={{ color: 'var(--color-green, #2E7D4F)' }}>
                         {currency} {row.totalPaid.toFixed(2)}
+                      </td>
+                      {/* Aging — how long it's been outstanding + when they last paid */}
+                      <td className="px-4 py-3 text-right">
+                        {row.outstandingSince ? (
+                          <div className="text-[11px]" style={{
+                            color: (row.daysOutstanding ?? 0) > 30 ? 'var(--color-red, #C0392B)' : 'var(--color-muted)',
+                          }}>
+                            Since {fmtDateShort(row.outstandingSince)}
+                            <span className="font-semibold"> · {row.daysOutstanding}d</span>
+                          </div>
+                        ) : (
+                          <div className="text-[11px]" style={{ color: 'var(--color-muted)' }}>—</div>
+                        )}
+                        {row.lastPaymentDate ? (
+                          <div className="text-[11px] mt-0.5" style={{ color: 'var(--color-green, #2E7D4F)' }}>
+                            Last {currency} {(row.lastPaymentAmount ?? 0).toFixed(2)} · {fmtDateShort(row.lastPaymentDate)}
+                            <span className="font-semibold"> · {row.daysSinceLastPayment}d ago</span>
+                          </div>
+                        ) : (
+                          <div className="text-[11px] mt-0.5" style={{ color: 'var(--color-muted)' }}>Never paid</div>
+                        )}
                       </td>
                       <td className="px-4 py-3 text-right font-bold font-mono" style={{ color: 'var(--color-red, #C0392B)' }}>
                         {currency} {row.outstanding.toFixed(2)}
@@ -378,6 +418,7 @@ export function OutstandingModule({ rows, totalCustomers, currency, userRole, ra
                   </td>
                   <td className="px-4 py-3 text-right font-bold font-mono" style={{ color: 'var(--color-ink)' }}>{currency} {grandBilled.toFixed(2)}</td>
                   <td className="px-4 py-3 text-right font-bold font-mono" style={{ color: 'var(--color-green, #2E7D4F)' }}>{currency} {grandPaid.toFixed(2)}</td>
+                  <td className="px-4 py-3"></td>
                   <td className="px-4 py-3 text-right font-bold font-mono" style={{ color: 'var(--color-red, #C0392B)' }}>{currency} {grandTotal.toFixed(2)}</td>
                 </tr>
               </tfoot>

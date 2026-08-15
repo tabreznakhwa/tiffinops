@@ -4,12 +4,19 @@ import { formatInTimeZone } from 'date-fns-tz'
 import { requireAuth } from '@/lib/auth'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { getSettings } from '@/lib/settings/getSettings'
-import { getCustomerBalancesInRange } from '@/lib/db/aggregates'
+import { getCustomerBalancesInRange, getCustomerLastPayments, getCustomerOutstandingSince, getCustomerOldestUnpaidInvoice } from '@/lib/db/aggregates'
 import { chargeForCustomer, groupSubscriptionsByCustomer } from '@/lib/billing/subscription-charge'
 import { OutstandingModule } from '@/components/outstanding/outstanding-module'
 import type { OutstandingRow } from '@/components/outstanding/outstanding-module'
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/
+
+// Whole days from a 'YYYY-MM-DD' date to today (positive = in the past).
+function daysSince(date: string, today: string): number {
+  const a = new Date(date + 'T00:00:00Z').getTime()
+  const b = new Date(today + 'T00:00:00Z').getTime()
+  return Math.round((b - a) / 86_400_000)
+}
 
 export default async function OutstandingPage({
   searchParams,
@@ -45,6 +52,9 @@ export default async function OutstandingPage({
     { data: customers },
     { data: subsData },
     balances,
+    lastPayments,
+    oldestDebts,
+    oldestInvoices,
   ] = await Promise.all([
     getSettings(),
     admin
@@ -59,6 +69,12 @@ export default async function OutstandingPage({
       .select('id, customer_id, start_date, end_date, agreed_monthly_price, status, fixed_plans(meal_periods)'),
     // Per-customer order and payment totals, aggregated in Postgres
     getCustomerBalancesInRange(admin, effectiveFrom, effectiveTo),
+    // Per-customer most recent payment — all-time, not scoped to the range above
+    getCustomerLastPayments(admin),
+    // Per-customer oldest unpaid order date (FIFO) — for aging
+    getCustomerOutstandingSince(admin),
+    // Per-customer oldest unpaid invoice due date — aging for subscription debt
+    getCustomerOldestUnpaidInvoice(admin),
   ])
 
   const customerList = customers ?? []
@@ -73,6 +89,9 @@ export default async function OutstandingPage({
   }[]).map(s => ({ ...s, meal_periods: s.fixed_plans?.meal_periods ?? null }))
 
   const balanceMap = new Map(balances.map(b => [b.customer_id, b]))
+  const lastPaymentMap = new Map(lastPayments.map(p => [p.customer_id, p]))
+  const oldestDebtMap = new Map(oldestDebts.map(d => [d.customer_id, d.outstanding_since]))
+  const oldestInvoiceMap = new Map(oldestInvoices.map(d => [d.customer_id, d.oldest_due_date]))
   const subsByCustomer = groupSubscriptionsByCustomer(allSubs)
 
   const rows: OutstandingRow[] = customerList
@@ -90,7 +109,23 @@ export default async function OutstandingPage({
         .filter(s => s.status === 'active' || s.status === 'paused')
         .sort((a, b) => b.start_date.localeCompare(a.start_date))[0]
 
-      const totalBilled = orderBilled + subCharge
+      const lastPayment = lastPaymentMap.get(c.id)
+
+      // Fixed-menu customers pay a flat plan rate: the plan covers whatever
+      // they order, so the "incremental" order total is discounted away and the
+      // bill caps at the subscription charge. Orders stay visible as usage.
+      const isFixed = c.customer_type === 'fixed_menu'
+      const hasPlan = subCharge > 0
+      const fixedDiscount = isFixed && hasPlan ? orderBilled : 0
+
+      const totalBilled = orderBilled + subCharge - fixedDiscount
+      const outstanding = totalBilled - totalPaid
+
+      // Aging anchor: earliest unpaid obligation. Order-driven debt uses the
+      // FIFO "oldest unpaid order" date; subscription-only debt uses the oldest
+      // unpaid invoice due date.
+      const outstandingSince =
+        oldestDebtMap.get(c.id) ?? oldestInvoiceMap.get(c.id) ?? null
 
       return {
         id:            c.id,
@@ -102,14 +137,22 @@ export default async function OutstandingPage({
         area:          c.area,
         orderBilled,
         subCharge,
+        fixedDiscount,
         totalBilled,
         totalPaid,
-        outstanding:   totalBilled - totalPaid,
+        outstanding,
         monthlyRate:   current ? parseFloat(String(current.agreed_monthly_price)) : 0,
         subPaused:     current?.status === 'paused',
         subId:         current?.id ?? null,
         subStartDate:  current?.start_date ?? null,
         subEndDate:    current?.end_date ?? null,
+        lastPaymentDate:   lastPayment?.last_payment_date ?? null,
+        lastPaymentAmount: lastPayment?.last_payment_amount ?? null,
+        outstandingSince,
+        daysOutstanding:      outstandingSince ? daysSince(outstandingSince, today) : null,
+        daysSinceLastPayment: lastPayment?.last_payment_date
+          ? daysSince(lastPayment.last_payment_date, today)
+          : null,
       }
     })
     .filter(r => r.outstanding > 0.005)

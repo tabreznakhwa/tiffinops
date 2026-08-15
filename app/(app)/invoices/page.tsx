@@ -50,6 +50,7 @@ export default async function InvoicesPage({
 
   const currentDubaiMonth = formatInTimeZone(new Date(), 'Asia/Dubai', 'yyyy-MM')
   const defaultGenerateMonth = nextMonth(currentDubaiMonth)
+  const defaultPrepaidDate = formatInTimeZone(new Date(), 'Asia/Dubai', 'yyyy-MM-dd')
 
   // Supabase caps a select at 1,000 rows. Without paging the list silently
   // truncated once the business passed 1,000 invoices, which also made the
@@ -102,6 +103,7 @@ export default async function InvoicesPage({
       counts={counts}
       userRole={user.role}
       defaultGenerateMonth={defaultGenerateMonth}
+      defaultPrepaidDate={defaultPrepaidDate}
       activeSubCount={activeSubCount ?? 0}
     />
   )

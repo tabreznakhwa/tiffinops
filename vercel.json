@@ -2,11 +2,15 @@
   "crons": [
     {
       "path": "/api/cron/generate-monthly-invoices",
-      "schedule": "30 10 25 * *"
+      "schedule": "30 10 26 * *"
     },
     {
       "path": "/api/cron/ala-carte-invoice-check",
-      "schedule": "0 14 25 * *"
+      "schedule": "0 14 26 * *"
+    },
+    {
+      "path": "/api/cron/generate-prepaid-invoices",
+      "schedule": "0 6 * * *"
     }
   ]
 }

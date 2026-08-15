@@ -14,6 +14,7 @@ import {
   voidInvoice,
   triggerMonthlyInvoices,
   triggerAlaCarteInvoices,
+  triggerPrepaidInvoices,
   getInvoiceItems,
   bulkDeleteDraftInvoices,
   bulkIssueDraftInvoices,
@@ -870,11 +871,11 @@ function BulkGenerateModal({
               style={{ background: 'var(--color-cream)', border: '1px solid var(--color-border)' }}
             >
               <p style={{ color: 'var(--color-ink)' }}>
-                Creates a <strong>draft fixed_monthly invoice</strong> for every active subscriber.
-                Existing invoices for the billed month are skipped.
+                Creates a <strong>draft fixed_monthly invoice</strong> for every active
+                <strong> postpaid</strong> subscriber. Existing invoices for the billed month are skipped.
               </p>
               <p className="mt-1.5 text-xs" style={{ color: 'var(--color-muted)' }}>
-                {activeSubCount} active subscription{activeSubCount !== 1 ? 's' : ''} · Prepaid customers are billed for the selected month · Postpaid customers are billed for the month before it, once it completes · Due date = 1st of the selected month either way
+                {activeSubCount} active subscription{activeSubCount !== 1 ? 's' : ''} · Postpaid customers are billed for the month before the selected one, once it completes · Due date = 1st of the selected month · Prepaid customers are billed separately, on their own start-date anniversary — use &ldquo;Generate Prepaid&rdquo; for those
               </p>
             </div>
 
@@ -939,6 +940,168 @@ function BulkGenerateModal({
               </div>
               <div className="flex justify-between items-center py-2.5 px-4 rounded-[10px]" style={{ background: 'var(--color-cream)' }}>
                 <span className="text-sm font-semibold" style={{ color: 'var(--color-muted)' }}>Skipped (duplicate / no price)</span>
+                <span className="font-display font-bold text-[22px] num" style={{ color: 'var(--color-muted)' }}>{result.skipped}</span>
+              </div>
+              {result.errors.length > 0 && (
+                <div className="rounded-[10px] px-4 py-3" style={{ background: 'var(--color-red-soft)', border: '1px solid var(--color-red)' }}>
+                  <p className="text-xs font-bold mb-1" style={{ color: 'var(--color-red)' }}>
+                    {result.errors.length} error{result.errors.length !== 1 ? 's' : ''}:
+                  </p>
+                  {result.errors.map((e, i) => (
+                    <p key={i} className="text-xs" style={{ color: 'var(--color-red)' }}>{e}</p>
+                  ))}
+                </div>
+              )}
+            </div>
+            <button
+              type="button"
+              onClick={onClose}
+              className="w-full py-2.5 rounded-[10px] text-sm font-bold"
+              style={{ background: 'var(--color-saffron)', color: '#fff' }}
+            >
+              Done — View Invoices
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+// ── Prepaid Anniversary Bulk Generate Modal ───────────────────────────────────
+// Prepaid customers are billed on their own start-date anniversary (see
+// generatePrepaidInvoices.ts), not a shared calendar-month cycle. This runs
+// that daily check on demand, for a chosen date — useful to catch up a missed
+// cron day or to verify a specific customer's billing date.
+
+function BulkPrepaidModal({ defaultDate, onClose }: { defaultDate: string; onClose: () => void }) {
+  const [date, setDate] = useState(defaultDate)
+  const [isPending, startTransition] = useTransition()
+  const [result, setResult] = useState<GenerateResult | null>(null)
+  const [error, setError] = useState('')
+
+  function fmtDate(d: string) {
+    return new Date(d + 'T00:00:00Z').toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
+  }
+
+  function handleGenerate() {
+    setError('')
+    setResult(null)
+    startTransition(async () => {
+      const res = await triggerPrepaidInvoices(date)
+      if (res.error) { setError(res.error); return }
+      setResult(res as GenerateResult)
+    })
+  }
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center px-4"
+      style={{ background: 'rgba(34,26,19,0.5)' }}
+      onClick={(e) => { if (e.target === e.currentTarget && !isPending) onClose() }}
+    >
+      <div
+        className="w-full max-w-[420px] rounded-[18px] p-6"
+        style={{ background: 'var(--color-surface)', border: '1px solid var(--color-border)' }}
+      >
+        <div className="flex items-start justify-between mb-4">
+          <div>
+            <p className="text-[10px] font-bold uppercase tracking-widest mb-0.5" style={{ color: 'var(--color-green)' }}>
+              Bulk Action
+            </p>
+            <h3 className="font-display font-bold text-[18px]" style={{ color: 'var(--color-ink)' }}>
+              Generate Prepaid Invoices
+            </h3>
+          </div>
+          <button
+            onClick={onClose}
+            disabled={isPending}
+            className="w-8 h-8 flex items-center justify-center rounded-full transition-colors hover:bg-cream"
+            style={{ color: 'var(--color-muted)' }}
+          >
+            <X size={16} />
+          </button>
+        </div>
+
+        {!result ? (
+          <>
+            <div
+              className="rounded-[10px] px-4 py-3 mb-5 text-sm"
+              style={{ background: 'var(--color-cream)', border: '1px solid var(--color-border)' }}
+            >
+              <p style={{ color: 'var(--color-ink)' }}>
+                Creates a <strong>draft fixed_monthly invoice</strong> for every active prepaid
+                subscriber whose billing anniversary (the day-of-month they started on) falls on
+                the selected date.
+              </p>
+              <p className="mt-1.5 text-xs" style={{ color: 'var(--color-muted)' }}>
+                Due date = the selected date itself (prepaid = pay in advance, no lead time) ·
+                Customers not due on this date are skipped, not double-billed · Safe to re-run.
+              </p>
+            </div>
+
+            <div className="mb-5">
+              <label className="block text-xs font-bold mb-1.5" style={{ color: 'var(--color-ink)' }}>
+                Date
+              </label>
+              <input
+                type="date"
+                value={date}
+                onChange={(e) => setDate(e.target.value)}
+                className="w-full rounded-[10px] px-3 py-2.5 text-sm focus:outline-none focus:ring-1 focus:ring-saffron"
+                style={{
+                  background: 'var(--color-cream)',
+                  border: '1px solid var(--color-border)',
+                  color: 'var(--color-ink)',
+                }}
+              />
+              {date && (
+                <p className="text-[11px] mt-1" style={{ color: 'var(--color-muted)' }}>
+                  Checks every active prepaid subscriber for an anniversary on {fmtDate(date)}
+                </p>
+              )}
+            </div>
+
+            {error && (
+              <p className="text-xs mb-4 font-semibold" style={{ color: 'var(--color-red)' }}>
+                {error}
+              </p>
+            )}
+
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={onClose}
+                className="flex-1 py-2.5 rounded-[10px] text-sm font-bold"
+                style={{ background: 'var(--color-border)', color: 'var(--color-muted)' }}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleGenerate}
+                disabled={isPending || !date}
+                className="flex-1 py-2.5 rounded-[10px] text-sm font-bold transition-opacity"
+                style={{
+                  background: 'var(--color-green)',
+                  color: '#fff',
+                  opacity: isPending || !date ? 0.6 : 1,
+                }}
+              >
+                {isPending ? 'Generating…' : `Generate for ${fmtDate(date)}`}
+              </button>
+            </div>
+          </>
+        ) : (
+          /* Result screen */
+          <div>
+            <div className="space-y-3 mb-5">
+              <div className="flex justify-between items-center py-2.5 px-4 rounded-[10px]" style={{ background: 'var(--color-green-soft)' }}>
+                <span className="text-sm font-semibold" style={{ color: 'var(--color-green)' }}>Invoices Generated</span>
+                <span className="font-display font-bold text-[22px] num" style={{ color: 'var(--color-green)' }}>{result.generated}</span>
+              </div>
+              <div className="flex justify-between items-center py-2.5 px-4 rounded-[10px]" style={{ background: 'var(--color-cream)' }}>
+                <span className="text-sm font-semibold" style={{ color: 'var(--color-muted)' }}>Skipped (not due today / duplicate / no price)</span>
                 <span className="font-display font-bold text-[22px] num" style={{ color: 'var(--color-muted)' }}>{result.skipped}</span>
               </div>
               {result.errors.length > 0 && (
@@ -1517,12 +1680,14 @@ export function InvoicesModule({
   counts,
   userRole,
   defaultGenerateMonth,
+  defaultPrepaidDate,
   activeSubCount,
 }: {
   invoices: InvoiceWithCustomer[]
   counts: StatusCounts
   userRole: string
   defaultGenerateMonth: string
+  defaultPrepaidDate: string
   activeSubCount: number
 }) {
   const { currency } = useAppSettings()
@@ -1534,6 +1699,7 @@ export function InvoicesModule({
   const [showModal, setShowModal] = useState(false)
   const [showBulkModal, setShowBulkModal] = useState(false)
   const [showAlaCarteModal, setShowAlaCarteModal] = useState(false)
+  const [showPrepaidModal, setShowPrepaidModal] = useState(false)
   const [selectedDraftIds, setSelectedDraftIds] = useState<Set<string>>(new Set())
   const [showBulkDeleteConfirm, setShowBulkDeleteConfirm] = useState(false)
   const [bulkDeleteError, setBulkDeleteError] = useState('')
@@ -1727,6 +1893,20 @@ export function InvoicesModule({
                 <path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/>
               </svg>
               Generate A La Carte
+            </button>
+          )}
+          {isOwner && (
+            <button
+              onClick={() => setShowPrepaidModal(true)}
+              className="flex items-center gap-1.5 px-4 py-2.5 rounded-[10px] text-sm font-bold transition-opacity"
+              style={{ background: 'var(--color-green)', color: '#fff' }}
+            >
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-4 h-4" aria-hidden="true">
+                <rect x="3" y="4" width="18" height="18" rx="2"/>
+                <path d="M16 2v4M8 2v4M3 10h18"/>
+                <path d="m9 16 2 2 4-4"/>
+              </svg>
+              Generate Prepaid
             </button>
           )}
           {isOwner && (
@@ -2050,6 +2230,14 @@ export function InvoicesModule({
       {showAlaCarteModal && (
         <BulkAlaCarteModal
           onClose={() => setShowAlaCarteModal(false)}
+        />
+      )}
+
+      {/* Bulk Prepaid Anniversary Invoice Modal */}
+      {showPrepaidModal && (
+        <BulkPrepaidModal
+          defaultDate={defaultPrepaidDate}
+          onClose={() => setShowPrepaidModal(false)}
         />
       )}
 

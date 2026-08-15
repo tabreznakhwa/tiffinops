@@ -5,6 +5,7 @@ import { requireAuth } from '@/lib/auth'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { generateMonthlyInvoices, nextMonth } from '@/lib/invoices/generateMonthlyInvoices'
 import { generateAlaCarteInvoices } from '@/lib/invoices/generateAlaCarteInvoices'
+import { generatePrepaidAnniversaryInvoices } from '@/lib/invoices/generatePrepaidInvoices'
 import { formatInTimeZone } from 'date-fns-tz'
 import type { GenerateResult } from '@/lib/invoices/generateMonthlyInvoices'
 import type { AlaCarteGenerateResult } from '@/lib/invoices/generateAlaCarteInvoices'
@@ -19,6 +20,23 @@ export async function triggerMonthlyInvoices(
   const month = targetMonth ?? nextMonth(currentDubaiMonth)
 
   const result = await generateMonthlyInvoices(month, user.id)
+  revalidatePath('/invoices')
+  return result
+}
+
+// Prepaid customers are billed on their own start-date anniversary rather
+// than a shared monthly cycle — see generatePrepaidInvoices.ts. This lets the
+// owner force a check for a given day (catch-up after a missed cron run, or
+// testing) instead of waiting for the daily cron.
+export async function triggerPrepaidInvoices(
+  targetDate?: string
+): Promise<{ error?: string } & Partial<GenerateResult>> {
+  const user = await requireAuth()
+  if (user.role !== 'owner') return { error: 'Only the owner can generate prepaid invoices' }
+
+  const today = targetDate ?? formatInTimeZone(new Date(), 'Asia/Dubai', 'yyyy-MM-dd')
+
+  const result = await generatePrepaidAnniversaryInvoices(today, user.id)
   revalidatePath('/invoices')
   return result
 }
