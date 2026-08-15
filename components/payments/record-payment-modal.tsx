@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react'
 import { X, Search } from 'lucide-react'
 import { recordPayment } from '@/lib/payments/actions'
+import { getCustomerOpenInvoices, type OpenInvoice } from '@/lib/invoices/actions'
 import type { Enums } from '@/lib/supabase/types'
 
 type PaymentMode = Enums<'payment_mode'>
@@ -13,6 +14,19 @@ type Customer = {
   customer_code: string
   mobile_number: string
   area: string | null
+}
+
+const INVOICE_TYPE_LABEL: Record<Enums<'invoice_type'>, string> = {
+  fixed_monthly:     'fixed plan',
+  a_la_carte_cycle:  'a la carte',
+  adhoc:             'ad-hoc',
+}
+
+const INVOICE_STATUS_LABEL: Record<string, string> = {
+  draft:   'Draft',
+  issued:  'Issued',
+  partial: 'Partial',
+  overdue: 'Overdue',
 }
 
 const MODES: { value: PaymentMode; label: string; requiresRef: boolean }[] = [
@@ -59,11 +73,45 @@ export function RecordPaymentModal({
   const [isAdvance, setIsAdvance]   = useState(false)
   const [loading, setLoading]       = useState(false)
   const [error, setError]           = useState('')
+  const [warning, setWarning]       = useState('')
+  const [done, setDone]             = useState(false)
+
+  const [openInvoices, setOpenInvoices]           = useState<OpenInvoice[]>([])
+  const [invoicesLoading, setInvoicesLoading]     = useState(false)
+  const [selectedInvoiceId, setSelectedInvoiceId] = useState<string>('')
 
   const requiresRef = MODES.find(m => m.value === mode)?.requiresRef ?? false
 
   // Clear reference when mode changes to one that doesn't need it
   useEffect(() => { if (!requiresRef) setReference('') }, [requiresRef])
+
+  // Load the customer's open invoices for the "Apply to Invoice" picker.
+  // No customer → nothing to load; openInvoices/selectedInvoiceId are reset
+  // where the customer is cleared (the "Change" button below) instead of here.
+  useEffect(() => {
+    if (!customer) return
+    let cancelled = false
+    async function load() {
+      setInvoicesLoading(true)
+      try {
+        const invs = await getCustomerOpenInvoices(customer!.id)
+        if (!cancelled) setOpenInvoices(invs)
+      } finally {
+        if (!cancelled) setInvoicesLoading(false)
+      }
+    }
+    load()
+    return () => { cancelled = true }
+  }, [customer])
+
+  const selectedInvoice = openInvoices.find(inv => inv.id === selectedInvoiceId) ?? null
+
+  function selectInvoice(inv: OpenInvoice | null) {
+    if (!inv) { setSelectedInvoiceId(''); return }
+    setSelectedInvoiceId(inv.id)
+    const outstanding = Math.max(0, parseFloat(inv.total_amount) - inv.paid_so_far)
+    setAmount(outstanding.toFixed(2))
+  }
 
   const filtered = customers.filter(c => {
     const q = query.toLowerCase()
@@ -77,6 +125,7 @@ export function RecordPaymentModal({
     e.preventDefault()
     if (!customer) return
     setError('')
+    setWarning('')
     setLoading(true)
 
     const result = await recordPayment({
@@ -87,10 +136,12 @@ export function RecordPaymentModal({
       payment_date: date,
       notes: notes.trim() || undefined,
       is_advance: isAdvance,
+      apply_to_invoice_id: selectedInvoiceId || undefined,
     })
 
     setLoading(false)
     if (result.error) { setError(result.error); return }
+    if (result.warning) { setWarning(result.warning); setDone(true); return }
     onClose()
   }
 
@@ -143,7 +194,12 @@ export function RecordPaymentModal({
                 {!preselectedCustomer && (
                   <button
                     type="button"
-                    onClick={() => { setCustomer(null); setQuery('') }}
+                    onClick={() => {
+                      setCustomer(null)
+                      setQuery('')
+                      setOpenInvoices([])
+                      setSelectedInvoiceId('')
+                    }}
                     className="text-xs font-bold"
                     style={{ color: 'var(--color-ember)' }}
                   >
@@ -185,6 +241,66 @@ export function RecordPaymentModal({
               </div>
             )}
           </div>
+
+          {/* Apply to Invoice (optional) */}
+          {customer && (
+            <div>
+              <label className="block text-xs font-semibold mb-1.5" style={{ color: 'var(--color-muted)' }}>
+                Apply to Invoice
+              </label>
+              {invoicesLoading ? (
+                <p className="text-xs" style={{ color: 'var(--color-muted)' }}>Loading invoices…</p>
+              ) : openInvoices.length === 0 ? (
+                <p className="text-xs" style={{ color: 'var(--color-muted)' }}>No open invoices for this customer</p>
+              ) : (
+                <div className="rounded-[10px] overflow-hidden" style={{ border: '1px solid var(--color-border)' }}>
+                  <button
+                    type="button"
+                    onClick={() => selectInvoice(null)}
+                    className="w-full flex items-center justify-between px-3 py-2 text-left text-xs font-semibold"
+                    style={{
+                      background: !selectedInvoiceId ? 'var(--color-saffron-soft)' : 'var(--color-cream)',
+                      color: !selectedInvoiceId ? 'var(--color-saffron)' : 'var(--color-muted)',
+                    }}
+                  >
+                    Don&apos;t link to an invoice
+                  </button>
+                  {openInvoices.map(inv => {
+                    const on = selectedInvoiceId === inv.id
+                    const due = Math.max(0, parseFloat(inv.total_amount) - inv.paid_so_far)
+                    return (
+                      <button
+                        key={inv.id}
+                        type="button"
+                        onClick={() => selectInvoice(inv)}
+                        className="w-full flex items-center justify-between px-3 py-2 text-left"
+                        style={{
+                          borderTop: '1px solid var(--color-border)',
+                          background: on ? 'var(--color-saffron-soft)' : 'var(--color-surface)',
+                        }}
+                      >
+                        <span className="text-xs" style={{ color: on ? 'var(--color-saffron)' : 'var(--color-ink)' }}>
+                          <span className="font-semibold">{inv.invoice_number}</span>
+                          {' · '}{INVOICE_TYPE_LABEL[inv.invoice_type]}
+                          {' · '}{INVOICE_STATUS_LABEL[inv.status] ?? inv.status}
+                        </span>
+                        <span className="text-xs font-semibold num" style={{ color: on ? 'var(--color-saffron)' : 'var(--color-ink)' }}>
+                          {due.toFixed(2)} due
+                        </span>
+                      </button>
+                    )
+                  })}
+                </div>
+              )}
+              {selectedInvoice && (
+                <p className="text-xs mt-1.5" style={{ color: 'var(--color-muted)' }}>
+                  {selectedInvoice.status === 'draft'
+                    ? 'This will issue the invoice and mark it Paid/Partial automatically.'
+                    : 'This will mark the invoice as Paid/Partial automatically.'}
+                </p>
+              )}
+            </div>
+          )}
 
           {/* Amount + Date */}
           <div className="grid grid-cols-2 gap-3">
@@ -323,24 +439,45 @@ export function RecordPaymentModal({
           {error && (
             <p className="text-sm font-semibold" style={{ color: 'var(--color-red)' }}>{error}</p>
           )}
+          {warning && (
+            <p
+              className="text-sm font-semibold rounded-[10px] px-3 py-2.5"
+              style={{ color: 'var(--color-red)', background: 'var(--color-red-soft)', border: '1px solid #FECACA' }}
+            >
+              {warning}
+            </p>
+          )}
 
           <div className="flex gap-2 pt-1">
-            <button
-              type="button"
-              onClick={onClose}
-              className="flex-1 py-2.5 rounded-[10px] text-sm font-semibold"
-              style={{ background: 'var(--color-cream)', border: '1px solid var(--color-border)', color: 'var(--color-muted)' }}
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              disabled={!canSubmit}
-              className="flex-1 py-2.5 rounded-[10px] text-sm font-semibold disabled:opacity-50"
-              style={{ background: 'var(--color-saffron)', color: '#fff' }}
-            >
-              {loading ? 'Recording…' : 'Record Payment'}
-            </button>
+            {done ? (
+              <button
+                type="button"
+                onClick={onClose}
+                className="flex-1 py-2.5 rounded-[10px] text-sm font-semibold"
+                style={{ background: 'var(--color-saffron)', color: '#fff' }}
+              >
+                Done
+              </button>
+            ) : (
+              <>
+                <button
+                  type="button"
+                  onClick={onClose}
+                  className="flex-1 py-2.5 rounded-[10px] text-sm font-semibold"
+                  style={{ background: 'var(--color-cream)', border: '1px solid var(--color-border)', color: 'var(--color-muted)' }}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={!canSubmit}
+                  className="flex-1 py-2.5 rounded-[10px] text-sm font-semibold disabled:opacity-50"
+                  style={{ background: 'var(--color-saffron)', color: '#fff' }}
+                >
+                  {loading ? 'Recording…' : 'Record Payment'}
+                </button>
+              </>
+            )}
           </div>
         </form>
       </div>

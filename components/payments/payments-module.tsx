@@ -26,6 +26,8 @@ export type PaymentRow = {
   is_advance: boolean
   voided_at: string | null
   void_reason: string | null
+  invoice_id: string | null
+  invoices: { invoice_number: string } | null
   customers: {
     id: string
     full_name: string
@@ -440,6 +442,11 @@ export function PaymentsModule({
                         {pay.is_advance && !isVoided && (
                           <span className="inline-block mt-1 text-[10px] font-bold px-1.5 py-0.5 rounded-full" style={{ background: 'var(--color-purple-soft, #F5F3FF)', color: 'var(--color-purple, #7C3AED)' }}>
                             ADVANCE
+                          </span>
+                        )}
+                        {pay.invoices?.invoice_number && (
+                          <span className="inline-block mt-1 ml-1 text-[10px] font-bold px-1.5 py-0.5 rounded-full" style={{ background: 'var(--color-saffron-soft)', color: 'var(--color-saffron)' }}>
+                            → {pay.invoices.invoice_number}
                           </span>
                         )}
                         {isVoided && (

@@ -4,9 +4,11 @@ import { revalidatePath } from 'next/cache'
 import { z } from 'zod'
 import { requireAuth } from '@/lib/auth'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { issueInvoice } from '@/lib/invoices/actions'
+import { reconcileInvoicePaymentStatus } from '@/lib/invoices/reconcile'
 import type { Enums } from '@/lib/supabase/types'
 
-export type PaymentActionResult = { error?: string }
+export type PaymentActionResult = { error?: string; warning?: string }
 
 const MODES_REQUIRING_REF = ['bank_transfer', 'cheque', 'online'] as const
 
@@ -20,6 +22,7 @@ const RecordPaymentSchema = z.object({
   payment_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Invalid date'),
   notes: z.string().optional().transform(v => v?.trim() || null),
   is_advance: z.boolean().optional().default(false),
+  apply_to_invoice_id: z.string().uuid().optional(),
 })
 
 export async function recordPayment(input: {
@@ -30,6 +33,7 @@ export async function recordPayment(input: {
   payment_date: string
   notes?: string
   is_advance?: boolean
+  apply_to_invoice_id?: string
 }): Promise<PaymentActionResult> {
   const user = await requireAuth()
 
@@ -50,6 +54,29 @@ export async function recordPayment(input: {
 
   const admin = createAdminClient()
 
+  const invoiceId = parsed.data.apply_to_invoice_id
+  let invoiceWasDraft = false
+
+  if (invoiceId) {
+    const { data: invoice, error: invErr } = await admin
+      .from('invoices')
+      .select('id, customer_id, status')
+      .eq('id', invoiceId)
+      .single()
+
+    if (invErr || !invoice) return { error: 'Invoice not found' }
+    if (invoice.customer_id !== parsed.data.customer_id) {
+      return { error: 'That invoice belongs to a different customer' }
+    }
+    if (invoice.status === 'cancelled' || invoice.status === 'written_off') {
+      return { error: `Cannot apply a payment to a ${invoice.status.replace('_', ' ')} invoice` }
+    }
+    if (invoice.status === 'draft' && !['owner', 'manager'].includes(user.role)) {
+      return { error: 'Only an owner or manager can link a payment to a draft invoice — ask them to issue it first, or record this payment without linking it.' }
+    }
+    invoiceWasDraft = invoice.status === 'draft'
+  }
+
   // Generate payment number via DB sequence
   const { data: payNumber, error: numErr } = await admin.rpc('next_payment_number')
   if (numErr || !payNumber) {
@@ -65,12 +92,29 @@ export async function recordPayment(input: {
     payment_date: parsed.data.payment_date,
     notes: parsed.data.notes,
     is_advance: parsed.data.is_advance ?? false,
+    invoice_id: invoiceId ?? null,
     received_by: user.id,
   })
 
   if (error) return { error: error.message }
 
   revalidatePath('/payments')
+
+  if (invoiceId) {
+    // The payment itself already succeeded above — never roll it back over
+    // a downstream status-update failure, just tell the user to finish it by hand.
+    try {
+      if (invoiceWasDraft) {
+        const issueResult = await issueInvoice(invoiceId)
+        if (issueResult.error) throw new Error(issueResult.error)
+      }
+      await reconcileInvoicePaymentStatus(admin, invoiceId)
+      revalidatePath('/invoices')
+    } catch {
+      return { warning: 'Payment recorded, but the invoice status could not be updated automatically — please update it manually.' }
+    }
+  }
+
   return {}
 }
 
@@ -177,6 +221,13 @@ export async function voidPayment(
   if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? 'Invalid input' }
 
   const admin = createAdminClient()
+
+  const { data: existing } = await admin
+    .from('payments')
+    .select('invoice_id')
+    .eq('id', id)
+    .single()
+
   const { error } = await admin
     .from('payments')
     .update({
@@ -188,6 +239,13 @@ export async function voidPayment(
     .is('voided_at', null)
 
   if (error) return { error: error.message }
+
+  // Un-paying a linked payment can drop the invoice back out of paid/partial —
+  // keep its status in sync instead of leaving a stale label.
+  if (existing?.invoice_id) {
+    await reconcileInvoicePaymentStatus(admin, existing.invoice_id)
+    revalidatePath('/invoices')
+  }
 
   revalidatePath('/payments')
   return {}

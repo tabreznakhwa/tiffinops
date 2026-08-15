@@ -117,6 +117,56 @@ import type { Enums } from '@/lib/supabase/types'
 
 export type InvoiceActionResult = { error?: string; invoice_id?: string }
 
+// ── getCustomerOpenInvoices ───────────────────────────────────────────────────
+
+export type OpenInvoice = {
+  id: string
+  invoice_number: string
+  invoice_type: Enums<'invoice_type'>
+  status: Enums<'invoice_status'>
+  total_amount: string
+  billing_period_start: string | null
+  billing_period_end: string | null
+  paid_so_far: number
+}
+
+// Feeds the "Apply to Invoice" picker in the record-payment modal — a
+// customer's still-open invoices (not yet paid off, not draft-excluded —
+// drafts show up too so a payment can issue one on the spot), each with how
+// much has already been paid against it so the picker can show the balance.
+const OPEN_STATUSES: Enums<'invoice_status'>[] = ['draft', 'issued', 'partial', 'overdue']
+
+export async function getCustomerOpenInvoices(customerId: string): Promise<OpenInvoice[]> {
+  await requireAuth()
+  const admin = createAdminClient()
+
+  const { data: invoices } = await admin
+    .from('invoices')
+    .select('id, invoice_number, invoice_type, status, total_amount, billing_period_start, billing_period_end')
+    .eq('customer_id', customerId)
+    .in('status', OPEN_STATUSES)
+    .order('invoice_date', { ascending: false })
+
+  if (!invoices || invoices.length === 0) return []
+
+  const { data: payments } = await admin
+    .from('payments')
+    .select('invoice_id, amount')
+    .in('invoice_id', invoices.map(inv => inv.id))
+    .is('voided_at', null)
+
+  const paidByInvoice = new Map<string, number>()
+  for (const p of payments ?? []) {
+    if (!p.invoice_id) continue
+    paidByInvoice.set(p.invoice_id, (paidByInvoice.get(p.invoice_id) ?? 0) + parseFloat(String(p.amount)))
+  }
+
+  return invoices.map(inv => ({
+    ...inv,
+    paid_so_far: paidByInvoice.get(inv.id) ?? 0,
+  }))
+}
+
 // ── getInvoiceItems ───────────────────────────────────────────────────────────
 
 export type InvoiceItemRow = {
