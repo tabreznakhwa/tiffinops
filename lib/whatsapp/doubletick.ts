@@ -18,6 +18,12 @@ export type SendResult = { ok: boolean; error?: string }
  *             inbound webhook payload so replies always leave from the same
  *             number the customer wrote to.
  */
+/** Inbound webhooks deliver bare digits ("9715..."), the send API wants E.164 ("+9715..."). */
+function e164(phone: string): string {
+  const digits = phone.replace(/\D/g, '')
+  return digits ? `+${digits}` : phone
+}
+
 export async function sendTextMessage(to: string, from: string, text: string): Promise<SendResult> {
   const apiKey = process.env.DOUBLETICK_API_KEY
   if (!apiKey) return { ok: false, error: 'DOUBLETICK_API_KEY is not set' }
@@ -30,8 +36,8 @@ export async function sendTextMessage(to: string, from: string, text: string): P
         Authorization: apiKey,
       },
       body: JSON.stringify({
-        to,
-        from,
+        to: e164(to),
+        from: e164(from),
         messageId: crypto.randomUUID(),
         content: { text },
       }),

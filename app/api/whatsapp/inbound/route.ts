@@ -222,6 +222,15 @@ export async function POST(req: NextRequest) {
         raw_payload: {} as Json,
         status: 'replied',
       })
+    } else {
+      // Keep the failure on the inbound row so it's visible in the review queue.
+      const { data: row } = await admin
+        .from('whatsapp_messages').select('error_detail').eq('id', msgId).single()
+      const prior = row?.error_detail ? `${row.error_detail} | ` : ''
+      await admin
+        .from('whatsapp_messages')
+        .update({ error_detail: `${prior}[reply failed] ${sent.error}` })
+        .eq('id', msgId)
     }
     return sent
   }
