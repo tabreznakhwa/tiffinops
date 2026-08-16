@@ -49,8 +49,12 @@ const OUTPUT_SCHEMA = {
   required: ['intent', 'meal_period', 'order_date', 'items', 'skip_date', 'summary'],
   properties: {
     intent: { type: 'string', enum: ['order', 'skip', 'balance_query', 'other'] },
-    meal_period: { type: ['string', 'null'], enum: ['breakfast', 'lunch', 'dinner', null] },
-    order_date: { type: ['string', 'null'], pattern: '^\\d{4}-\\d{2}-\\d{2}$' },
+    meal_period: {
+      anyOf: [{ type: 'string', enum: ['breakfast', 'lunch', 'dinner'] }, { type: 'null' }],
+    },
+    order_date: {
+      anyOf: [{ type: 'string', pattern: '^\\d{4}-\\d{2}-\\d{2}$' }, { type: 'null' }],
+    },
     items: {
       type: 'array',
       items: {
@@ -60,11 +64,13 @@ const OUTPUT_SCHEMA = {
         properties: {
           name: { type: 'string' },
           quantity: { type: 'integer', minimum: 1, maximum: 100 },
-          size: { type: ['string', 'null'] },
+          size: { anyOf: [{ type: 'string' }, { type: 'null' }] },
         },
       },
     },
-    skip_date: { type: ['string', 'null'], pattern: '^\\d{4}-\\d{2}-\\d{2}$' },
+    skip_date: {
+      anyOf: [{ type: 'string', pattern: '^\\d{4}-\\d{2}-\\d{2}$' }, { type: 'null' }],
+    },
     summary: { type: 'string' },
   },
 } as const
