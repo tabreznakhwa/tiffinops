@@ -57,6 +57,7 @@ interface Props {
 }
 
 type DateEdit = { subId: string; field: 'start' | 'end'; value: string; customerId: string }
+type ViewMode = 'owing' | 'credit'
 
 function fmtDateShort(d: string) {
   return new Date(d + 'T00:00:00Z').toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
@@ -66,6 +67,7 @@ export function OutstandingModule({ rows, totalCustomers, currency, userRole, ra
   const canEditStartDate = userRole === 'owner'
   const canEditPauseDate = ['owner', 'manager', 'data_entry'].includes(userRole)
   const router = useRouter()
+  const [view,        setView]        = useState<ViewMode>('owing')
   const [search,      setSearch]      = useState('')
   const [typeFilter,  setTypeFilter]  = useState<string>('')
   const [areaFilter,  setAreaFilter]  = useState<string[]>([])
@@ -96,8 +98,16 @@ export function OutstandingModule({ rows, totalCustomers, currency, userRole, ra
 
   const areas = useMemo(() => collectAreas(rows, r => r.area), [rows])
 
+  // Same underlying data either way — just the other side of the same
+  // balance. Owing = still owes money (outstanding > 0). Credit = already
+  // paid more than they currently owe (outstanding < 0), i.e. money sitting
+  // on their account.
+  const owingRows  = useMemo(() => rows.filter(r => r.outstanding > 0.005).sort((a, b) => b.outstanding - a.outstanding), [rows])
+  const creditRows = useMemo(() => rows.filter(r => r.outstanding < -0.005).sort((a, b) => a.outstanding - b.outstanding), [rows])
+  const baseRows = view === 'owing' ? owingRows : creditRows
+
   const filtered = useMemo(() => {
-    let result = rows
+    let result = baseRows
     if (typeFilter) result = result.filter(r => r.customer_type === typeFilter)
     if (areaFilter.length) result = result.filter(r => matchesArea(areaFilter, r.area))
     if (search.trim()) {
@@ -109,9 +119,9 @@ export function OutstandingModule({ rows, totalCustomers, currency, userRole, ra
       )
     }
     return result
-  }, [rows, search, typeFilter, areaFilter])
+  }, [baseRows, search, typeFilter, areaFilter])
 
-  const grandTotal  = filtered.reduce((s, r) => s + r.outstanding, 0)
+  const grandTotal  = Math.abs(filtered.reduce((s, r) => s + r.outstanding, 0))
   const grandBilled = filtered.reduce((s, r) => s + r.totalBilled, 0)
   const grandPaid   = filtered.reduce((s, r) => s + r.totalPaid,   0)
   const hasDateRange = !!(rangeFrom || rangeTo)
@@ -119,20 +129,44 @@ export function OutstandingModule({ rows, totalCustomers, currency, userRole, ra
 
   return (
     <div style={{ opacity: isFiltering ? 0.6 : 1, transition: 'opacity 120ms' }}>
-      <div className="mb-6">
-        <p className="text-xs font-bold uppercase tracking-widest" style={{ color: 'var(--color-saffron)', letterSpacing: '.12em' }}>Finance</p>
-        <h1 className="font-display font-bold text-[25px] mt-0.5" style={{ color: 'var(--color-ink)' }}>Outstanding Report</h1>
-        <p className="text-sm mt-1" style={{ color: 'var(--color-muted)' }}>
-          {hasDateRange
-            ? 'Orders & subscription charges in selected period minus payments received'
-            : 'All customers with unpaid balances — orders + subscription charges minus payments'}
-        </p>
+      <div className="mb-6 flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <p className="text-xs font-bold uppercase tracking-widest" style={{ color: 'var(--color-saffron)', letterSpacing: '.12em' }}>Finance</p>
+          <h1 className="font-display font-bold text-[25px] mt-0.5" style={{ color: 'var(--color-ink)' }}>Outstanding Report</h1>
+          <p className="text-sm mt-1" style={{ color: 'var(--color-muted)' }}>
+            {view === 'owing'
+              ? hasDateRange
+                ? 'Orders & subscription charges in selected period minus payments received'
+                : 'All customers with unpaid balances — orders + subscription charges minus payments'
+              : 'Customers who’ve paid more than they currently owe — credit sitting on their account'}
+          </p>
+        </div>
+
+        {/* Owing / Credit toggle */}
+        <div className="flex rounded-[10px] p-0.5" style={{ background: 'var(--color-cream)', border: '1px solid var(--color-border)' }}>
+          {([
+            { value: 'owing' as const,  label: 'Owing' },
+            { value: 'credit' as const, label: 'Credit / Prepaid' },
+          ]).map(opt => (
+            <button
+              key={opt.value}
+              onClick={() => setView(opt.value)}
+              className="px-3.5 py-1.5 rounded-[8px] text-xs font-bold transition-colors"
+              style={view === opt.value
+                ? { background: 'var(--color-ink)', color: '#fff' }
+                : { color: 'var(--color-muted)' }
+              }
+            >
+              {opt.label}
+            </button>
+          ))}
+        </div>
       </div>
 
       {/* Summary cards */}
       <div className="grid grid-cols-3 gap-3 mb-5">
         <div className="rounded-[14px] p-4" style={{ background: 'var(--color-surface)', border: '1px solid var(--color-border)', boxShadow: 'var(--shadow-card)' }}>
-          <p className="text-xs font-semibold mb-1" style={{ color: 'var(--color-muted)' }}>Customers with Balance</p>
+          <p className="text-xs font-semibold mb-1" style={{ color: 'var(--color-muted)' }}>{view === 'owing' ? 'Customers with Balance' : 'Customers with Credit'}</p>
           <p className="font-display font-bold text-[24px]" style={{ color: 'var(--color-ink)' }}>{filtered.length}</p>
           <p className="text-[11px] mt-0.5" style={{ color: 'var(--color-muted)' }}>of {totalCustomers} active</p>
         </div>
@@ -142,7 +176,7 @@ export function OutstandingModule({ rows, totalCustomers, currency, userRole, ra
           <p className="text-[11px] mt-0.5" style={{ color: 'var(--color-green, #2E7D4F)' }}>{currency} {grandPaid.toFixed(2)} collected</p>
         </div>
         <div className="rounded-[14px] p-4" style={{ background: 'var(--color-ink)', border: '1px solid var(--color-border)', boxShadow: 'var(--shadow-card)' }}>
-          <p className="text-xs font-semibold mb-1" style={{ color: '#C9BEB1' }}>Total Outstanding</p>
+          <p className="text-xs font-semibold mb-1" style={{ color: '#C9BEB1' }}>{view === 'owing' ? 'Total Outstanding' : 'Total Credit'}</p>
           <p className="font-display font-bold text-[20px]" style={{ color: '#fff' }}>{currency} {grandTotal.toFixed(2)}</p>
           <p className="text-[11px] mt-0.5" style={{ color: '#A09080' }}>All customers combined</p>
         </div>
@@ -202,10 +236,14 @@ export function OutstandingModule({ rows, totalCustomers, currency, userRole, ra
         {filtered.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-16">
             <p className="font-semibold text-[15px]" style={{ color: isFiltered ? 'var(--color-muted)' : 'var(--color-green, #2E7D4F)' }}>
-              {isFiltered ? 'No customers match your filter' : 'All clear!'}
+              {isFiltered ? 'No customers match your filter' : view === 'owing' ? 'All clear!' : 'No credit balances'}
             </p>
             <p className="text-sm mt-1" style={{ color: 'var(--color-muted)' }}>
-              {isFiltered ? 'Try a different date range or search term.' : 'No customers have outstanding balances.'}
+              {isFiltered
+                ? 'Try a different date range or search term.'
+                : view === 'owing'
+                ? 'No customers have outstanding balances.'
+                : 'No customers currently have a credit balance.'}
             </p>
           </div>
         ) : (
@@ -213,10 +251,10 @@ export function OutstandingModule({ rows, totalCustomers, currency, userRole, ra
             <table className="w-full text-sm border-collapse">
               <thead>
                 <tr style={{ borderBottom: '1px solid var(--color-border)', background: 'var(--color-cream)' }}>
-                  {['#', 'Customer', 'Type', 'Contact', 'Subscription', 'Billed', 'Paid', 'Aging', 'Outstanding'].map(h => (
+                  {['#', 'Customer', 'Type', 'Contact', 'Subscription', 'Billed', 'Paid', 'Aging', view === 'owing' ? 'Outstanding' : 'Credit'].map(h => (
                     <th
                       key={h}
-                      className={`px-4 py-3 text-xs font-bold uppercase tracking-wide ${['Billed', 'Paid', 'Aging', 'Outstanding'].includes(h) ? 'text-right' : 'text-left'}`}
+                      className={`px-4 py-3 text-xs font-bold uppercase tracking-wide ${['Billed', 'Paid', 'Aging', 'Outstanding', 'Credit'].includes(h) ? 'text-right' : 'text-left'}`}
                       style={{ color: 'var(--color-muted)' }}
                     >{h}</th>
                   ))}
@@ -404,8 +442,8 @@ export function OutstandingModule({ rows, totalCustomers, currency, userRole, ra
                           <div className="text-[11px] mt-0.5" style={{ color: 'var(--color-muted)' }}>Never paid</div>
                         )}
                       </td>
-                      <td className="px-4 py-3 text-right font-bold font-mono" style={{ color: 'var(--color-red, #C0392B)' }}>
-                        {currency} {row.outstanding.toFixed(2)}
+                      <td className="px-4 py-3 text-right font-bold font-mono" style={{ color: view === 'owing' ? 'var(--color-red, #C0392B)' : 'var(--color-green, #2E7D4F)' }}>
+                        {currency} {Math.abs(row.outstanding).toFixed(2)}
                       </td>
                     </tr>
                   )
@@ -419,7 +457,7 @@ export function OutstandingModule({ rows, totalCustomers, currency, userRole, ra
                   <td className="px-4 py-3 text-right font-bold font-mono" style={{ color: 'var(--color-ink)' }}>{currency} {grandBilled.toFixed(2)}</td>
                   <td className="px-4 py-3 text-right font-bold font-mono" style={{ color: 'var(--color-green, #2E7D4F)' }}>{currency} {grandPaid.toFixed(2)}</td>
                   <td className="px-4 py-3"></td>
-                  <td className="px-4 py-3 text-right font-bold font-mono" style={{ color: 'var(--color-red, #C0392B)' }}>{currency} {grandTotal.toFixed(2)}</td>
+                  <td className="px-4 py-3 text-right font-bold font-mono" style={{ color: view === 'owing' ? 'var(--color-red, #C0392B)' : 'var(--color-green, #2E7D4F)' }}>{currency} {grandTotal.toFixed(2)}</td>
                 </tr>
               </tfoot>
             </table>

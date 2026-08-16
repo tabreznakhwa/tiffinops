@@ -155,7 +155,6 @@ export default async function OutstandingPage({
           : null,
       }
     })
-    .filter(r => r.outstanding > 0.005)
     .sort((a, b) => b.outstanding - a.outstanding)
 
   return (
