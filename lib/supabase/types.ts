@@ -378,6 +378,8 @@ export type Database = {
           voided_at: string | null
           voided_by: string | null
           void_reason: string | null
+          source: string
+          source_message_id: string | null
         }
         Insert: {
           id?: string
@@ -400,6 +402,8 @@ export type Database = {
           voided_at?: string | null
           voided_by?: string | null
           void_reason?: string | null
+          source?: string
+          source_message_id?: string | null
         }
         Update: {
           id?: string
@@ -422,10 +426,72 @@ export type Database = {
           voided_at?: string | null
           voided_by?: string | null
           void_reason?: string | null
+          source?: string
+          source_message_id?: string | null
         }
         Relationships: [
           { foreignKeyName: 'orders_customer_id_fkey'; columns: ['customer_id']; referencedRelation: 'customers'; referencedColumns: ['id'] },
           { foreignKeyName: 'orders_created_by_fkey'; columns: ['created_by']; referencedRelation: 'users'; referencedColumns: ['id'] }
+        ]
+      }
+      whatsapp_messages: {
+        Row: {
+          id: string
+          provider: string
+          provider_message_id: string | null
+          direction: string
+          from_phone: string
+          customer_id: string | null
+          message_type: string
+          body: string | null
+          raw_payload: Json
+          parse_intent: string | null
+          parse_result: Json | null
+          status: string
+          error_detail: string | null
+          order_id: string | null
+          created_at: string
+          processed_at: string | null
+        }
+        Insert: {
+          id?: string
+          provider?: string
+          provider_message_id?: string | null
+          direction?: string
+          from_phone: string
+          customer_id?: string | null
+          message_type?: string
+          body?: string | null
+          raw_payload: Json
+          parse_intent?: string | null
+          parse_result?: Json | null
+          status?: string
+          error_detail?: string | null
+          order_id?: string | null
+          created_at?: string
+          processed_at?: string | null
+        }
+        Update: {
+          id?: string
+          provider?: string
+          provider_message_id?: string | null
+          direction?: string
+          from_phone?: string
+          customer_id?: string | null
+          message_type?: string
+          body?: string | null
+          raw_payload?: Json
+          parse_intent?: string | null
+          parse_result?: Json | null
+          status?: string
+          error_detail?: string | null
+          order_id?: string | null
+          created_at?: string
+          processed_at?: string | null
+        }
+        Relationships: [
+          { foreignKeyName: 'whatsapp_messages_customer_id_fkey'; columns: ['customer_id']; referencedRelation: 'customers'; referencedColumns: ['id'] },
+          { foreignKeyName: 'whatsapp_messages_order_id_fkey'; columns: ['order_id']; referencedRelation: 'orders'; referencedColumns: ['id'] }
         ]
       }
       order_items: {
