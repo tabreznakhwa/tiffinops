@@ -234,6 +234,17 @@ const NAV_SECTIONS: NavSection[] = [
         ),
       },
       {
+        href: '/reconciliation',
+        label: 'Reconciliation',
+        ownerOnly: true,
+        icon: (
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+            <path d="M4 4v6h6M20 20v-6h-6"/>
+            <path d="M4.6 15a8 8 0 0 0 14.4 1.4M19.4 9A8 8 0 0 0 5 7.6"/>
+          </svg>
+        ),
+      },
+      {
         href: '/settings',
         label: 'Settings',
         ownerOnly: true,

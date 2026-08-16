@@ -243,6 +243,24 @@ export function Nav({ pendingApprovals = 0, isOwner = false, userRole }: NavProp
           </Link>
 
           <Link
+            href="/reconciliation"
+            className={cn(
+              'flex items-center gap-1.5 whitespace-nowrap font-semibold text-[14px] px-3 py-3 border-b-[2.5px] transition-colors',
+              isActive('/reconciliation')
+                ? 'text-ink border-saffron'
+                : 'text-muted border-transparent hover:text-ink'
+            )}
+          >
+            <span className="w-[17px] h-[17px] flex-shrink-0">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+                <path d="M4 4v6h6M20 20v-6h-6"/>
+                <path d="M4.6 15a8 8 0 0 0 14.4 1.4M19.4 9A8 8 0 0 0 5 7.6"/>
+              </svg>
+            </span>
+            Reconciliation
+          </Link>
+
+          <Link
             href="/settings"
             className={cn(
               'flex items-center gap-1.5 whitespace-nowrap font-semibold text-[14px] px-3 py-3 border-b-[2.5px] transition-colors',

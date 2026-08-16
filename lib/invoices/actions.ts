@@ -7,8 +7,10 @@ import { generateMonthlyInvoices, nextMonth } from '@/lib/invoices/generateMonth
 import { generateAlaCarteInvoices } from '@/lib/invoices/generateAlaCarteInvoices'
 import { generatePrepaidAnniversaryInvoices } from '@/lib/invoices/generatePrepaidInvoices'
 import { formatInTimeZone } from 'date-fns-tz'
+import { applySurplusReconciliation as applySurplusReconciliationCore } from '@/lib/invoices/reconcileSurplus'
 import type { GenerateResult } from '@/lib/invoices/generateMonthlyInvoices'
 import type { AlaCarteGenerateResult } from '@/lib/invoices/generateAlaCarteInvoices'
+import type { ApplyResult } from '@/lib/invoices/reconcileSurplus'
 
 export async function triggerMonthlyInvoices(
   targetMonth?: string
@@ -561,4 +563,28 @@ export async function voidInvoice(id: string, reason: string): Promise<InvoiceAc
 
   revalidatePath('/invoices')
   return { invoice_id: id }
+}
+
+// ── applySurplusReconciliation ───────────────────────────────────────────────
+//
+// Applies a discount to draft/issued invoices whose customer has an
+// unaccounted-for payment surplus — see lib/invoices/reconcileSurplus.ts for
+// the full mechanism. Owner-only: this edits discount_amount/total_amount,
+// a financial edit, matching updateInvoice()'s gating.
+
+export async function applySurplusReconciliation(
+  candidateIds: string[]
+): Promise<{ error?: string } & Partial<ApplyResult>> {
+  const user = await requireAuth()
+  if (user.role !== 'owner') {
+    return { error: 'Only the owner can apply surplus reconciliation' }
+  }
+  if (!candidateIds.length) return { applied: [], skipped: [], flagged: [] }
+
+  const admin = createAdminClient()
+  const result = await applySurplusReconciliationCore(admin, candidateIds, user.id)
+
+  revalidatePath('/invoices')
+  revalidatePath('/reconciliation')
+  return result
 }
