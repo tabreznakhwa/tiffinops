@@ -6,9 +6,16 @@
 // which is always open here: we only ever reply to a message the customer
 // just sent.
 
+import { createHash } from 'crypto'
+
 const SEND_TEXT_URL = 'https://public.doubletick.io/whatsapp/message/text'
 
 export type SendResult = { ok: boolean; error?: string }
+
+/** One-way fingerprint so we can compare the key in use without exposing it. */
+function keyFingerprint(apiKey: string): string {
+  return `len=${apiKey.length} sha=${createHash('sha256').update(apiKey).digest('hex').slice(0, 16)}`
+}
 
 /**
  * Send a plain text WhatsApp message via DoubleTick.
@@ -45,7 +52,7 @@ export async function sendTextMessage(to: string, from: string, text: string): P
 
     if (!res.ok) {
       const body = await res.text().catch(() => '')
-      return { ok: false, error: `DoubleTick ${res.status}: ${body.slice(0, 300)}` }
+      return { ok: false, error: `DoubleTick ${res.status}: ${body.slice(0, 300)} [key ${keyFingerprint(apiKey)}] [from ${e164(from)}]` }
     }
     return { ok: true }
   } catch (err) {
