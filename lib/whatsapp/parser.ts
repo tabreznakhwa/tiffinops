@@ -53,7 +53,8 @@ const OUTPUT_SCHEMA = {
       anyOf: [{ type: 'string', enum: ['breakfast', 'lunch', 'dinner'] }, { type: 'null' }],
     },
     order_date: {
-      anyOf: [{ type: 'string', pattern: '^\\d{4}-\\d{2}-\\d{2}$' }, { type: 'null' }],
+      description: 'YYYY-MM-DD or null',
+      anyOf: [{ type: 'string' }, { type: 'null' }],
     },
     items: {
       type: 'array',
@@ -63,13 +64,14 @@ const OUTPUT_SCHEMA = {
         required: ['name', 'quantity', 'size'],
         properties: {
           name: { type: 'string' },
-          quantity: { type: 'integer', minimum: 1, maximum: 100 },
+          quantity: { type: 'integer', description: '1 to 100' },
           size: { anyOf: [{ type: 'string' }, { type: 'null' }] },
         },
       },
     },
     skip_date: {
-      anyOf: [{ type: 'string', pattern: '^\\d{4}-\\d{2}-\\d{2}$' }, { type: 'null' }],
+      description: 'YYYY-MM-DD or null',
+      anyOf: [{ type: 'string' }, { type: 'null' }],
     },
     summary: { type: 'string' },
   },
