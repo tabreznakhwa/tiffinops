@@ -265,7 +265,6 @@ export async function POST(req: NextRequest) {
     //    to staff review.
     if (messageType !== 'text' || !body?.trim()) {
       if (mediaUrl && (messageType === 'audio' || messageType === 'voice')) {
-        await finish({ status: 'processing', customer_id: customer.id, error_detail: 'Transcribing voice note' })
         const transcription = await transcribeAudio(mediaUrl, mediaMime ?? 'audio/ogg')
         if (!transcription.ok) {
           await finish({
@@ -276,7 +275,8 @@ export async function POST(req: NextRequest) {
           return NextResponse.json({ ok: true, result: `needs_review (voice transcribe failed)` })
         }
 
-        // Transcript row so staff can audit what Whisper heard.
+        // Transcript row so staff can audit what Whisper heard. 'ignored'
+        // keeps it out of the review queue (the audio row carries the status).
         await admin.from('whatsapp_messages').insert({
           provider: 'doubletick',
           direction: 'inbound',
@@ -284,9 +284,9 @@ export async function POST(req: NextRequest) {
           message_type: 'text',
           body: transcription.text,
           raw_payload: { transcribed_from: providerMessageId, audio_url: mediaUrl } as Json,
-          status: 'processing',
+          status: 'ignored',
         })
-        await finish({ status: 'processing', customer_id: customer.id, error_detail: `Transcribed: "${transcription.text.slice(0, 120)}"` })
+        await finish({ status: 'parsed', customer_id: customer.id, error_detail: `Transcribed: "${transcription.text.slice(0, 120)}"` })
 
         // Re-run the handler on the transcribed text.
         const nowDubai = formatInTimeZone(new Date(), TZ, "yyyy-MM-dd (EEEE), HH:mm")
