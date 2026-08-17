@@ -1,31 +1,9 @@
-// DoubleTick WhatsApp send API.
-//
-// Docs: https://docs.doubletick.io/reference/outgoing-messages-whatsapp-text
-// The Authorization header takes the raw API key — no "Bearer" prefix.
-// Free-text sends only work inside the 24-hour customer session window,
-// which is always open here: we only ever reply to a message the customer
-// just sent.
-
-import { createHash } from 'crypto'
+﻿import https from 'https'
 
 const SEND_TEXT_URL = 'https://public.doubletick.io/whatsapp/message/text'
 
 export type SendResult = { ok: boolean; error?: string }
 
-/** One-way fingerprint so we can compare the key in use without exposing it. */
-function keyFingerprint(apiKey: string): string {
-  return `len=${apiKey.length} sha=${createHash('sha256').update(apiKey).digest('hex').slice(0, 16)}`
-}
-
-/**
- * Send a plain text WhatsApp message via DoubleTick.
- *
- * @param to   Customer phone in the format DoubleTick delivered it ("+9715...")
- * @param from Business WhatsApp number — echo back the `to` field of the
- *             inbound webhook payload so replies always leave from the same
- *             number the customer wrote to.
- */
-/** Inbound webhooks deliver bare digits ("9715..."), the send API wants E.164 ("+9715..."). */
 function e164(phone: string): string {
   const digits = phone.replace(/\D/g, '')
   return digits ? `+${digits}` : phone
@@ -35,27 +13,38 @@ export async function sendTextMessage(to: string, from: string, text: string): P
   const apiKey = process.env.DOUBLETICK_API_KEY
   if (!apiKey) return { ok: false, error: 'DOUBLETICK_API_KEY is not set' }
 
-  try {
-    const res = await fetch(SEND_TEXT_URL, {
+  const payload = JSON.stringify({
+    to: e164(to),
+    from: e164(from),
+    messageId: crypto.randomUUID(),
+    content: { text },
+  })
+
+  return new Promise((resolve) => {
+    const req = https.request(SEND_TEXT_URL, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        Authorization: apiKey,
+        'Authorization': apiKey,
+        'Content-Length': Buffer.byteLength(payload),
       },
-      body: JSON.stringify({
-        to: e164(to),
-        from: e164(from),
-        messageId: crypto.randomUUID(),
-        content: { text },
-      }),
+    }, (res) => {
+      let body = ''
+      res.on('data', chunk => body += chunk)
+      res.on('end', () => {
+        if (res.statusCode && res.statusCode >= 200 && res.statusCode < 300) {
+          resolve({ ok: true })
+        } else {
+          resolve({ ok: false, error: `DoubleTick ${res.statusCode}: ${body.slice(0, 300)}` })
+        }
+      })
     })
 
-    if (!res.ok) {
-      const body = await res.text().catch(() => '')
-      return { ok: false, error: `DoubleTick ${res.status}: ${body.slice(0, 300)} [key ${keyFingerprint(apiKey)}] [from ${e164(from)}]` }
-    }
-    return { ok: true }
-  } catch (err) {
-    return { ok: false, error: err instanceof Error ? err.message : String(err) }
-  }
+    req.on('error', (err) => {
+      resolve({ ok: false, error: err.message })
+    })
+
+    req.write(payload)
+    req.end()
+  })
 }
