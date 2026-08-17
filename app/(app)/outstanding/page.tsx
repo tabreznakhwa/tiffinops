@@ -18,6 +18,24 @@ function daysSince(date: string, today: string): number {
   return Math.round((b - a) / 86_400_000)
 }
 
+// Next prepaid billing date: the next anniversary (same day-of-month as the
+// billing anchor, clamped to month length) on or after today. The anchor is
+// the latest advance payment date when one exists, else the start date —
+// mirrors generatePrepaidAnniversaryInvoices.
+function nextPrepaidDueDate(anchor: string, today: string): string {
+  const anchorDay = Number(anchor.slice(8, 10))
+  let year  = Number(today.slice(0, 4))
+  let month = Number(today.slice(5, 7))
+  for (let i = 0; i < 2; i++) {
+    const dim = new Date(year, month, 0).getDate()
+    const candidate = `${String(year).padStart(4, '0')}-${String(month).padStart(2, '0')}-${String(Math.min(anchorDay, dim)).padStart(2, '0')}`
+    if (candidate >= today) return candidate
+    month += 1
+    if (month > 12) { month = 1; year += 1 }
+  }
+  return today // unreachable — one of the two candidates is always >= today
+}
+
 export default async function OutstandingPage({
   searchParams,
 }: {
@@ -66,7 +84,7 @@ export default async function OutstandingPage({
     // clamped before charges are summed.
     admin
       .from('customer_subscriptions')
-      .select('id, customer_id, start_date, end_date, agreed_monthly_price, status, fixed_plans(meal_periods)'),
+      .select('id, customer_id, start_date, end_date, billing_anchor_date, agreed_monthly_price, status, fixed_plans(meal_periods)'),
     // Per-customer order and payment totals, aggregated in Postgres
     getCustomerBalancesInRange(admin, effectiveFrom, effectiveTo),
     // Per-customer most recent payment — all-time, not scoped to the range above
@@ -83,6 +101,7 @@ export default async function OutstandingPage({
     customer_id: string
     start_date: string
     end_date: string | null
+    billing_anchor_date: string | null
     agreed_monthly_price: string
     status: string
     fixed_plans: { meal_periods: string[] | null } | null
@@ -127,6 +146,15 @@ export default async function OutstandingPage({
       const outstandingSince =
         oldestDebtMap.get(c.id) ?? oldestInvoiceMap.get(c.id) ?? null
 
+      // Prepaid subscribers only: the next date their monthly invoice will
+      // be auto-generated. Anchor = billing_anchor_date (set when they last
+      // paid advance) else start_date. Null for postpaid/no-plan customers.
+      const isPrepaid = c.payment_terms === 'prepaid'
+      const anchor = current?.billing_anchor_date ?? current?.start_date ?? null
+      const nextDue = isPrepaid && anchor && current?.status === 'active'
+        ? nextPrepaidDueDate(anchor, today)
+        : null
+
       return {
         id:            c.id,
         full_name:     c.full_name,
@@ -146,6 +174,8 @@ export default async function OutstandingPage({
         subId:         current?.id ?? null,
         subStartDate:  current?.start_date ?? null,
         subEndDate:    current?.end_date ?? null,
+        billingAnchorDate: current?.billing_anchor_date ?? null,
+        nextDueDate:   nextDue,
         lastPaymentDate:   lastPayment?.last_payment_date ?? null,
         lastPaymentAmount: lastPayment?.last_payment_amount ?? null,
         outstandingSince,

@@ -13,23 +13,29 @@ function pad(n: number, width = 2): string {
 
 /**
  * A customer's billing day within a given (year, month): the same
- * day-of-month as their start_date, clamped to that month's length. A
- * customer who started on the 31st bills on the 28th/29th in February, and
- * reverts to the 31st in a month that has one — the day is always re-derived
- * from the original start_date, never chained off an already-clamped date.
+ * day-of-month as their start_date (or billing_anchor_date if set),
+ * clamped to that month's length. A customer who started on the 31st
+ * bills on the 28th/29th in February, and reverts to the 31st in a
+ * month that has one — the day is always re-derived from the
+ * original anchor, never chained off an already-clamped date.
+ *
+ * billingAnchor: if provided (set when an ADVANCE payment is received),
+ * use its day-of-month; otherwise fall back to startDate.
  */
-function anniversaryDateForMonth(startDate: string, year: number, month: number): string {
-  const startDay = Number(startDate.slice(8, 10))
+function anniversaryDateForMonth(startDate: string, billingAnchor: string | null, year: number, month: number): string {
+  const anchorDate = billingAnchor ?? startDate
+  const startDay = Number(anchorDate.slice(8, 10))
   const day = Math.min(startDay, daysInMonth(year, month))
   return `${pad(year, 4)}-${pad(month)}-${pad(day)}`
 }
 
 // The following month's anniversary date for this subscription.
-function nextAnniversaryAfter(startDate: string, from: string): string {
+// billingAnchor: if provided, use it; otherwise fall back to startDate.
+function nextAnniversaryAfter(startDate: string, billingAnchor: string | null, from: string): string {
   let year  = Number(from.slice(0, 4))
   let month = Number(from.slice(5, 7)) + 1
   if (month > 12) { month = 1; year += 1 }
-  return anniversaryDateForMonth(startDate, year, month)
+  return anniversaryDateForMonth(startDate, billingAnchor, year, month)
 }
 
 function addDays(date: string, n: number): string {
@@ -77,6 +83,7 @@ export async function generatePrepaidAnniversaryInvoices(
       id,
       customer_id,
       start_date,
+      billing_anchor_date,
       agreed_monthly_price,
       fixed_plan_id,
       fixed_plans(plan_name),
@@ -89,12 +96,17 @@ export async function generatePrepaidAnniversaryInvoices(
   const todayYear  = Number(today.slice(0, 4))
   const todayMonth = Number(today.slice(5, 7))
 
-  // Only subscribers whose billing day is today
+  // Only subscribers whose billing day is today. An advance payment
+  // re-anchors the billing day to the payment date (billing_anchor_date),
+  // so a customer who paid on the 17th bills on the 17th from then on.
   const dueToday = (subs ?? []).filter(s => {
     const customer = s.customers as unknown as { payment_terms?: string } | null
     if (customer?.payment_terms !== 'prepaid') return false
     if (today < s.start_date) return false
-    return anniversaryDateForMonth(s.start_date, todayYear, todayMonth) === today
+    // Never bill again before the anchor itself — the advance payment
+    // already covers the month starting on the anchor date.
+    if (s.billing_anchor_date && today <= s.billing_anchor_date) return false
+    return anniversaryDateForMonth(s.start_date, s.billing_anchor_date, todayYear, todayMonth) === today
   })
 
   if (dueToday.length === 0) {
@@ -112,7 +124,7 @@ export async function generatePrepaidAnniversaryInvoices(
   // orders from today through the furthest possible periodEnd in this batch.
   const periodEndByCustomer = new Map<string, string>()
   for (const s of dueToday) {
-    periodEndByCustomer.set(s.customer_id, addDays(nextAnniversaryAfter(s.start_date, today), -1))
+    periodEndByCustomer.set(s.customer_id, addDays(nextAnniversaryAfter(s.start_date, s.billing_anchor_date, today), -1))
   }
   const furthestPeriodEnd = [...periodEndByCustomer.values()].reduce((a, b) => (a > b ? a : b), today)
 

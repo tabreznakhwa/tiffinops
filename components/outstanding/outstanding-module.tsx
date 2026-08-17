@@ -29,6 +29,8 @@ export type OutstandingRow = {
   subId:         string | null
   subStartDate:  string | null
   subEndDate:    string | null
+  billingAnchorDate: string | null
+  nextDueDate:   string | null
   lastPaymentDate:    string | null
   lastPaymentAmount:  number | null
   outstandingSince:   string | null
@@ -381,6 +383,22 @@ export function OutstandingModule({ rows, totalCustomers, currency, userRole, ra
                                 </div>
                               )}
                             </div>
+
+                            {/* Next prepaid billing date — anchored to the latest
+                                advance payment when one exists, else the start date */}
+                            {row.nextDueDate && (
+                              <div className="flex items-center gap-1 text-[11px]" style={{ color: 'var(--color-muted)' }}>
+                                <span className="w-[44px] font-semibold flex-shrink-0">Next due</span>
+                                <span className="font-semibold" style={{ color: 'var(--color-purple, #7C3AED)' }}>
+                                  {fmtDateShort(row.nextDueDate)}
+                                </span>
+                                {row.billingAnchorDate && (
+                                  <span className="text-[10px]" title={`Billing cycle re-anchored by advance payment on ${fmtDateShort(row.billingAnchorDate)}`}>
+                                    ⚡
+                                  </span>
+                                )}
+                              </div>
+                            )}
 
                             {/* Inline error */}
                             {dateError && editingDate?.customerId === row.id && (
