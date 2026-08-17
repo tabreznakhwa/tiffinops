@@ -56,16 +56,18 @@ function todayDubai() {
 export function RecordPaymentModal({
   customers,
   preselectedCustomer,
+  initialAmount,
   onClose,
 }: {
   customers: Customer[]
   preselectedCustomer?: Customer
+  initialAmount?: string
   onClose: () => void
 }) {
   const [query, setQuery]           = useState('')
   const [showList, setShowList]     = useState(false)
   const [customer, setCustomer]     = useState<Customer | null>(preselectedCustomer ?? null)
-  const [amount, setAmount]         = useState('')
+  const [amount, setAmount]         = useState(initialAmount ?? '')
   const [mode, setMode]             = useState<PaymentMode>('cash')
   const [reference, setReference]   = useState('')
   const [date, setDate]             = useState(todayDubai)

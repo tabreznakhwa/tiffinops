@@ -1,12 +1,13 @@
 'use client'
 
 import { useState, useMemo, useTransition } from 'react'
-import { Search, Pencil, Check, X } from 'lucide-react'
+import { Search, Pencil, Check, X, HandCoins, MessageCircle } from 'lucide-react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { DatePresetPicker } from '@/components/ui/date-preset-picker'
 import { AreaFilter, collectAreas, matchesArea } from '@/components/ui/area-filter'
 import { updateSubscriptionStartDate, updateSubscriptionPauseDate } from '@/lib/fixed-menu/actions'
+import { RecordPaymentModal } from '@/components/payments/record-payment-modal'
 
 // One fully-computed table row. All aggregation happens on the server so the
 // browser never receives raw order or payment rows.
@@ -65,10 +66,27 @@ function fmtDateShort(d: string) {
   return new Date(d + 'T00:00:00Z').toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
 }
 
+// wa.me link with a prefilled outstanding-balance reminder. UAE numbers:
+// local 05x… → 9715x…, bare 5x… (9 digits) → 9715x…, 00-prefixed → stripped.
+function whatsAppReminderLink(row: OutstandingRow, currency: string): string | null {
+  let digits = (row.mobile_number ?? '').replace(/\D/g, '')
+  if (!digits) return null
+  if (digits.startsWith('00')) digits = digits.slice(2)
+  else if (digits.startsWith('0')) digits = '971' + digits.slice(1)
+  else if (digits.length === 9 && digits.startsWith('5')) digits = '971' + digits
+  const msg =
+    `Hi ${row.full_name}, a friendly reminder — your outstanding balance with us is ` +
+    `${currency} ${row.outstanding.toFixed(2)}. Kindly arrange the payment at your convenience. Thank you!`
+  return `https://wa.me/${digits}?text=${encodeURIComponent(msg)}`
+}
+
 export function OutstandingModule({ rows, totalCustomers, currency, userRole, rangeFrom, rangeTo }: Props) {
   const canEditStartDate = userRole === 'owner'
   const canEditPauseDate = ['owner', 'manager', 'data_entry'].includes(userRole)
+  // Mirrors recordPayment()'s role gate (the server re-checks anyway).
+  const canRecordPayment = ['owner', 'manager', 'accounts', 'data_entry'].includes(userRole)
   const router = useRouter()
+  const [payRow, setPayRow] = useState<OutstandingRow | null>(null)
   const [view,        setView]        = useState<ViewMode>('owing')
   const [search,      setSearch]      = useState('')
   const [typeFilter,  setTypeFilter]  = useState<string>('')
@@ -253,10 +271,10 @@ export function OutstandingModule({ rows, totalCustomers, currency, userRole, ra
             <table className="w-full text-sm border-collapse">
               <thead>
                 <tr style={{ borderBottom: '1px solid var(--color-border)', background: 'var(--color-cream)' }}>
-                  {['#', 'Customer', 'Type', 'Contact', 'Subscription', 'Billed', 'Paid', 'Aging', view === 'owing' ? 'Outstanding' : 'Credit'].map(h => (
+                  {['#', 'Customer', 'Type', 'Contact', 'Subscription', 'Billed', 'Paid', 'Aging', view === 'owing' ? 'Outstanding' : 'Credit', 'Actions'].map(h => (
                     <th
                       key={h}
-                      className={`px-4 py-3 text-xs font-bold uppercase tracking-wide ${['Billed', 'Paid', 'Aging', 'Outstanding', 'Credit'].includes(h) ? 'text-right' : 'text-left'}`}
+                      className={`px-4 py-3 text-xs font-bold uppercase tracking-wide ${['Billed', 'Paid', 'Aging', 'Outstanding', 'Credit', 'Actions'].includes(h) ? 'text-right' : 'text-left'}`}
                       style={{ color: 'var(--color-muted)' }}
                     >{h}</th>
                   ))}
@@ -472,6 +490,37 @@ export function OutstandingModule({ rows, totalCustomers, currency, userRole, ra
                       <td className="px-4 py-3 text-right font-bold font-mono" style={{ color: view === 'owing' ? 'var(--color-red, #C0392B)' : 'var(--color-green, #2E7D4F)' }}>
                         {currency} {Math.abs(row.outstanding).toFixed(2)}
                       </td>
+                      {/* Actions — record a payment / WhatsApp follow-up */}
+                      <td className="px-4 py-3">
+                        <div className="flex items-center justify-end gap-1.5">
+                          {canRecordPayment && (
+                            <button
+                              type="button"
+                              onClick={() => setPayRow(row)}
+                              title="Record a payment for this customer"
+                              className="flex items-center gap-1 px-2 py-1 rounded-[8px] text-[11px] font-bold whitespace-nowrap"
+                              style={{ background: 'var(--color-green-soft, #DCFCE7)', color: 'var(--color-green, #2E7D4F)', border: '1px solid var(--color-green, #2E7D4F)' }}
+                            >
+                              <HandCoins size={12} /> Pay
+                            </button>
+                          )}
+                          {view === 'owing' && (() => {
+                            const wa = whatsAppReminderLink(row, currency)
+                            return wa ? (
+                              <a
+                                href={wa}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                title="Send a WhatsApp payment reminder"
+                                className="flex items-center justify-center w-[26px] h-[26px] rounded-[8px]"
+                                style={{ background: '#DCFCE7', color: '#128C7E', border: '1px solid #128C7E' }}
+                              >
+                                <MessageCircle size={13} />
+                              </a>
+                            ) : null
+                          })()}
+                        </div>
+                      </td>
                     </tr>
                   )
                 })}
@@ -485,12 +534,29 @@ export function OutstandingModule({ rows, totalCustomers, currency, userRole, ra
                   <td className="px-4 py-3 text-right font-bold font-mono" style={{ color: 'var(--color-green, #2E7D4F)' }}>{currency} {grandPaid.toFixed(2)}</td>
                   <td className="px-4 py-3"></td>
                   <td className="px-4 py-3 text-right font-bold font-mono" style={{ color: view === 'owing' ? 'var(--color-red, #C0392B)' : 'var(--color-green, #2E7D4F)' }}>{currency} {grandTotal.toFixed(2)}</td>
+                  <td className="px-4 py-3"></td>
                 </tr>
               </tfoot>
             </table>
           </div>
         )}
       </div>
+
+      {/* Record Payment — customer locked to the clicked row; balances refresh on close */}
+      {payRow && (
+        <RecordPaymentModal
+          customers={[]}
+          preselectedCustomer={{
+            id:            payRow.id,
+            full_name:     payRow.full_name,
+            customer_code: payRow.customer_code,
+            mobile_number: payRow.mobile_number,
+            area:          payRow.area,
+          }}
+          initialAmount={payRow.outstanding > 0 ? payRow.outstanding.toFixed(2) : undefined}
+          onClose={() => { setPayRow(null); router.refresh() }}
+        />
+      )}
     </div>
   )
 }
