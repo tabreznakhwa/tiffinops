@@ -29,8 +29,8 @@ export type OutstandingRow = {
   subId:         string | null
   subStartDate:  string | null
   subEndDate:    string | null
-  billingAnchorDate: string | null
   nextDueDate:   string | null
+  nextDueInDays: number | null
   lastPaymentDate:    string | null
   lastPaymentAmount:  number | null
   outstandingSince:   string | null
@@ -384,17 +384,26 @@ export function OutstandingModule({ rows, totalCustomers, currency, userRole, ra
                               )}
                             </div>
 
-                            {/* Next prepaid billing date — anchored to the latest
-                                advance payment when one exists, else the start date */}
+                            {/* Next payment due: start date + months already paid for. Red = overdue. */}
                             {row.nextDueDate && (
                               <div className="flex items-center gap-1 text-[11px]" style={{ color: 'var(--color-muted)' }}>
                                 <span className="w-[44px] font-semibold flex-shrink-0">Next due</span>
-                                <span className="font-semibold" style={{ color: 'var(--color-purple, #7C3AED)' }}>
+                                <span
+                                  className="font-semibold"
+                                  style={{
+                                    color: (row.nextDueInDays ?? 0) < 0
+                                      ? 'var(--color-red, #C0392B)'
+                                      : 'var(--color-purple, #7C3AED)',
+                                  }}
+                                >
                                   {fmtDateShort(row.nextDueDate)}
                                 </span>
-                                {row.billingAnchorDate && (
-                                  <span className="text-[10px]" title={`Billing cycle re-anchored by advance payment on ${fmtDateShort(row.billingAnchorDate)}`}>
-                                    ⚡
+                                {(row.nextDueInDays ?? 0) < 0 && (
+                                  <span
+                                    className="text-[10px] font-bold px-1 rounded-[3px]"
+                                    style={{ background: '#FEE2E2', color: '#991B1B' }}
+                                  >
+                                    OVERDUE {Math.abs(row.nextDueInDays ?? 0)}d
                                   </span>
                                 )}
                               </div>

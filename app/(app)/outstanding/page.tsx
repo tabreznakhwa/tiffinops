@@ -18,22 +18,18 @@ function daysSince(date: string, today: string): number {
   return Math.round((b - a) / 86_400_000)
 }
 
-// Next prepaid billing date: the next anniversary (same day-of-month as the
-// billing anchor, clamped to month length) on or after today. The anchor is
-// the latest advance payment date when one exists, else the start date —
-// mirrors generatePrepaidAnniversaryInvoices.
-function nextPrepaidDueDate(anchor: string, today: string): string {
-  const anchorDay = Number(anchor.slice(8, 10))
-  let year  = Number(today.slice(0, 4))
-  let month = Number(today.slice(5, 7))
-  for (let i = 0; i < 2; i++) {
-    const dim = new Date(year, month, 0).getDate()
-    const candidate = `${String(year).padStart(4, '0')}-${String(month).padStart(2, '0')}-${String(Math.min(anchorDay, dim)).padStart(2, '0')}`
-    if (candidate >= today) return candidate
-    month += 1
-    if (month > 12) { month = 1; year += 1 }
-  }
-  return today // unreachable — one of the two candidates is always >= today
+// The subscription's Nth monthly anniversary: same day-of-month as the start
+// date, clamped to the target month's length. The day is always re-derived
+// from the original start date (a 31st starter bills on Feb 28/29 and reverts
+// to the 31st after), never chained off an already-clamped date.
+function nthAnniversary(startDate: string, n: number): string {
+  const startDay = Number(startDate.slice(8, 10))
+  let year  = Number(startDate.slice(0, 4))
+  let month = Number(startDate.slice(5, 7)) + n
+  year += Math.floor((month - 1) / 12)
+  month = ((month - 1) % 12) + 1
+  const dim = new Date(year, month, 0).getDate()
+  return `${String(year).padStart(4, '0')}-${String(month).padStart(2, '0')}-${String(Math.min(startDay, dim)).padStart(2, '0')}`
 }
 
 export default async function OutstandingPage({
@@ -84,7 +80,7 @@ export default async function OutstandingPage({
     // clamped before charges are summed.
     admin
       .from('customer_subscriptions')
-      .select('id, customer_id, start_date, end_date, billing_anchor_date, agreed_monthly_price, status, fixed_plans(meal_periods)'),
+      .select('id, customer_id, start_date, end_date, agreed_monthly_price, status, fixed_plans(meal_periods)'),
     // Per-customer order and payment totals, aggregated in Postgres
     getCustomerBalancesInRange(admin, effectiveFrom, effectiveTo),
     // Per-customer most recent payment — all-time, not scoped to the range above
@@ -101,7 +97,6 @@ export default async function OutstandingPage({
     customer_id: string
     start_date: string
     end_date: string | null
-    billing_anchor_date: string | null
     agreed_monthly_price: string
     status: string
     fixed_plans: { meal_periods: string[] | null } | null
@@ -146,14 +141,29 @@ export default async function OutstandingPage({
       const outstandingSince =
         oldestDebtMap.get(c.id) ?? oldestInvoiceMap.get(c.id) ?? null
 
-      // Prepaid subscribers only: the next date their monthly invoice will
-      // be auto-generated. Anchor = billing_anchor_date (set when they last
-      // paid advance) else start_date. Null for postpaid/no-plan customers.
-      const isPrepaid = c.payment_terms === 'prepaid'
-      const anchor = current?.billing_anchor_date ?? current?.start_date ?? null
-      const nextDue = isPrepaid && anchor && current?.status === 'active'
-        ? nextPrepaidDueDate(anchor, today)
-        : null
+      // Prepaid subscribers: next payment due = start date + however many
+      // whole months they've paid for. A customer who started 15 Jul and
+      // paid one month is covered through 14 Aug — next due 15 Aug, and
+      // OVERDUE once that passes, even if today is later. Payments toward
+      // the plan = total paid minus the net order bill (for fixed_menu the
+      // plan discount makes that 0, so every payment counts to the plan).
+      // Only computed on the all-time view — a filtered date range would
+      // undercount months paid.
+      const monthlyRate = current ? parseFloat(String(current.agreed_monthly_price)) : 0
+      let nextDue: string | null = null
+      let nextDueInDays: number | null = null
+      if (
+        c.payment_terms === 'prepaid' &&
+        current?.status === 'active' &&
+        monthlyRate > 0 &&
+        !rangeFrom && !rangeTo
+      ) {
+        const netOrderBill = Math.max(0, orderBilled - fixedDiscount)
+        const paidTowardPlan = Math.max(0, totalPaid - netOrderBill)
+        const monthsCovered = Math.floor((paidTowardPlan + 0.01) / monthlyRate)
+        nextDue = nthAnniversary(current.start_date, monthsCovered)
+        nextDueInDays = -daysSince(nextDue, today) // negative = overdue by |n| days
+      }
 
       return {
         id:            c.id,
@@ -169,13 +179,13 @@ export default async function OutstandingPage({
         totalBilled,
         totalPaid,
         outstanding,
-        monthlyRate:   current ? parseFloat(String(current.agreed_monthly_price)) : 0,
+        monthlyRate,
         subPaused:     current?.status === 'paused',
         subId:         current?.id ?? null,
         subStartDate:  current?.start_date ?? null,
         subEndDate:    current?.end_date ?? null,
-        billingAnchorDate: current?.billing_anchor_date ?? null,
         nextDueDate:   nextDue,
+        nextDueInDays,
         lastPaymentDate:   lastPayment?.last_payment_date ?? null,
         lastPaymentAmount: lastPayment?.last_payment_amount ?? null,
         outstandingSince,

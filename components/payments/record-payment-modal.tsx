@@ -431,9 +431,7 @@ export function RecordPaymentModal({
                 Mark as Advance Payment
               </p>
               <p className="text-xs" style={{ color: 'var(--color-muted)' }}>
-                Customer paid in advance before orders are billed. For prepaid
-                fixed-plan subscribers, this resets the billing cycle to the
-                payment date — their next invoice generates one month later.
+                Customer paid in advance before orders are billed
               </p>
             </div>
           </button>

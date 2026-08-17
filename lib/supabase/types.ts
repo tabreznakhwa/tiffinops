@@ -286,7 +286,6 @@ export type Database = {
           fixed_plan_id: string
           start_date: string
           end_date: string | null
-          billing_anchor_date: string | null
           agreed_monthly_price: string
           meal_prices: Record<string, string> | null
           status: string
@@ -300,7 +299,6 @@ export type Database = {
           fixed_plan_id: string
           start_date: string
           end_date?: string | null
-          billing_anchor_date?: string | null
           agreed_monthly_price: string
           meal_prices?: Record<string, string> | null
           status?: string
@@ -314,7 +312,6 @@ export type Database = {
           fixed_plan_id?: string
           start_date?: string
           end_date?: string | null
-          billing_anchor_date?: string | null
           agreed_monthly_price?: string
           meal_prices?: Record<string, string> | null
           status?: string

@@ -100,50 +100,6 @@ export async function recordPayment(input: {
 
   revalidatePath('/payments')
 
-  // ── Prepaid + Advance: re-anchor the billing cycle to the payment date ──
-  // A prepaid customer who pays in advance on the 17th should start (or
-  // renew) on the 17th and have their next invoice generated exactly one
-  // month later, on the next 17th. billing_anchor_date holds this — we
-  // leave start_date alone so it keeps recording when they originally began.
-  //
-  // Anchor = the customer's most recent non-voided advance payment date
-  // (re-derived, so historical/out-of-order entries always resolve to the
-  // right answer without depending on insertion order).
-  if (parsed.data.is_advance) {
-    try {
-      const { data: customer } = await admin
-        .from('customers')
-        .select('payment_terms')
-        .eq('id', parsed.data.customer_id)
-        .single()
-
-      if (customer?.payment_terms === 'prepaid') {
-        const { data: latestAdvance } = await admin
-          .from('payments')
-          .select('payment_date')
-          .eq('customer_id', parsed.data.customer_id)
-          .eq('is_advance', true)
-          .is('voided_at', null)
-          .order('payment_date', { ascending: false })
-          .limit(1)
-          .maybeSingle()
-
-        if (latestAdvance?.payment_date) {
-          await admin
-            .from('customer_subscriptions')
-            .update({ billing_anchor_date: latestAdvance.payment_date })
-            .eq('customer_id', parsed.data.customer_id)
-            .in('status', ['active', 'paused'])
-
-          revalidatePath('/fixed-menu')
-          revalidatePath('/outstanding')
-        }
-      }
-    } catch {
-      // Payment itself succeeded — anchor update is best-effort.
-    }
-  }
-
   if (invoiceId) {
     // The payment itself already succeeded above — never roll it back over
     // a downstream status-update failure, just tell the user to finish it by hand.
@@ -223,50 +179,6 @@ export async function updatePayment(
   if (error) return { error: error.message }
 
   revalidatePath('/payments')
-
-  // ── Prepaid + Advance: keep the billing anchor in sync ──
-  // The edit may have changed is_advance or moved the payment date, so
-  // re-derive the anchor from the customer's remaining advance payments.
-  try {
-    const { data: payment } = await admin
-      .from('payments')
-      .select('customer_id')
-      .eq('id', id)
-      .single()
-
-    if (payment) {
-      const { data: customer } = await admin
-        .from('customers')
-        .select('payment_terms')
-        .eq('id', payment.customer_id)
-        .single()
-
-      if (customer?.payment_terms === 'prepaid') {
-        // Latest non-voided advance payment = the anchor (null if none).
-        const { data: latestAdvance } = await admin
-          .from('payments')
-          .select('payment_date')
-          .eq('customer_id', payment.customer_id)
-          .eq('is_advance', true)
-          .is('voided_at', null)
-          .order('payment_date', { ascending: false })
-          .limit(1)
-          .maybeSingle()
-
-        await admin
-          .from('customer_subscriptions')
-          .update({ billing_anchor_date: latestAdvance?.payment_date ?? null })
-          .eq('customer_id', payment.customer_id)
-          .in('status', ['active', 'paused'])
-
-        revalidatePath('/fixed-menu')
-        revalidatePath('/outstanding')
-      }
-    }
-  } catch {
-    // Payment update itself succeeded — anchor recalc is best-effort.
-  }
-
   return {}
 }
 
