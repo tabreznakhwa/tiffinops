@@ -38,6 +38,8 @@ export const ParsedMessageSchema = z.object({
   skip_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable(),
   /** One-line English summary of what the customer wants, for the staff inbox. */
   summary: z.string(),
+  /** Complementary dishes the customer did NOT order, for the upsell message. Empty for non-order intents. */
+  addon_suggestions: z.array(z.string()).default([]),
 })
 
 export type ParsedMessage = z.infer<typeof ParsedMessageSchema>
@@ -46,7 +48,7 @@ export type ParsedMessage = z.infer<typeof ParsedMessageSchema>
 const OUTPUT_SCHEMA = {
   type: 'object',
   additionalProperties: false,
-  required: ['intent', 'meal_period', 'order_date', 'items', 'skip_date', 'summary'],
+  required: ['intent', 'meal_period', 'order_date', 'items', 'skip_date', 'summary', 'addon_suggestions'],
   properties: {
     intent: { type: 'string', enum: ['order', 'skip', 'balance_query', 'other'] },
     meal_period: {
@@ -74,6 +76,11 @@ const OUTPUT_SCHEMA = {
       anyOf: [{ type: 'string' }, { type: 'null' }],
     },
     summary: { type: 'string' },
+    addon_suggestions: {
+      type: 'array',
+      items: { type: 'string' },
+      description: '1-4 complementary dishes the customer did not order; empty if none',
+    },
   },
 } as const
 
@@ -99,6 +106,8 @@ Rules for skip:
 - skip_date: "aaj"/today or unstated → null, "kal"/tomorrow → tomorrow's date.
 
 summary: one short English sentence describing the request, e.g. "Wants 2 rumali roti and 1 kheema for dinner today."
+
+addon_suggestions: ONLY for intent "order" — 1-4 complementary dishes the customer did NOT already order, that would naturally pair with what they asked for. Suggest the family-style add-ons the kitchen actually sells: rumali roti, moti roti, chapati, white rice, extra dal. Put the most natural pairing first (e.g. rotis after a curry, rice after a curry when no roti was ordered). Omit any item the customer already ordered. If nothing genuinely pairs, use an empty array. Example: customer orders "dal tadka" → ["rumali roti", "moti roti", "white rice"].
 
 The current date and time in Dubai is provided with each message. Respond only with the structured JSON.`
 

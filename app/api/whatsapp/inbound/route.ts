@@ -20,6 +20,7 @@ import type { MealPeriod, MenuItemRef } from '@/lib/orders/parse-whatsapp'
 import { parseCustomerMessage } from '@/lib/whatsapp/parser'
 import type { ParsedMessage } from '@/lib/whatsapp/parser'
 import { sendTextMessage } from '@/lib/whatsapp/doubletick'
+import { transcribeAudio } from '@/lib/whatsapp/transcribe'
 import type { Json } from '@/lib/supabase/types'
 
 export const runtime = 'nodejs'
@@ -174,6 +175,21 @@ export async function POST(req: NextRequest) {
   const providerMessageId: string | null = payload.dtMessageId ?? payload.messageId ?? null
   const messageType = String(payload.message?.type ?? 'TEXT').toLowerCase()
   const body: string | null = payload.message?.text ?? null
+  // DoubleTick nests media in a few different spots depending on message type.
+  // Cover the common ones so voice notes resolve to a downloadable URL.
+  const mediaUrl: string | null =
+    payload.message?.mediaUrl ??
+    payload.message?.url ??
+    payload.message?.media?.url ??
+    payload.media?.url ??
+    payload.mediaUrl ??
+    null
+  const mediaMime: string | null =
+    payload.message?.mimeType ??
+    payload.message?.mime_type ??
+    payload.message?.media?.mimeType ??
+    payload.mimeType ??
+    null
   if (!fromPhone) return NextResponse.json({ error: 'Missing from' }, { status: 400 })
 
   const admin = createAdminClient()
@@ -244,8 +260,60 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: true, result: 'unknown customer' })
     }
 
-    // 2. Voice notes / images can't be parsed in v1 — hand to staff.
+    // 2. Voice notes are transcribed to text, then flow through the exact same
+    //    pipeline as typed messages. Other media (images, documents) still go
+    //    to staff review.
     if (messageType !== 'text' || !body?.trim()) {
+      if (mediaUrl && (messageType === 'audio' || messageType === 'voice')) {
+        await finish({ status: 'processing', customer_id: customer.id, error_detail: 'Transcribing voice note' })
+        const transcription = await transcribeAudio(mediaUrl, mediaMime ?? 'audio/ogg')
+        if (!transcription.ok) {
+          await finish({
+            status: 'needs_review', customer_id: customer.id,
+            error_detail: `Voice transcription failed: ${transcription.error}`,
+          })
+          await reply('🙏 Aapki voice note sun li, par samajh nahi aaya. Hamari team jald aapko call karegi. Our team will call you shortly.')
+          return NextResponse.json({ ok: true, result: `needs_review (voice transcribe failed)` })
+        }
+
+        // Transcript row so staff can audit what Whisper heard.
+        await admin.from('whatsapp_messages').insert({
+          provider: 'doubletick',
+          direction: 'inbound',
+          from_phone: fromPhone,
+          message_type: 'text',
+          body: transcription.text,
+          raw_payload: { transcribed_from: providerMessageId, audio_url: mediaUrl } as Json,
+          status: 'processing',
+        })
+        await finish({ status: 'processing', customer_id: customer.id, error_detail: `Transcribed: "${transcription.text.slice(0, 120)}"` })
+
+        // Re-run the handler on the transcribed text.
+        const nowDubai = formatInTimeZone(new Date(), TZ, "yyyy-MM-dd (EEEE), HH:mm")
+        const outcome = await parseCustomerMessage(transcription.text, nowDubai)
+        if (!outcome.ok) {
+          await finish({ status: 'error', customer_id: customer.id, error_detail: outcome.error })
+          return NextResponse.json({ ok: true, result: 'parse error (voice)' })
+        }
+        const parsedVoice = outcome.parsed
+        if (parsedVoice.intent === 'order' && parsedVoice.items.length) {
+          const result = await handleOrder(admin, customer, parsedVoice, transcription.text, msgId, finish, reply)
+          return NextResponse.json({ ok: true, result })
+        }
+        if (parsedVoice.intent === 'skip') {
+          await finish({ status: 'needs_review', customer_id: customer.id, parse_intent: 'skip', parse_result: parsedVoice as unknown as Json })
+          await reply('👍 Note kar liya — us din ka khana nahi bhejenge. Hamari team confirm karegi. Thank you!')
+          return NextResponse.json({ ok: true, result: 'skip noted (voice)' })
+        }
+        if (parsedVoice.intent === 'balance_query') {
+          await finish({ status: 'needs_review', customer_id: customer.id, parse_intent: 'balance_query', parse_result: parsedVoice as unknown as Json })
+          await reply('🙏 Aapka bill detail hamari team jald bhejegi. Our team will send your balance details shortly.')
+          return NextResponse.json({ ok: true, result: 'balance query noted (voice)' })
+        }
+        await finish({ status: 'needs_review', customer_id: customer.id, parse_intent: parsedVoice.intent, parse_result: parsedVoice as unknown as Json })
+        return NextResponse.json({ ok: true, result: 'needs_review (voice)' })
+      }
+
       await finish({ status: 'needs_review', customer_id: customer.id, error_detail: `Unsupported message type: ${messageType}` })
       await reply('🙏 Message mil gaya! Hamari team check karke jald reply karegi. Our team will get back to you shortly.')
       return NextResponse.json({ ok: true, result: 'needs_review (non-text)' })
@@ -396,8 +464,15 @@ async function handleOrder(
   })
 
   const lines = block.items.map(i => `• ${i.name} × ${i.quantity}`).join('\n')
+  const addons = (parsed.addon_suggestions ?? [])
+    .map(a => a.trim())
+    .filter(Boolean)
+    .slice(0, 4)
+  const upsell = addons.length
+    ? `\n\nSath me kuch aur chahiye? ${addons.join(', ')} bhi add kar sakte hain. (Want anything else? We can also add ${addons.join(', ')}.)`
+    : ''
   await reply(
-    `✅ Order mil gaya!\n\n${lines}\nTotal: AED ${draft.total.toFixed(2)} (${mealPeriod})\n\nHamari team jald confirm karegi. Thank you! 🙏`,
+    `✅ Order mil gaya!\n\n${lines}\nTotal: AED ${draft.total.toFixed(2)} (${mealPeriod})${upsell}\n\nHamari team jald confirm karegi. Thank you! 🙏`,
   )
   return `draft_created (${draft.orderNumber})`
 }
