@@ -21,7 +21,10 @@ import { parseCustomerMessage } from '@/lib/whatsapp/parser'
 import type { ParsedMessage } from '@/lib/whatsapp/parser'
 import { sendTextMessage } from '@/lib/whatsapp/doubletick'
 import { transcribeAudio } from '@/lib/whatsapp/transcribe'
+import { generateChatReply } from '@/lib/whatsapp/chat'
+import type { ChatTurn } from '@/lib/whatsapp/chat'
 import { getCustomerBalance } from '@/lib/db/aggregates'
+import { getSettings } from '@/lib/settings/getSettings'
 import type { Json } from '@/lib/supabase/types'
 
 export const runtime = 'nodejs'
@@ -101,6 +104,117 @@ async function formatBalanceReply(admin: Admin, customerId: string): Promise<str
   return outstanding > 0.005
     ? `🙏 Aapka outstanding balance hai AED ${outstanding.toFixed(2)}.\nYour outstanding balance is AED ${outstanding.toFixed(2)}. Thank you!`
     : `🙏 Aapka koi outstanding balance nahi hai. You have no outstanding balance. Thank you!`
+}
+
+// ── Shared closure types (finish/reply are defined once per request in POST) ─
+
+type FinishFn = (fields: {
+  status: string; customer_id?: string | null; parse_intent?: string | null
+  parse_result?: Json | null; order_id?: string | null; error_detail?: string | null
+}) => Promise<void>
+
+type ReplyFn = (text: string) => Promise<{ ok: boolean }>
+
+// ── Free-chat fallback ───────────────────────────────────────────────────────
+// For 'other' intent, or an "order" Claude couldn't extract any items from.
+// Set WHATSAPP_CHAT_ENABLED=false to instantly revert to the old silent
+// needs_review behavior without a redeploy.
+
+const CHAT_ENABLED = process.env.WHATSAPP_CHAT_ENABLED !== 'false'
+const HISTORY_LIMIT = 10 // ~5 exchanges
+
+/** Recent turns for this customer, oldest first, excluding the current row. */
+async function loadRecentHistory(admin: Admin, customerId: string, excludeMsgId: string): Promise<ChatTurn[]> {
+  const { data } = await admin
+    .from('whatsapp_messages')
+    .select('direction, body, created_at')
+    .eq('customer_id', customerId)
+    .eq('message_type', 'text')
+    .not('body', 'is', null)
+    .neq('id', excludeMsgId)
+    .order('created_at', { ascending: false })
+    .limit(HISTORY_LIMIT)
+
+  return (data ?? [])
+    .reverse()
+    .map(r => ({ role: r.direction === 'inbound' ? ('user' as const) : ('assistant' as const), text: r.body as string }))
+}
+
+async function handleGeneralChat(
+  admin: Admin,
+  customer: MatchedCustomer,
+  parsed: ParsedMessage,
+  originalText: string,
+  finish: FinishFn,
+  reply: ReplyFn,
+  nowDubai: string,
+  history: ChatTurn[],
+): Promise<string> {
+  if (!CHAT_ENABLED) {
+    await finish({ status: 'needs_review', customer_id: customer.id, parse_intent: parsed.intent, parse_result: parsed as unknown as Json })
+    return 'needs_review (chat disabled)'
+  }
+
+  const today = formatInTimeZone(new Date(), TZ, 'yyyy-MM-dd')
+  const [menu, settings] = await Promise.all([loadMenu(admin, today, null), getSettings()])
+
+  const outcome = await generateChatReply(originalText, {
+    businessName: settings.business_name,
+    currency: settings.currency,
+    customerName: customer.full_name,
+    nowDubai,
+    menu: menu.map(m => ({ name: m.name, meal_period: m.meal_period, price: m.price })),
+    history,
+  })
+
+  if (!outcome.ok) {
+    await finish({
+      status: 'error', customer_id: customer.id, parse_intent: parsed.intent,
+      parse_result: parsed as unknown as Json, error_detail: `Chat generation failed: ${outcome.error}`,
+    })
+    return `error (chat: ${outcome.error})`
+  }
+
+  const { reply: text, confidence, reason } = outcome.result
+  await finish({
+    status: confidence === 'high' ? 'replied' : 'needs_review',
+    customer_id: customer.id,
+    parse_intent: parsed.intent,
+    parse_result: { ...parsed, chat_confidence: confidence, chat_reason: reason } as unknown as Json,
+    error_detail: confidence === 'low' ? reason : null,
+  })
+  await reply(text)
+  return confidence === 'high' ? 'chat replied' : `chat replied (needs_review: ${reason})`
+}
+
+// ── Intent dispatch (shared by the text and voice-transcript paths) ─────────
+
+async function dispatchIntent(
+  admin: Admin,
+  customer: MatchedCustomer,
+  parsed: ParsedMessage,
+  originalText: string,
+  msgId: string,
+  finish: FinishFn,
+  reply: ReplyFn,
+  nowDubai: string,
+  history: ChatTurn[],
+): Promise<string> {
+  if (parsed.intent === 'order' && parsed.items.length) {
+    return handleOrder(admin, customer, parsed, originalText, msgId, finish, reply)
+  }
+  if (parsed.intent === 'skip') {
+    await finish({ status: 'needs_review', customer_id: customer.id, parse_intent: 'skip', parse_result: parsed as unknown as Json })
+    await reply('👍 Note kar liya — us din ka khana nahi bhejenge. Hamari team confirm karegi. Thank you!')
+    return 'skip noted'
+  }
+  if (parsed.intent === 'balance_query') {
+    await finish({ status: 'replied', customer_id: customer.id, parse_intent: 'balance_query', parse_result: parsed as unknown as Json })
+    await reply(await formatBalanceReply(admin, customer.id))
+    return 'balance query answered'
+  }
+  // 'other', or an "order" with no matched items — free chat, grounded + self-flagged.
+  return handleGeneralChat(admin, customer, parsed, originalText, finish, reply, nowDubai, history)
 }
 
 // ── Draft order creation ─────────────────────────────────────────────────────
@@ -272,6 +386,11 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: true, result: 'unknown customer' })
     }
 
+    // Fetched once, before the voice path's own transcript-row insert below —
+    // so that row can never appear as if it were a prior turn duplicating the
+    // current message. Both the voice and text branches reuse this.
+    const history = await loadRecentHistory(admin, customer.id, msgId)
+
     // 2. Voice notes are transcribed to text, then flow through the exact same
     //    pipeline as typed messages. Other media (images, documents) still go
     //    to staff review.
@@ -308,22 +427,8 @@ export async function POST(req: NextRequest) {
           return NextResponse.json({ ok: true, result: 'parse error (voice)' })
         }
         const parsedVoice = outcome.parsed
-        if (parsedVoice.intent === 'order' && parsedVoice.items.length) {
-          const result = await handleOrder(admin, customer, parsedVoice, transcription.text, msgId, finish, reply)
-          return NextResponse.json({ ok: true, result })
-        }
-        if (parsedVoice.intent === 'skip') {
-          await finish({ status: 'needs_review', customer_id: customer.id, parse_intent: 'skip', parse_result: parsedVoice as unknown as Json })
-          await reply('👍 Note kar liya — us din ka khana nahi bhejenge. Hamari team confirm karegi. Thank you!')
-          return NextResponse.json({ ok: true, result: 'skip noted (voice)' })
-        }
-        if (parsedVoice.intent === 'balance_query') {
-          await finish({ status: 'replied', customer_id: customer.id, parse_intent: 'balance_query', parse_result: parsedVoice as unknown as Json })
-          await reply(await formatBalanceReply(admin, customer.id))
-          return NextResponse.json({ ok: true, result: 'balance query answered (voice)' })
-        }
-        await finish({ status: 'needs_review', customer_id: customer.id, parse_intent: parsedVoice.intent, parse_result: parsedVoice as unknown as Json })
-        return NextResponse.json({ ok: true, result: 'needs_review (voice)' })
+        const result = await dispatchIntent(admin, customer, parsedVoice, transcription.text, msgId, finish, reply, nowDubai, history)
+        return NextResponse.json({ ok: true, result: `${result} (voice)` })
       }
 
       await finish({ status: 'needs_review', customer_id: customer.id, error_detail: `Unsupported message type: ${messageType}` })
@@ -347,26 +452,8 @@ export async function POST(req: NextRequest) {
     const parsed = outcome.parsed
 
     // 4. Route by intent.
-    if (parsed.intent === 'order' && parsed.items.length) {
-      const result = await handleOrder(admin, customer, parsed, body, msgId, finish, reply)
-      return NextResponse.json({ ok: true, result })
-    }
-
-    if (parsed.intent === 'skip') {
-      await finish({ status: 'needs_review', customer_id: customer.id, parse_intent: 'skip', parse_result: parsed as unknown as Json })
-      await reply('👍 Note kar liya — us din ka khana nahi bhejenge. Hamari team confirm karegi. Thank you!')
-      return NextResponse.json({ ok: true, result: 'skip noted' })
-    }
-
-    if (parsed.intent === 'balance_query') {
-      await finish({ status: 'replied', customer_id: customer.id, parse_intent: 'balance_query', parse_result: parsed as unknown as Json })
-      await reply(await formatBalanceReply(admin, customer.id))
-      return NextResponse.json({ ok: true, result: 'balance query answered' })
-    }
-
-    // 'other', or an "order" with no items — a human reads it, no auto-reply.
-    await finish({ status: 'needs_review', customer_id: customer.id, parse_intent: parsed.intent, parse_result: parsed as unknown as Json })
-    return NextResponse.json({ ok: true, result: 'needs_review' })
+    const result = await dispatchIntent(admin, customer, parsed, body, msgId, finish, reply, nowDubai, history)
+    return NextResponse.json({ ok: true, result })
   } catch (err) {
     const detail = err instanceof Error ? err.message : String(err)
     await finish({ status: 'error', error_detail: detail })
@@ -382,9 +469,8 @@ async function handleOrder(
   parsed: ParsedMessage,
   originalText: string,
   msgId: string,
-  finish: (f: { status: string; customer_id?: string | null; parse_intent?: string | null;
-                parse_result?: Json | null; order_id?: string | null; error_detail?: string | null }) => Promise<void>,
-  reply: (text: string) => Promise<{ ok: boolean }>,
+  finish: FinishFn,
+  reply: ReplyFn,
 ): Promise<string> {
   const today = formatInTimeZone(new Date(), TZ, 'yyyy-MM-dd')
   const orderDate = parsed.order_date ?? today
