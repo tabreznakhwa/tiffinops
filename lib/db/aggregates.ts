@@ -87,6 +87,16 @@ export async function getCustomerBalances(admin: Admin): Promise<CustomerBalance
   return combine(orders, payments)
 }
 
+// ── Single customer balance ───────────────────────────────────────────────────
+// Convenience wrapper for callers that only need one customer (e.g. the
+// WhatsApp agent answering "what's my balance?"). Still one aggregated
+// Postgres round-trip via customer_balances(), not a per-order scan.
+
+export async function getCustomerBalance(admin: Admin, customerId: string): Promise<CustomerBalance> {
+  const all = await getCustomerBalances(admin)
+  return all.find(b => b.customer_id === customerId) ?? { customer_id: customerId, order_total: 0, payment_total: 0 }
+}
+
 // ── Per-customer balances within a date range ────────────────────────────────
 // Both bounds inclusive.
 

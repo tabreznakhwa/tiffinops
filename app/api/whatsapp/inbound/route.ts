@@ -21,6 +21,7 @@ import { parseCustomerMessage } from '@/lib/whatsapp/parser'
 import type { ParsedMessage } from '@/lib/whatsapp/parser'
 import { sendTextMessage } from '@/lib/whatsapp/doubletick'
 import { transcribeAudio } from '@/lib/whatsapp/transcribe'
+import { getCustomerBalance } from '@/lib/db/aggregates'
 import type { Json } from '@/lib/supabase/types'
 
 export const runtime = 'nodejs'
@@ -89,6 +90,17 @@ async function matchCustomerByPhone(admin: Admin, fromPhone: string): Promise<Ma
     }
   }
   return null
+}
+
+// ── Balance replies ──────────────────────────────────────────────────────────
+// Same outstanding-balance math as the dashboard (Math.max(0, order_total - payment_total)).
+
+async function formatBalanceReply(admin: Admin, customerId: string): Promise<string> {
+  const bal = await getCustomerBalance(admin, customerId)
+  const outstanding = Math.max(0, bal.order_total - bal.payment_total)
+  return outstanding > 0.005
+    ? `🙏 Aapka outstanding balance hai AED ${outstanding.toFixed(2)}.\nYour outstanding balance is AED ${outstanding.toFixed(2)}. Thank you!`
+    : `🙏 Aapka koi outstanding balance nahi hai. You have no outstanding balance. Thank you!`
 }
 
 // ── Draft order creation ─────────────────────────────────────────────────────
@@ -306,9 +318,9 @@ export async function POST(req: NextRequest) {
           return NextResponse.json({ ok: true, result: 'skip noted (voice)' })
         }
         if (parsedVoice.intent === 'balance_query') {
-          await finish({ status: 'needs_review', customer_id: customer.id, parse_intent: 'balance_query', parse_result: parsedVoice as unknown as Json })
-          await reply('🙏 Aapka bill detail hamari team jald bhejegi. Our team will send your balance details shortly.')
-          return NextResponse.json({ ok: true, result: 'balance query noted (voice)' })
+          await finish({ status: 'replied', customer_id: customer.id, parse_intent: 'balance_query', parse_result: parsedVoice as unknown as Json })
+          await reply(await formatBalanceReply(admin, customer.id))
+          return NextResponse.json({ ok: true, result: 'balance query answered (voice)' })
         }
         await finish({ status: 'needs_review', customer_id: customer.id, parse_intent: parsedVoice.intent, parse_result: parsedVoice as unknown as Json })
         return NextResponse.json({ ok: true, result: 'needs_review (voice)' })
@@ -347,9 +359,9 @@ export async function POST(req: NextRequest) {
     }
 
     if (parsed.intent === 'balance_query') {
-      await finish({ status: 'needs_review', customer_id: customer.id, parse_intent: 'balance_query', parse_result: parsed as unknown as Json })
-      await reply('🙏 Aapka bill detail hamari team jald bhejegi. Our team will send your balance details shortly.')
-      return NextResponse.json({ ok: true, result: 'balance query noted' })
+      await finish({ status: 'replied', customer_id: customer.id, parse_intent: 'balance_query', parse_result: parsed as unknown as Json })
+      await reply(await formatBalanceReply(admin, customer.id))
+      return NextResponse.json({ ok: true, result: 'balance query answered' })
     }
 
     // 'other', or an "order" with no items — a human reads it, no auto-reply.
