@@ -893,6 +893,39 @@ export type Database = {
         }
         Relationships: []
       }
+      balance_adjustments: {
+        Row: {
+          id: string
+          customer_id: string
+          amount: string
+          adjustment_type: string
+          reason: string
+          adjustment_date: string
+          created_by: string | null
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          customer_id: string
+          amount: string
+          adjustment_type?: string
+          reason: string
+          adjustment_date?: string
+          created_by?: string | null
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          customer_id?: string
+          amount?: string
+          adjustment_type?: string
+          reason?: string
+          adjustment_date?: string
+          created_by?: string | null
+          created_at?: string
+        }
+        Relationships: []
+      }
       app_settings: {
         Row: {
           id: number

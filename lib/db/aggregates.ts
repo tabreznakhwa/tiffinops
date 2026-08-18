@@ -327,6 +327,36 @@ export async function getCustomerOldestUnpaidInvoice(admin: Admin): Promise<Cust
   return [...map.entries()].map(([customer_id, oldest_due_date]) => ({ customer_id, oldest_due_date }))
 }
 
+// ── Balance adjustments (discounts / write-offs) per customer ────────────────
+// Sum of balance_adjustments within a closed date range. Reduces what the
+// customer owes in the Outstanding report. Table is tiny (manual, occasional
+// entries), so a direct paginated select is fine — no RPC needed. Returns an
+// empty map if migration 038 hasn't been run yet.
+
+export async function getCustomerAdjustmentTotalsInRange(
+  admin: Admin,
+  from: string,
+  to: string,
+): Promise<Map<string, number>> {
+  const map = new Map<string, number>()
+  try {
+    const rows = await fetchAllPages<{ customer_id: string; amount: string }>((f, t) =>
+      admin.from('balance_adjustments')
+        .select('customer_id, amount')
+        .gte('adjustment_date', from)
+        .lte('adjustment_date', to)
+        .range(f, t) as never,
+    )
+    for (const r of rows) {
+      if (!r.customer_id) continue
+      map.set(r.customer_id, (map.get(r.customer_id) ?? 0) + num(r.amount))
+    }
+  } catch {
+    // table missing (migration 038 not applied) — degrade to no adjustments
+  }
+  return map
+}
+
 // ── Order total for a half-open date range [from, to) ────────────────────────
 
 export async function getOrderTotalInRange(

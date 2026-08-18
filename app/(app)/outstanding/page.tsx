@@ -4,7 +4,7 @@ import { formatInTimeZone } from 'date-fns-tz'
 import { requireAuth } from '@/lib/auth'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { getSettings } from '@/lib/settings/getSettings'
-import { getCustomerBalancesInRange, getCustomerLastPayments, getCustomerOutstandingSince, getCustomerOldestUnpaidInvoice } from '@/lib/db/aggregates'
+import { getCustomerBalancesInRange, getCustomerLastPayments, getCustomerOutstandingSince, getCustomerOldestUnpaidInvoice, getCustomerAdjustmentTotalsInRange } from '@/lib/db/aggregates'
 import { chargeForCustomer, groupSubscriptionsByCustomer } from '@/lib/billing/subscription-charge'
 import { OutstandingModule } from '@/components/outstanding/outstanding-module'
 import type { OutstandingRow } from '@/components/outstanding/outstanding-module'
@@ -69,6 +69,7 @@ export default async function OutstandingPage({
     lastPayments,
     oldestDebts,
     oldestInvoices,
+    adjustmentTotals,
   ] = await Promise.all([
     getSettings(),
     admin
@@ -89,6 +90,8 @@ export default async function OutstandingPage({
     getCustomerOutstandingSince(admin),
     // Per-customer oldest unpaid invoice due date — aging for subscription debt
     getCustomerOldestUnpaidInvoice(admin),
+    // Discounts / write-offs that settle residual balances
+    getCustomerAdjustmentTotalsInRange(admin, effectiveFrom, effectiveTo),
   ])
 
   const customerList = customers ?? []
@@ -133,7 +136,9 @@ export default async function OutstandingPage({
       const fixedDiscount = isFixed && hasPlan ? orderBilled : 0
 
       const totalBilled = orderBilled + subCharge - fixedDiscount
-      const outstanding = totalBilled - totalPaid
+      // Discounts / write-offs settle residual balances without a fake payment
+      const adjustmentTotal = adjustmentTotals.get(c.id) ?? 0
+      const outstanding = totalBilled - totalPaid - adjustmentTotal
 
       // Aging anchor: earliest unpaid obligation. Order-driven debt uses the
       // FIFO "oldest unpaid order" date; subscription-only debt uses the oldest
@@ -159,7 +164,8 @@ export default async function OutstandingPage({
         !rangeFrom && !rangeTo
       ) {
         const netOrderBill = Math.max(0, orderBilled - fixedDiscount)
-        const paidTowardPlan = Math.max(0, totalPaid - netOrderBill)
+        // Discounts count toward the plan too — a discounted month is covered
+        const paidTowardPlan = Math.max(0, totalPaid + adjustmentTotal - netOrderBill)
         const monthsCovered = Math.floor((paidTowardPlan + 0.01) / monthlyRate)
         nextDue = nthAnniversary(current.start_date, monthsCovered)
         nextDueInDays = -daysSince(nextDue, today) // negative = overdue by |n| days
@@ -178,6 +184,7 @@ export default async function OutstandingPage({
         fixedDiscount,
         totalBilled,
         totalPaid,
+        adjustmentTotal,
         outstanding,
         monthlyRate,
         subPaused:     current?.status === 'paused',
