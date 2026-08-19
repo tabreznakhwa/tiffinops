@@ -25,6 +25,7 @@ import { generateChatReply } from '@/lib/whatsapp/chat'
 import type { ChatTurn } from '@/lib/whatsapp/chat'
 import { getCustomerBalance } from '@/lib/db/aggregates'
 import { getSettings } from '@/lib/settings/getSettings'
+import { getActiveFaqFacts } from '@/lib/faqs/getFaqFacts'
 import type { Json } from '@/lib/supabase/types'
 
 export const runtime = 'nodejs'
@@ -40,7 +41,7 @@ const TZ = 'Asia/Dubai'
 async function loadMenu(admin: Admin, date: string, meal: MealPeriod | null): Promise<MenuItemRef[]> {
   const [{ data: items }, { data: dailyMenu }] = await Promise.all([
     admin.from('menu_items').select('id, name, meal_period, default_price').eq('is_available', true),
-    admin.from('daily_menus').select('id').eq('menu_date', date).maybeSingle(),
+    admin.from('daily_menus').select('id').eq('menu_date', date).eq('is_published', true).maybeSingle(),
   ])
 
   const overrides = new Map<string, number>()
@@ -156,7 +157,7 @@ async function handleGeneralChat(
   }
 
   const today = formatInTimeZone(new Date(), TZ, 'yyyy-MM-dd')
-  const [menu, settings] = await Promise.all([loadMenu(admin, today, null), getSettings()])
+  const [menu, settings, facts] = await Promise.all([loadMenu(admin, today, null), getSettings(), getActiveFaqFacts(admin)])
 
   const outcome = await generateChatReply(originalText, {
     businessName: settings.business_name,
@@ -164,6 +165,7 @@ async function handleGeneralChat(
     customerName: customer.full_name,
     nowDubai,
     menu: menu.map(m => ({ name: m.name, meal_period: m.meal_period, price: m.price })),
+    facts,
     history,
   })
 

@@ -926,6 +926,36 @@ export type Database = {
         }
         Relationships: []
       }
+      faq_facts: {
+        Row: {
+          id: string
+          fact: string
+          sort_order: number
+          is_active: boolean
+          created_by: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          fact: string
+          sort_order?: number
+          is_active?: boolean
+          created_by?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          fact?: string
+          sort_order?: number
+          is_active?: boolean
+          created_by?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       app_settings: {
         Row: {
           id: number

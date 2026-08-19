@@ -25,7 +25,7 @@ type Admin = ReturnType<typeof createAdminClient>
 async function loadMenu(admin: Admin, date: string, meal: MealPeriod | null): Promise<MenuItemRef[]> {
   const [{ data: items }, { data: dailyMenu }] = await Promise.all([
     admin.from('menu_items').select('id, name, meal_period, default_price').eq('is_available', true),
-    admin.from('daily_menus').select('id').eq('menu_date', date).maybeSingle(),
+    admin.from('daily_menus').select('id').eq('menu_date', date).eq('is_published', true).maybeSingle(),
   ])
 
   const overrides = new Map<string, number>()

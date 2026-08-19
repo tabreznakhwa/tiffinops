@@ -54,6 +54,17 @@ const NAV_ITEMS: NavItem[] = [
     ),
   },
   {
+    href: '/day-wise-menu',
+    label: 'Day-wise Menu',
+    icon: (
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+        <rect x="3" y="4" width="18" height="18" rx="2"/>
+        <path d="M3 10h18M8 4v3M16 4v3"/>
+        <path d="M8 14.5h1M12 14.5h1M16 14.5h1"/>
+      </svg>
+    ),
+  },
+  {
     href: '/',
     label: 'Dashboard',
     notForRoles: ['data_entry'],
@@ -276,6 +287,25 @@ export function Nav({ pendingApprovals = 0, isOwner = false, userRole }: NavProp
               </svg>
             </span>
             Settings
+          </Link>
+
+          <Link
+            href="/faqs"
+            className={cn(
+              'flex items-center gap-1.5 whitespace-nowrap font-semibold text-[14px] px-3 py-3 border-b-[2.5px] transition-colors',
+              isActive('/faqs')
+                ? 'text-ink border-saffron'
+                : 'text-muted border-transparent hover:text-ink'
+            )}
+          >
+            <span className="w-[17px] h-[17px] flex-shrink-0">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+                <circle cx="12" cy="12" r="9"/>
+                <path d="M9.1 9a3 3 0 0 1 5.82 1c0 2-3 2-3 4"/>
+                <path d="M12 17h.01"/>
+              </svg>
+            </span>
+            FAQs
           </Link>
         </>
       )}
