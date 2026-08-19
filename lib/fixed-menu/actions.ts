@@ -173,6 +173,42 @@ export async function createSubscription(input: SubscriptionInput): Promise<Fixe
   )
   if (mealPricesError) return { error: mealPricesError }
 
+  // A new plan supersedes any live plan covering the same meal(s). Billing
+  // treats plans with different meal coverage as parallel series, so without
+  // this an old Dinner plan would keep billing alongside a new Lunch & Dinner
+  // plan and the customer gets double-charged.
+  const { data: newPlan } = await admin
+    .from('fixed_plans')
+    .select('meal_periods')
+    .eq('id', parsed.data.fixed_plan_id)
+    .single()
+  const newMeals = new Set<string>(newPlan?.meal_periods ?? [])
+  const { data: existingSubs } = await admin
+    .from('customer_subscriptions')
+    .select('id, start_date, end_date, status, fixed_plans(plan_name, meal_periods)')
+    .eq('customer_id', parsed.data.customer_id)
+    .in('status', ['active', 'paused'])
+  for (const s of existingSubs ?? []) {
+    const plan = s.fixed_plans as unknown as { plan_name: string; meal_periods: string[] } | null
+    if (!(plan?.meal_periods ?? []).some(m => newMeals.has(m))) continue
+    const stillBilling = !s.end_date || s.end_date >= parsed.data.start_date
+    if (!stillBilling) continue
+    if (s.start_date < parsed.data.start_date) {
+      // Close the old plan the day before the new one begins
+      const dayBefore = new Date(new Date(parsed.data.start_date + 'T00:00:00Z').getTime() - 86_400_000)
+        .toISOString().slice(0, 10)
+      const { error: closeError } = await admin
+        .from('customer_subscriptions')
+        .update({ status: 'completed', end_date: dayBefore })
+        .eq('id', s.id)
+      if (closeError) return { error: closeError.message }
+    } else {
+      return {
+        error: `This customer already has a live "${plan?.plan_name ?? 'plan'}" subscription covering the same meals (started ${s.start_date}). Edit that subscription to change the plan or price — don't add a second one.`,
+      }
+    }
+  }
+
   const { error } = await admin.from('customer_subscriptions').insert({
     customer_id: parsed.data.customer_id,
     fixed_plan_id: parsed.data.fixed_plan_id,
@@ -186,6 +222,7 @@ export async function createSubscription(input: SubscriptionInput): Promise<Fixe
 
   if (error) return { error: error.message }
   revalidatePath('/fixed-menu')
+  revalidatePath('/outstanding')
   return {}
 }
 
