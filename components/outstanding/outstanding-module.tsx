@@ -61,6 +61,57 @@ interface Props {
   rangeTo:        string
 }
 
+// ── Due-flag logic ───────────────────────────────────────────────────────────
+// One glanceable traffic light per owing customer, decided by the strongest
+// signal available (checked top to bottom — first match wins):
+//
+//   🔴 OVERDUE  — prepaid due date has passed, OR owes 2+ months of their
+//                 plan rate, OR any debt older than 30 days.
+//   🟠 DUE SOON — prepaid payment due within the next 7 days, OR ~1 month
+//                 of the plan owing, OR debt older than 15 days.
+//   🟢 ON TRACK — has a balance, but comfortably within terms.
+//
+// Each flag carries a plain-English reason ("Payment overdue 6d",
+// "Owes 2.5 months", "Due in 3d") so anyone can see WHY at a glance.
+
+export type FlagLevel = 'overdue' | 'due_soon' | 'on_track'
+
+const FLAG_META: Record<FlagLevel, { label: string; rank: number; bg: string; color: string; dot: string }> = {
+  overdue:  { label: 'Overdue',  rank: 2, bg: '#FEE2E2', color: '#991B1B', dot: '#DC2626' },
+  due_soon: { label: 'Due Soon', rank: 1, bg: '#FEF3C7', color: '#92400E', dot: '#F59E0B' },
+  on_track: { label: 'On Track', rank: 0, bg: '#DCFCE7', color: '#166534', dot: '#22C55E' },
+}
+
+function computeDueFlag(row: OutstandingRow): { level: FlagLevel; reason: string } {
+  // "Months owed" translates the balance into plan-months — the most natural
+  // unit for a tiffin subscription ("he owes 2 months" beats any number).
+  const monthsOwed = row.monthlyRate > 0 ? row.outstanding / row.monthlyRate : null
+
+  // Red — needs follow-up now
+  if (row.nextDueInDays != null && row.nextDueInDays < 0) {
+    return { level: 'overdue', reason: `Payment overdue ${Math.abs(row.nextDueInDays)}d` }
+  }
+  if (monthsOwed != null && monthsOwed >= 2) {
+    return { level: 'overdue', reason: `Owes ${monthsOwed.toFixed(1)} months` }
+  }
+  if ((row.daysOutstanding ?? 0) > 30) {
+    return { level: 'overdue', reason: `Unpaid ${row.daysOutstanding}d` }
+  }
+
+  // Amber — follow up this week
+  if (row.nextDueInDays != null && row.nextDueInDays <= 7) {
+    return { level: 'due_soon', reason: row.nextDueInDays === 0 ? 'Due today' : `Due in ${row.nextDueInDays}d` }
+  }
+  if (monthsOwed != null && monthsOwed >= 1) {
+    return { level: 'due_soon', reason: `Owes ${monthsOwed.toFixed(1)} month${monthsOwed >= 1.05 ? 's' : ''}` }
+  }
+  if ((row.daysOutstanding ?? 0) >= 15) {
+    return { level: 'due_soon', reason: `Unpaid ${row.daysOutstanding}d` }
+  }
+
+  return { level: 'on_track', reason: 'Within terms' }
+}
+
 type DateEdit = { subId: string; field: 'start' | 'end'; value: string; customerId: string }
 type ViewMode = 'owing' | 'credit'
 
@@ -257,6 +308,7 @@ export function OutstandingModule({ rows, totalCustomers, currency, userRole, ra
   const [view,        setView]        = useState<ViewMode>('owing')
   const [search,      setSearch]      = useState('')
   const [typeFilter,  setTypeFilter]  = useState<string>('')
+  const [flagFilter,  setFlagFilter]  = useState<FlagLevel | ''>('')
   const [areaFilter,  setAreaFilter]  = useState<string[]>([])
   const [editingDate, setEditingDate] = useState<DateEdit | null>(null)
   const [savingDate,  setSavingDate]  = useState(false)
@@ -285,16 +337,34 @@ export function OutstandingModule({ rows, totalCustomers, currency, userRole, ra
 
   const areas = useMemo(() => collectAreas(rows, r => r.area), [rows])
 
+  // Every owing customer gets a due flag, computed once per render pass.
+  const flagMap = useMemo(() => {
+    const m = new Map<string, { level: FlagLevel; reason: string }>()
+    for (const r of rows) if (r.outstanding > 0.005) m.set(r.id, computeDueFlag(r))
+    return m
+  }, [rows])
+
   // Same underlying data either way — just the other side of the same
-  // balance. Owing = still owes money (outstanding > 0). Credit = already
-  // paid more than they currently owe (outstanding < 0), i.e. money sitting
-  // on their account.
-  const owingRows  = useMemo(() => rows.filter(r => r.outstanding > 0.005).sort((a, b) => b.outstanding - a.outstanding), [rows])
+  // balance. Owing = still owes money (outstanding > 0), sorted worst flag
+  // first so the customers to chase sit at the top. Credit = already paid
+  // more than they currently owe, i.e. money sitting on their account.
+  const owingRows  = useMemo(() =>
+    rows.filter(r => r.outstanding > 0.005).sort((a, b) => {
+      const rankDiff = (FLAG_META[flagMap.get(b.id)!.level].rank) - (FLAG_META[flagMap.get(a.id)!.level].rank)
+      return rankDiff !== 0 ? rankDiff : b.outstanding - a.outstanding
+    }), [rows, flagMap])
   const creditRows = useMemo(() => rows.filter(r => r.outstanding < -0.005).sort((a, b) => a.outstanding - b.outstanding), [rows])
   const baseRows = view === 'owing' ? owingRows : creditRows
 
+  const flagCounts = useMemo(() => {
+    const c: Record<FlagLevel, number> = { overdue: 0, due_soon: 0, on_track: 0 }
+    for (const r of owingRows) c[flagMap.get(r.id)!.level]++
+    return c
+  }, [owingRows, flagMap])
+
   const filtered = useMemo(() => {
     let result = baseRows
+    if (view === 'owing' && flagFilter) result = result.filter(r => flagMap.get(r.id)!.level === flagFilter)
     if (typeFilter) result = result.filter(r => r.customer_type === typeFilter)
     if (areaFilter.length) result = result.filter(r => matchesArea(areaFilter, r.area))
     if (search.trim()) {
@@ -306,13 +376,13 @@ export function OutstandingModule({ rows, totalCustomers, currency, userRole, ra
       )
     }
     return result
-  }, [baseRows, search, typeFilter, areaFilter])
+  }, [baseRows, search, typeFilter, areaFilter, view, flagFilter, flagMap])
 
   const grandTotal  = Math.abs(filtered.reduce((s, r) => s + r.outstanding, 0))
   const grandBilled = filtered.reduce((s, r) => s + r.totalBilled, 0)
   const grandPaid   = filtered.reduce((s, r) => s + r.totalPaid,   0)
   const hasDateRange = !!(rangeFrom || rangeTo)
-  const isFiltered   = !!(hasDateRange || search.trim() || typeFilter || areaFilter.length)
+  const isFiltered   = !!(hasDateRange || search.trim() || typeFilter || areaFilter.length || flagFilter)
 
   return (
     <div style={{ opacity: isFiltering ? 0.6 : 1, transition: 'opacity 120ms' }}>
@@ -355,7 +425,12 @@ export function OutstandingModule({ rows, totalCustomers, currency, userRole, ra
         <div className="rounded-[14px] p-4" style={{ background: 'var(--color-surface)', border: '1px solid var(--color-border)', boxShadow: 'var(--shadow-card)' }}>
           <p className="text-xs font-semibold mb-1" style={{ color: 'var(--color-muted)' }}>{view === 'owing' ? 'Customers with Balance' : 'Customers with Credit'}</p>
           <p className="font-display font-bold text-[24px]" style={{ color: 'var(--color-ink)' }}>{filtered.length}</p>
-          <p className="text-[11px] mt-0.5" style={{ color: 'var(--color-muted)' }}>of {totalCustomers} active</p>
+          <p className="text-[11px] mt-0.5" style={{ color: 'var(--color-muted)' }}>
+            of {totalCustomers} active
+            {view === 'owing' && flagCounts.overdue > 0 && (
+              <span className="font-bold" style={{ color: 'var(--color-red, #C0392B)' }}> · {flagCounts.overdue} overdue</span>
+            )}
+          </p>
         </div>
         <div className="rounded-[14px] p-4" style={{ background: 'var(--color-surface)', border: '1px solid var(--color-border)', boxShadow: 'var(--shadow-card)' }}>
           <p className="text-xs font-semibold mb-1" style={{ color: 'var(--color-muted)' }}>Total Billed vs Paid</p>
@@ -368,6 +443,42 @@ export function OutstandingModule({ rows, totalCustomers, currency, userRole, ra
           <p className="text-[11px] mt-0.5" style={{ color: '#A09080' }}>All customers combined</p>
         </div>
       </div>
+
+      {/* Due-flag chips — tap to see only that group */}
+      {view === 'owing' && (
+        <div className="flex items-center gap-2 mb-3 flex-wrap">
+          <span className="text-xs font-bold uppercase tracking-wide" style={{ color: 'var(--color-muted)' }}>
+            Due status:
+          </span>
+          {(['overdue', 'due_soon', 'on_track'] as const).map(level => {
+            const meta = FLAG_META[level]
+            const active = flagFilter === level
+            return (
+              <button
+                key={level}
+                onClick={() => setFlagFilter(active ? '' : level)}
+                className="flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold transition-colors"
+                style={active
+                  ? { background: meta.bg, color: meta.color, border: `1.5px solid ${meta.dot}` }
+                  : { background: 'var(--color-surface)', color: 'var(--color-muted)', border: '1px solid var(--color-border)' }
+                }
+              >
+                <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: meta.dot }} />
+                {meta.label} ({flagCounts[level]})
+              </button>
+            )
+          })}
+          {flagFilter && (
+            <button
+              onClick={() => setFlagFilter('')}
+              className="text-xs font-semibold underline"
+              style={{ color: 'var(--color-muted)' }}
+            >
+              Clear
+            </button>
+          )}
+        </div>
+      )}
 
       {/* Type filter pills */}
       <div className="flex items-center gap-2 mb-3 flex-wrap">
@@ -450,14 +561,33 @@ export function OutstandingModule({ rows, totalCustomers, currency, userRole, ra
               <tbody>
                 {filtered.map((row, i) => {
                   const tc = TYPE_COLORS[row.customer_type] ?? TYPE_COLORS.a_la_carte
+                  const flag = view === 'owing' ? flagMap.get(row.id) : undefined
+                  const fm = flag ? FLAG_META[flag.level] : null
                   return (
-                    <tr key={row.id} style={{ borderBottom: i < filtered.length - 1 ? '1px solid var(--color-border)' : undefined }}>
+                    <tr
+                      key={row.id}
+                      style={{
+                        borderBottom: i < filtered.length - 1 ? '1px solid var(--color-border)' : undefined,
+                        // Overdue rows carry a red left edge so they pop even when scrolling fast
+                        boxShadow: flag?.level === 'overdue' ? `inset 3px 0 0 ${fm!.dot}` : undefined,
+                      }}
+                    >
                       <td className="px-4 py-3 text-xs font-bold" style={{ color: 'var(--color-muted)' }}>{i + 1}</td>
                       <td className="px-4 py-3">
                         <Link href={`/customers/${row.id}`} className="hover:underline">
                           <span className="font-semibold block" style={{ color: 'var(--color-ink)' }}>{row.full_name}</span>
                           <span className="text-xs" style={{ color: 'var(--color-muted)' }}>{row.customer_code}</span>
                         </Link>
+                        {flag && fm && (
+                          <span
+                            className="mt-1 flex items-center gap-1 w-fit px-2 py-0.5 rounded-full text-[10px] font-bold whitespace-nowrap"
+                            style={{ background: fm.bg, color: fm.color }}
+                            title={`${fm.label} — ${flag.reason}`}
+                          >
+                            <span className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ background: fm.dot }} />
+                            {flag.reason}
+                          </span>
+                        )}
                       </td>
                       <td className="px-4 py-3">
                         <div className="flex flex-col gap-1">
