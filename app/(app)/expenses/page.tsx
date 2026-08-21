@@ -21,7 +21,7 @@ export default async function ExpensesPage() {
   const admin = createAdminClient()
   const { data: expenses } = await admin
     .from('expenses')
-    .select('id, expense_number, expense_date, category, vendor_name, description, amount, payment_method, receipt_path, notes')
+    .select('id, expense_number, expense_date, category, vendor_name, description, amount, vat_amount, payment_method, receipt_path, notes')
     .order('expense_date', { ascending: false })
     .order('created_at', { ascending: false })
 

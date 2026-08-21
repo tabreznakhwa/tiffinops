@@ -1142,6 +1142,7 @@ export type Database = {
           payment_status: string
           payment_method: Database['public']['Enums']['payment_mode'] | null
           subtotal: string
+          vat_amount: string
           total_amount: string
           notes: string | null
           receipt_path: string | null
@@ -1157,6 +1158,7 @@ export type Database = {
           payment_status?: string
           payment_method?: Database['public']['Enums']['payment_mode'] | null
           subtotal?: string
+          vat_amount?: string
           total_amount?: string
           notes?: string | null
           receipt_path?: string | null
@@ -1172,6 +1174,7 @@ export type Database = {
           payment_status?: string
           payment_method?: Database['public']['Enums']['payment_mode'] | null
           subtotal?: string
+          vat_amount?: string
           total_amount?: string
           notes?: string | null
           receipt_path?: string | null
@@ -1192,6 +1195,7 @@ export type Database = {
           vendor_name: string | null
           description: string | null
           amount: string
+          vat_amount: string
           payment_method: Database['public']['Enums']['payment_mode'] | null
           receipt_path: string | null
           notes: string | null
@@ -1207,6 +1211,7 @@ export type Database = {
           vendor_name?: string | null
           description?: string | null
           amount: string
+          vat_amount?: string
           payment_method?: Database['public']['Enums']['payment_mode'] | null
           receipt_path?: string | null
           notes?: string | null
@@ -1222,6 +1227,7 @@ export type Database = {
           vendor_name?: string | null
           description?: string | null
           amount?: string
+          vat_amount?: string
           payment_method?: Database['public']['Enums']['payment_mode'] | null
           receipt_path?: string | null
           notes?: string | null

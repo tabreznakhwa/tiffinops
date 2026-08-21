@@ -125,6 +125,7 @@ export function ScanBillModule({
   const [vendorName, setVendorName] = useState('')
   const [category, setCategory] = useState<ExpenseCategory>('other')
   const [amount, setAmount] = useState('')
+  const [vatAmount, setVatAmount] = useState('')
   const [description, setDescription] = useState('')
   const [doneMessage, setDoneMessage] = useState('')
 
@@ -176,6 +177,12 @@ export function ScanBillModule({
     setDocDate(doc.doc_date ?? todayDubai)
     setCategory(doc.suggested_category)
     setAmount(doc.total != null ? doc.total.toFixed(2) : '')
+    // VAT: what the bill printed, else derive from subtotal/total when both exist.
+    const vat =
+      doc.vat_amount != null && doc.vat_amount > 0 ? doc.vat_amount
+      : doc.subtotal != null && doc.total != null && doc.total > doc.subtotal ? doc.total - doc.subtotal
+      : null
+    setVatAmount(vat != null ? vat.toFixed(2) : '')
     setDescription(doc.line_items.length ? doc.line_items.map(l => l.name).join(', ') : '')
     setPaymentStatus(doc.paid ? 'paid' : 'unpaid')
     setPaymentMethod(doc.payment_method_hint ?? '')
@@ -269,8 +276,10 @@ export function ScanBillModule({
   const usableLines = lines.filter(l => l.itemId)
   const subtotal = usableLines.reduce(
     (s, l) => s + (parseFloat(l.quantity) || 0) * (parseFloat(l.unitPrice) || 0), 0)
+  const vatNum = parseFloat(vatAmount) || 0
+  const grandTotal = subtotal + vatNum
   const billTotal = scan?.doc?.total ?? null
-  const totalMismatch = billTotal != null && subtotal > 0 && Math.abs(subtotal - billTotal) > 0.05
+  const totalMismatch = billTotal != null && subtotal > 0 && Math.abs(grandTotal - billTotal) > 0.05
 
   function handleConfirm() {
     setError(null)
@@ -291,6 +300,7 @@ export function ScanBillModule({
           payment_method: paymentMethod || null,
           notes: 'Recorded via AI bill scan',
           receipt_path: scan?.receiptPath ?? null,
+          vat_amount: vatNum > 0 ? vatNum : null,
           items: usableLines.map(l => ({
             inventory_item_id: l.itemId,
             quantity: parseFloat(l.quantity),
@@ -298,7 +308,7 @@ export function ScanBillModule({
           })),
         })
         if (res?.error) { setError(res.error); return }
-        setDoneMessage(`Purchase recorded · ${currency} ${subtotal.toFixed(2)} · stock updated`)
+        setDoneMessage(`Purchase recorded · ${currency} ${grandTotal.toFixed(2)}${vatNum > 0 ? ` (incl. VAT ${currency} ${vatNum.toFixed(2)})` : ''} · stock updated`)
       } else {
         const amt = parseFloat(amount)
         if (!(amt > 0)) { setError('Enter the expense amount'); return }
@@ -308,6 +318,7 @@ export function ScanBillModule({
           vendor_name: vendorName || undefined,
           description: description || undefined,
           amount: amt,
+          vat_amount: vatNum > 0 ? vatNum : null,
           payment_method: paymentMethod || null,
           receipt_path: scan?.receiptPath ?? null,
         })
@@ -616,16 +627,45 @@ export function ScanBillModule({
                   <Plus size={14} /> Add line manually
                 </button>
                 {lines.length > 0 && (
-                  <div className="flex justify-between pt-2" style={{ borderTop: '1px solid var(--color-border)' }}>
-                    <span className="font-bold text-sm" style={{ color: 'var(--color-ink)' }}>
-                      Subtotal ({usableLines.length} of {lines.length} lines matched)
-                    </span>
-                    <span className="num font-extrabold text-[17px]" style={{ color: 'var(--color-ink)' }}>{currency} {subtotal.toFixed(2)}</span>
+                  <div className="space-y-1.5 pt-2" style={{ borderTop: '1px solid var(--color-border)' }}>
+                    <div className="flex justify-between items-center">
+                      <span className="text-sm font-semibold" style={{ color: 'var(--color-muted)' }}>
+                        Subtotal ({usableLines.length} of {lines.length} lines matched)
+                      </span>
+                      <span className="num font-bold text-sm" style={{ color: 'var(--color-ink)' }}>{currency} {subtotal.toFixed(2)}</span>
+                    </div>
+                    {/* VAT — prefilled from the bill; the 5% button fills the UAE standard rate */}
+                    <div className="flex justify-between items-center gap-2">
+                      <span className="flex items-center gap-1.5 text-sm font-semibold" style={{ color: 'var(--color-muted)' }}>
+                        VAT
+                        <button
+                          type="button"
+                          onClick={() => setVatAmount((subtotal * 0.05).toFixed(2))}
+                          title="Fill 5% of subtotal (UAE standard rate)"
+                          className="px-1.5 py-0.5 rounded-[6px] text-[10px] font-bold"
+                          style={{ background: 'var(--color-saffron-soft)', color: 'var(--color-saffron)', border: '1px solid var(--color-saffron)' }}
+                        >
+                          5%
+                        </button>
+                      </span>
+                      <input
+                        type="number" min="0" step="0.01"
+                        value={vatAmount}
+                        onChange={e => setVatAmount(e.target.value)}
+                        placeholder="0.00"
+                        className="num w-[110px] rounded-[9px] px-2.5 py-1.5 text-sm text-right focus:outline-none focus:ring-1 focus:ring-saffron"
+                        style={{ border: '1px solid var(--color-border)', background: 'var(--color-surface)', color: 'var(--color-ink)' }}
+                      />
+                    </div>
+                    <div className="flex justify-between pt-1.5" style={{ borderTop: '1px solid var(--color-border)' }}>
+                      <span className="font-bold text-sm" style={{ color: 'var(--color-ink)' }}>Total{vatNum > 0 ? ' (incl. VAT)' : ''}</span>
+                      <span className="num font-extrabold text-[17px]" style={{ color: 'var(--color-ink)' }}>{currency} {grandTotal.toFixed(2)}</span>
+                    </div>
                   </div>
                 )}
                 {totalMismatch && (
                   <p className="text-xs font-semibold rounded-[9px] px-3 py-2" style={{ background: 'var(--color-saffron-soft, #fdf3e0)', color: 'var(--color-ember)' }}>
-                    ⚠ Bill shows {currency} {billTotal!.toFixed(2)} but matched lines add up to {currency} {subtotal.toFixed(2)} — check quantities/prices or unmatched lines.
+                    ⚠ Bill shows {currency} {billTotal!.toFixed(2)} but lines + VAT add up to {currency} {grandTotal.toFixed(2)} — check quantities/prices, VAT or unmatched lines.
                   </p>
                 )}
               </div>
@@ -642,6 +682,21 @@ export function ScanBillModule({
               <div>
                 <label className="block text-[11px] font-bold uppercase tracking-wide mb-2" style={{ color: 'var(--color-muted)' }}>Amount ({currency})</label>
                 <input type="number" min="0" step="0.01" value={amount} onChange={e => setAmount(e.target.value)} placeholder="0.00" className={`${inputBase} num`} style={inputStyle} />
+              </div>
+              <div>
+                <label className="block text-[11px] font-bold uppercase tracking-wide mb-2" style={{ color: 'var(--color-muted)' }}>
+                  of which VAT
+                  <button
+                    type="button"
+                    onClick={() => { const a = parseFloat(amount) || 0; setVatAmount(a > 0 ? (a - a / 1.05).toFixed(2) : '') }}
+                    title="Work out the 5% VAT inside the amount"
+                    className="ml-1.5 px-1.5 py-0.5 rounded-[6px] text-[10px] font-bold normal-case"
+                    style={{ background: 'var(--color-saffron-soft)', color: 'var(--color-saffron)', border: '1px solid var(--color-saffron)' }}
+                  >
+                    5%
+                  </button>
+                </label>
+                <input type="number" min="0" step="0.01" value={vatAmount} onChange={e => setVatAmount(e.target.value)} placeholder="0.00" className={`${inputBase} num`} style={inputStyle} />
               </div>
               <div className="sm:col-span-2">
                 <label className="block text-[11px] font-bold uppercase tracking-wide mb-2" style={{ color: 'var(--color-muted)' }}>Description</label>
@@ -692,7 +747,7 @@ export function ScanBillModule({
             </Button>
             <Button variant="primary" onClick={handleConfirm} disabled={isPending} className="flex-1">
               {isPending ? 'Posting…' : docType === 'purchase'
-                ? `Confirm Purchase · ${currency} ${subtotal.toFixed(2)}`
+                ? `Confirm Purchase · ${currency} ${grandTotal.toFixed(2)}`
                 : `Confirm Expense · ${currency} ${(parseFloat(amount) || 0).toFixed(2)}`}
             </Button>
           </div>

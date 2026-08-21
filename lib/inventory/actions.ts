@@ -181,6 +181,8 @@ export type RecordPurchaseInput = {
   notes?: string | null
   /** Storage path of a scanned bill in the receipts bucket (from /scan-bill). */
   receipt_path?: string | null
+  /** VAT on the bill (UAE 5%). total_amount = line subtotal + this. */
+  vat_amount?: number | null
   items: RecordPurchaseLine[]
 }
 
@@ -199,6 +201,7 @@ export async function recordPurchase(input: RecordPurchaseInput): Promise<Invent
   if (numErr || !number) return { error: 'Could not generate purchase number — run migrations/032_inventory_module.sql' }
 
   const subtotal = input.items.reduce((s, i) => s + i.quantity * i.unit_price, 0)
+  const vat = Math.max(0, input.vat_amount ?? 0)
 
   const { data: purchase, error: purchaseErr } = await admin
     .from('purchases')
@@ -209,7 +212,8 @@ export async function recordPurchase(input: RecordPurchaseInput): Promise<Invent
       payment_status: input.payment_status,
       payment_method: input.payment_method ?? null,
       subtotal: subtotal.toFixed(2),
-      total_amount: subtotal.toFixed(2),
+      vat_amount: vat.toFixed(2),
+      total_amount: (subtotal + vat).toFixed(2),
       notes: input.notes?.trim() || null,
       receipt_path: input.receipt_path ?? null,
       created_by: user.id,

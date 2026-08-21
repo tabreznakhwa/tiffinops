@@ -22,6 +22,7 @@ export type ExpenseRow = {
   vendor_name: string | null
   description: string | null
   amount: string
+  vat_amount: string | null
   payment_method: Enums<'payment_mode'> | null
   receipt_path: string | null
   notes: string | null
@@ -176,9 +177,16 @@ export function ExpensesModule({ rows, todayDubai, isOwner }: {
                       <Paperclip size={15} style={{ color: 'var(--color-saffron)' }} />
                     </button>
                   )}
-                  <p className="num font-bold text-sm" style={{ color: 'var(--color-ink)' }}>
-                    {currency} {parseFloat(row.amount).toFixed(2)}
-                  </p>
+                  <div className="text-right">
+                    <p className="num font-bold text-sm" style={{ color: 'var(--color-ink)' }}>
+                      {currency} {parseFloat(row.amount).toFixed(2)}
+                    </p>
+                    {row.vat_amount != null && parseFloat(row.vat_amount) > 0 && (
+                      <p className="num text-[10px]" style={{ color: 'var(--color-muted)' }}>
+                        incl. VAT {currency} {parseFloat(row.vat_amount).toFixed(2)}
+                      </p>
+                    )}
+                  </div>
                   {isOwner && (
                     <button type="button" onClick={() => handleDelete(row)} disabled={isPending} aria-label="Delete expense">
                       <Trash2 size={14} style={{ color: 'var(--color-red)' }} />
@@ -214,6 +222,7 @@ function AddExpenseModal({ todayDubai, currency, onClose }: {
   const [vendor, setVendor] = useState('')
   const [description, setDescription] = useState('')
   const [amount, setAmount] = useState('')
+  const [vat, setVat] = useState('')
   const [method, setMethod] = useState<Enums<'payment_mode'> | ''>('')
   const [error, setError] = useState<string | null>(null)
   const [isPending, startTransition] = useTransition()
@@ -228,6 +237,7 @@ function AddExpenseModal({ todayDubai, currency, onClose }: {
         vendor_name: vendor || undefined,
         description: description || undefined,
         amount: amt,
+        vat_amount: parseFloat(vat) > 0 ? parseFloat(vat) : null,
         payment_method: method || null,
       })
       if (res.error) { setError(res.error); return }
@@ -255,9 +265,26 @@ function AddExpenseModal({ todayDubai, currency, onClose }: {
             </select>
           </div>
         </div>
-        <div>
-          <label className="block text-[11px] font-bold uppercase tracking-wide mb-2" style={{ color: 'var(--color-muted)' }}>Amount ({currency})</label>
-          <input type="number" min="0" step="0.01" value={amount} onChange={e => setAmount(e.target.value)} placeholder="0.00" className={`${inputBase} num`} style={inputStyle} />
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className="block text-[11px] font-bold uppercase tracking-wide mb-2" style={{ color: 'var(--color-muted)' }}>Amount ({currency})</label>
+            <input type="number" min="0" step="0.01" value={amount} onChange={e => setAmount(e.target.value)} placeholder="0.00" className={`${inputBase} num`} style={inputStyle} />
+          </div>
+          <div>
+            <label className="block text-[11px] font-bold uppercase tracking-wide mb-2" style={{ color: 'var(--color-muted)' }}>
+              of which VAT
+              <button
+                type="button"
+                onClick={() => { const a = parseFloat(amount) || 0; setVat(a > 0 ? (a - a / 1.05).toFixed(2) : '') }}
+                title="Work out the 5% VAT inside the amount"
+                className="ml-1.5 px-1.5 py-0.5 rounded-[6px] text-[10px] font-bold normal-case"
+                style={{ background: 'var(--color-saffron-soft)', color: 'var(--color-saffron)', border: '1px solid var(--color-saffron)' }}
+              >
+                5%
+              </button>
+            </label>
+            <input type="number" min="0" step="0.01" value={vat} onChange={e => setVat(e.target.value)} placeholder="0.00" className={`${inputBase} num`} style={inputStyle} />
+          </div>
         </div>
         <div>
           <label className="block text-[11px] font-bold uppercase tracking-wide mb-2" style={{ color: 'var(--color-muted)' }}>Vendor <span className="normal-case font-normal">(optional)</span></label>

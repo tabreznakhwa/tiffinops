@@ -38,6 +38,8 @@ export const ScannedDocSchema = z.object({
     }),
   ),
   subtotal: z.number().min(0).nullable(),
+  /** VAT amount on the bill (UAE standard rate is 5%). Null when not shown. */
+  vat_amount: z.number().min(0).nullable(),
   total: z.number().min(0).nullable(),
   /** Whether the bill shows as settled (cash memo, "PAID" stamp…). */
   paid: z.boolean().nullable(),
@@ -57,7 +59,7 @@ const OUTPUT_SCHEMA = {
   additionalProperties: false,
   required: [
     'doc_type', 'vendor_name', 'vendor_trn', 'doc_date', 'currency', 'line_items',
-    'subtotal', 'total', 'paid', 'payment_method_hint',
+    'subtotal', 'vat_amount', 'total', 'paid', 'payment_method_hint',
     'suggested_category', 'confidence', 'notes',
   ],
   properties: {
@@ -88,6 +90,10 @@ const OUTPUT_SCHEMA = {
       },
     },
     subtotal: { anyOf: [{ type: 'number' }, { type: 'null' }] },
+    vat_amount: {
+      description: 'VAT amount on the bill (UAE 5%) — printed VAT line, or total minus subtotal when both are printed. Null when the bill shows no VAT.',
+      anyOf: [{ type: 'number' }, { type: 'null' }],
+    },
     total: { anyOf: [{ type: 'number' }, { type: 'null' }] },
     paid: { anyOf: [{ type: 'boolean' }, { type: 'null' }] },
     payment_method_hint: {
@@ -115,6 +121,7 @@ Extraction rules:
   - For an "expense" document line items are optional — a fuel receipt can have a single line "petrol".
 - quantity/unit_price/line_total: exactly as printed; null when a value is missing or unreadable. NEVER invent or back-calculate numbers that are not visible.
 - subtotal/total: as printed. total is the final payable amount including VAT.
+- vat_amount: the VAT amount (UAE standard rate is 5%). Use the printed VAT/tax line when there is one; when the bill prints a subtotal and a VAT-inclusive total but no separate VAT line, use total minus subtotal. Null only when the bill genuinely shows no VAT (e.g. handwritten cash memos from unregistered vendors).
 - paid: true for cash memos and receipts marked paid, false when it is clearly a credit invoice, null when unclear.
 - suggested_category: best fit from the list (use "ingredients" for food purchases, "other" when nothing fits). Always give one even for doc_type "purchase".
 - confidence: "low" when the image is blurry, cut off, not actually a bill, or you had to skip several unreadable lines. Otherwise "high".

@@ -197,6 +197,8 @@ const CreateExpenseSchema = z.object({
   amount: z.coerce
     .number({ message: 'Enter a valid amount' })
     .positive('Amount must be greater than 0'),
+  /** VAT portion included in `amount` (UAE 5%) — for input-VAT reporting. */
+  vat_amount: z.coerce.number().min(0).nullable().optional(),
   payment_method: z.enum(['cash', 'card', 'bank_transfer', 'cheque', 'online', 'wallet', 'other']).nullable().optional(),
   receipt_path: z.string().nullable().optional(),
   notes: z.string().trim().optional().transform(v => v || null),
@@ -208,6 +210,7 @@ export async function createExpense(input: {
   vendor_name?: string
   description?: string
   amount: number
+  vat_amount?: number | null
   payment_method?: Enums<'payment_mode'> | null
   receipt_path?: string | null
   notes?: string
@@ -233,6 +236,7 @@ export async function createExpense(input: {
     vendor_name: parsed.data.vendor_name,
     description: parsed.data.description,
     amount: parsed.data.amount.toFixed(2),
+    vat_amount: (parsed.data.vat_amount ?? 0).toFixed(2),
     payment_method: parsed.data.payment_method ?? null,
     receipt_path: parsed.data.receipt_path ?? null,
     notes: parsed.data.notes,
