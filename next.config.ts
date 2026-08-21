@@ -5,6 +5,12 @@ const nextConfig: NextConfig = {
   turbopack: {
     root: path.resolve(__dirname),
   },
+  experimental: {
+    serverActions: {
+      // Default 1 MB rejects phone photos of bills sent to scanReceipt()
+      bodySizeLimit: '8mb',
+    },
+  },
   async headers() {
     return [
       {

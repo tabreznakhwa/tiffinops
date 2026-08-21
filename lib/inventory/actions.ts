@@ -178,6 +178,8 @@ export type RecordPurchaseInput = {
   payment_status: 'unpaid' | 'partial' | 'paid'
   payment_method?: Enums<'payment_mode'> | null
   notes?: string | null
+  /** Storage path of a scanned bill in the receipts bucket (from /scan-bill). */
+  receipt_path?: string | null
   items: RecordPurchaseLine[]
 }
 
@@ -208,6 +210,7 @@ export async function recordPurchase(input: RecordPurchaseInput): Promise<Invent
       subtotal: subtotal.toFixed(2),
       total_amount: subtotal.toFixed(2),
       notes: input.notes?.trim() || null,
+      receipt_path: input.receipt_path ?? null,
       created_by: user.id,
     })
     .select('id')

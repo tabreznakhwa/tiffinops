@@ -1141,6 +1141,7 @@ export type Database = {
           subtotal: string
           total_amount: string
           notes: string | null
+          receipt_path: string | null
           created_by: string
           created_at: string
           updated_at: string
@@ -1155,6 +1156,7 @@ export type Database = {
           subtotal?: string
           total_amount?: string
           notes?: string | null
+          receipt_path?: string | null
           created_by: string
           created_at?: string
           updated_at?: string
@@ -1169,6 +1171,7 @@ export type Database = {
           subtotal?: string
           total_amount?: string
           notes?: string | null
+          receipt_path?: string | null
           created_by?: string
           created_at?: string
           updated_at?: string
@@ -1176,6 +1179,54 @@ export type Database = {
         Relationships: [
           { foreignKeyName: 'purchases_supplier_id_fkey'; columns: ['supplier_id']; referencedRelation: 'suppliers'; referencedColumns: ['id'] }
         ]
+      }
+      expenses: {
+        Row: {
+          id: string
+          expense_number: string
+          expense_date: string
+          category: Database['public']['Enums']['expense_category']
+          vendor_name: string | null
+          description: string | null
+          amount: string
+          payment_method: Database['public']['Enums']['payment_mode'] | null
+          receipt_path: string | null
+          notes: string | null
+          created_by: string
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          expense_number: string
+          expense_date?: string
+          category?: Database['public']['Enums']['expense_category']
+          vendor_name?: string | null
+          description?: string | null
+          amount: string
+          payment_method?: Database['public']['Enums']['payment_mode'] | null
+          receipt_path?: string | null
+          notes?: string | null
+          created_by: string
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          expense_number?: string
+          expense_date?: string
+          category?: Database['public']['Enums']['expense_category']
+          vendor_name?: string | null
+          description?: string | null
+          amount?: string
+          payment_method?: Database['public']['Enums']['payment_mode'] | null
+          receipt_path?: string | null
+          notes?: string | null
+          created_by?: string
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: []
       }
       purchase_items: {
         Row: {
@@ -1333,6 +1384,7 @@ export type Database = {
       payment_status: 'unpaid' | 'partial' | 'paid' | 'refunded' | 'written_off'
       delivery_status: 'pending' | 'out_for_delivery' | 'delivered' | 'skipped' | 'failed' | 'cancelled'
       payment_mode: 'cash' | 'card' | 'bank_transfer' | 'cheque' | 'online' | 'wallet' | 'other'
+      expense_category: 'ingredients' | 'fuel' | 'utilities' | 'rent' | 'salaries' | 'maintenance' | 'packaging' | 'marketing' | 'other'
       invoice_type: 'a_la_carte_cycle' | 'fixed_monthly' | 'adhoc'
       invoice_status: 'draft' | 'issued' | 'partial' | 'paid' | 'overdue' | 'cancelled' | 'written_off'
       ledger_type: 'order' | 'invoice' | 'payment' | 'discount' | 'refund' | 'write_off' | 'adjustment' | 'opening_balance'

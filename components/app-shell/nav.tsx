@@ -120,6 +120,28 @@ const NAV_ITEMS: NavItem[] = [
     ),
   },
   {
+    href: '/scan-bill',
+    label: 'Scan Bill',
+    notForRoles: ['viewer'],
+    icon: (
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+        <path d="M3 7V5a2 2 0 0 1 2-2h2M17 3h2a2 2 0 0 1 2 2v2M21 17v2a2 2 0 0 1-2 2h-2M7 21H5a2 2 0 0 1-2-2v-2"/>
+        <path d="M4 12h16"/>
+      </svg>
+    ),
+  },
+  {
+    href: '/expenses',
+    label: 'Expenses',
+    notForRoles: ['data_entry'],
+    icon: (
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+        <path d="M4 3h16v18l-2-1.5L16 21l-2-1.5L12 21l-2-1.5L8 21l-2-1.5L4 21V3Z"/>
+        <path d="M8 8h8M8 12h8M8 16h5"/>
+      </svg>
+    ),
+  },
+  {
     href: '/reports',
     label: 'Reports',
     icon: (

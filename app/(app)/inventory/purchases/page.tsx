@@ -35,6 +35,7 @@ export default async function PurchasesPage({
       payment_status,
       total_amount,
       notes,
+      receipt_path,
       suppliers ( name, supplier_code ),
       purchase_items ( quantity )
     `)

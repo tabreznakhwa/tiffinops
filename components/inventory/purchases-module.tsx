@@ -1,11 +1,12 @@
 'use client'
 
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useTransition } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
-import { ArrowLeft, Plus, Search } from 'lucide-react'
+import { ArrowLeft, Paperclip, Plus, Search } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { useAppSettings } from '@/components/settings/settings-context'
+import { getReceiptUrl } from '@/lib/scan/actions'
 
 export type PurchaseRow = {
   id: string
@@ -14,6 +15,7 @@ export type PurchaseRow = {
   payment_status: string
   total_amount: string
   notes: string | null
+  receipt_path: string | null
   suppliers: { name: string; supplier_code: string } | null
   purchase_items: { quantity: string }[]
 }
@@ -90,6 +92,14 @@ export function PurchasesModule({
   }, [purchases, search])
 
   const totalSpend = useMemo(() => filtered.reduce((s, p) => s + parseFloat(p.total_amount), 0), [filtered])
+
+  const [, startTransition] = useTransition()
+  function openReceipt(path: string) {
+    startTransition(async () => {
+      const res = await getReceiptUrl(path)
+      if (res.url) window.open(res.url, '_blank', 'noopener')
+    })
+  }
 
   return (
     <div>
@@ -179,7 +189,16 @@ export function PurchasesModule({
                   const cfg = PAYMENT_STATUS_CONFIG[p.payment_status] ?? PAYMENT_STATUS_CONFIG.unpaid
                   return (
                     <tr key={p.id} style={{ borderTop: i > 0 ? '1px solid var(--color-border)' : undefined }}>
-                      <td className="px-4 py-3 font-semibold num" style={{ color: 'var(--color-ink)' }}>{p.purchase_number}</td>
+                      <td className="px-4 py-3 font-semibold num" style={{ color: 'var(--color-ink)' }}>
+                        <span className="inline-flex items-center gap-1.5">
+                          {p.purchase_number}
+                          {p.receipt_path && (
+                            <button type="button" onClick={() => openReceipt(p.receipt_path!)} aria-label="View scanned bill" title="View scanned bill">
+                              <Paperclip size={13} style={{ color: 'var(--color-saffron)' }} />
+                            </button>
+                          )}
+                        </span>
+                      </td>
                       <td className="px-4 py-3" style={{ color: 'var(--color-ink)' }}>
                         {p.suppliers?.name ?? '—'}
                         <div className="text-[11px] font-mono" style={{ color: 'var(--color-muted)' }}>{p.suppliers?.supplier_code}</div>
