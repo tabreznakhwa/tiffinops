@@ -135,17 +135,31 @@ export function SupplierModal({
                 </div>
               </div>
 
-              <div>
-                <label className="block text-sm font-semibold" style={{ color: 'var(--color-ink)' }}>
-                  Email
-                </label>
-                <input
-                  name="email"
-                  type="email"
-                  defaultValue={supplier?.email ?? ''}
-                  className={inputBase}
-                  style={inputStyle}
-                />
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-semibold" style={{ color: 'var(--color-ink)' }}>
+                    Email
+                  </label>
+                  <input
+                    name="email"
+                    type="email"
+                    defaultValue={supplier?.email ?? ''}
+                    className={inputBase}
+                    style={inputStyle}
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-semibold" style={{ color: 'var(--color-ink)' }}>
+                    TRN
+                  </label>
+                  <input
+                    name="trn"
+                    defaultValue={supplier?.trn ?? ''}
+                    className={inputBase}
+                    style={inputStyle}
+                    placeholder="1003…"
+                  />
+                </div>
               </div>
 
               <div>

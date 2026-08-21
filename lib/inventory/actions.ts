@@ -98,6 +98,7 @@ const SupplierSchema = z.object({
   phone: z.string().optional().transform(v => v?.trim() || null),
   email: z.string().optional().transform(v => v?.trim() || null),
   address: z.string().optional().transform(v => v?.trim() || null),
+  trn: z.string().optional().transform(v => v?.trim() || null),
   notes: z.string().optional().transform(v => v?.trim() || null),
 })
 

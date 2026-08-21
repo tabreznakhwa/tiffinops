@@ -1043,6 +1043,7 @@ export type Database = {
           phone: string | null
           email: string | null
           address: string | null
+          trn: string | null
           notes: string | null
           is_active: boolean
           created_by: string | null
@@ -1057,6 +1058,7 @@ export type Database = {
           phone?: string | null
           email?: string | null
           address?: string | null
+          trn?: string | null
           notes?: string | null
           is_active?: boolean
           created_by?: string | null
@@ -1071,6 +1073,7 @@ export type Database = {
           phone?: string | null
           email?: string | null
           address?: string | null
+          trn?: string | null
           notes?: string | null
           is_active?: boolean
           created_by?: string | null

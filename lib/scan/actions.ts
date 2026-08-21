@@ -114,10 +114,15 @@ export async function scanReceipt(formData: FormData): Promise<ScanResult> {
 
 const MASTER_ROLES: Enums<'user_role'>[] = ['owner', 'manager']
 
-export async function quickCreateSupplier(name: string): Promise<{ id?: string; error?: string }> {
+export async function quickCreateSupplier(input: {
+  name: string
+  phone?: string
+  /** UAE VAT Tax Registration Number, often the only printed ID on a bill. */
+  trn?: string
+}): Promise<{ id?: string; error?: string }> {
   const user = await requireAuth()
   if (!MASTER_ROLES.includes(user.role)) return { error: 'Only owner/manager can add suppliers' }
-  const clean = name.trim()
+  const clean = input.name.trim()
   if (!clean) return { error: 'Supplier name is required' }
 
   const admin = createAdminClient()
@@ -126,7 +131,13 @@ export async function quickCreateSupplier(name: string): Promise<{ id?: string; 
 
   const { data, error } = await admin
     .from('suppliers')
-    .insert({ name: clean, supplier_code: code, created_by: user.id })
+    .insert({
+      name: clean,
+      supplier_code: code,
+      phone: input.phone?.trim() || null,
+      trn: input.trn?.trim() || null,
+      created_by: user.id,
+    })
     .select('id')
     .single()
   if (error || !data) return { error: error?.message ?? 'Could not create supplier' }

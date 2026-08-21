@@ -66,16 +66,22 @@ async function compressImage(file: File): Promise<Blob> {
 
 // ── Review line state ────────────────────────────────────────────────────────
 
+const UNIT_OPTIONS = ['kg', 'g', 'l', 'ml', 'pcs', 'box', 'packet', 'dozen'] as const
+
 type ReviewLine = {
   key: number
   /** Raw text read off the bill — kept visible so the user can verify. */
   billText: string
   billUnit: string | null
+  /** Unit for a NEW item created from this line — editable when the bill is unclear. */
+  unit: string
   itemId: string          // '' = unmatched
   matchScore: number | null
   quantity: string
   unitPrice: string
   creating: boolean       // inline "create item" open
+  /** True for rows the user added by hand (nothing readable on the bill). */
+  manual: boolean
 }
 
 export function ScanBillModule({
@@ -109,6 +115,9 @@ export function ScanBillModule({
   const [docType, setDocType] = useState<'purchase' | 'expense'>('purchase')
   const [supplierId, setSupplierId] = useState('')
   const [creatingSupplier, setCreatingSupplier] = useState(false)
+  const [showNewSupplier, setShowNewSupplier] = useState(false)
+  const [vendorPhone, setVendorPhone] = useState('')
+  const [vendorTrn, setVendorTrn] = useState('')
   const [docDate, setDocDate] = useState(todayDubai)
   const [lines, setLines] = useState<ReviewLine[]>([])
   const [paymentStatus, setPaymentStatus] = useState<'unpaid' | 'partial' | 'paid'>('unpaid')
@@ -161,6 +170,9 @@ export function ScanBillModule({
     setDocType(wantsPurchase && !canRecordPurchase ? 'expense' : !wantsPurchase && !canRecordExpense ? 'purchase' : doc.doc_type)
     setSupplierId(result.supplierMatch?.id ?? '')
     setVendorName(doc.vendor_name ?? '')
+    setVendorTrn(doc.vendor_trn ?? '')
+    setVendorPhone('')
+    setShowNewSupplier(false)
     setDocDate(doc.doc_date ?? todayDubai)
     setCategory(doc.suggested_category)
     setAmount(doc.total != null ? doc.total.toFixed(2) : '')
@@ -174,6 +186,7 @@ export function ScanBillModule({
           key: i,
           billText: l.name + (l.unit ? ` (${l.unit})` : ''),
           billUnit: l.unit,
+          unit: l.unit ?? 'kg',
           itemId: matched?.id ?? '',
           matchScore: l.match?.score ?? null,
           quantity: l.quantity != null ? String(l.quantity) : '',
@@ -182,6 +195,7 @@ export function ScanBillModule({
             : l.line_total != null && l.quantity ? (l.line_total / l.quantity).toFixed(2)
             : '',
           creating: false,
+          manual: false,
         }
       }),
     )
@@ -202,14 +216,15 @@ export function ScanBillModule({
   // ── Inline creates ─────────────────────────────────────────────────────────
 
   function handleCreateSupplier() {
-    if (!vendorName.trim()) { setError('Vendor name is empty — type it first'); return }
+    if (!vendorName.trim()) { setError('Type the supplier name first — handwritten bills often leave it out'); return }
     setCreatingSupplier(true)
     startTransition(async () => {
-      const res = await quickCreateSupplier(vendorName)
+      const res = await quickCreateSupplier({ name: vendorName, phone: vendorPhone, trn: vendorTrn })
       setCreatingSupplier(false)
       if (res.error || !res.id) { setError(res.error ?? 'Could not create supplier'); return }
-      setSuppliers(prev => [...prev, { id: res.id!, name: vendorName.trim(), supplier_code: 'new', phone: null }])
+      setSuppliers(prev => [...prev, { id: res.id!, name: vendorName.trim(), supplier_code: 'new', phone: vendorPhone.trim() || null }])
       setSupplierId(res.id)
+      setShowNewSupplier(false)
       setError(null)
     })
   }
@@ -217,19 +232,36 @@ export function ScanBillModule({
   function handleCreateItem(line: ReviewLine) {
     startTransition(async () => {
       const cleanName = line.billText.replace(/\s*\([^)]*\)\s*$/, '').trim()
+      if (!cleanName) { setError('Type the item name first') ; return }
       const res = await quickCreateItem({
         name: cleanName,
-        unit_of_measure: line.billUnit ?? 'pcs',
+        unit_of_measure: line.unit || 'pcs',
         purchase_price: parseFloat(line.unitPrice) || 0,
       })
       if (res.error || !res.id) { setError(res.error ?? 'Could not create item'); return }
       setItems(prev => [...prev, {
-        id: res.id!, name: cleanName, unit_of_measure: line.billUnit ?? 'pcs',
+        id: res.id!, name: cleanName, unit_of_measure: line.unit || 'pcs',
         category: null, purchase_price: line.unitPrice || '0',
       }])
       setLines(prev => prev.map(l => (l.key === line.key ? { ...l, itemId: res.id!, matchScore: null } : l)))
       setError(null)
     })
+  }
+
+  /** Blank row for lines the AI could not read off a handwritten bill. */
+  function addManualLine() {
+    setLines(prev => [...prev, {
+      key: (prev.length ? Math.max(...prev.map(l => l.key)) : 0) + 1,
+      billText: '',
+      billUnit: null,
+      unit: 'kg',
+      itemId: '',
+      matchScore: null,
+      quantity: '',
+      unitPrice: '',
+      creating: false,
+      manual: true,
+    }])
   }
 
   // ── Confirm ────────────────────────────────────────────────────────────────
@@ -414,15 +446,14 @@ export function ScanBillModule({
                   <option value="">— select supplier —</option>
                   {suppliers.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
                 </select>
-                {!supplierId && vendorName && canCreateMasters && (
+                {!supplierId && canCreateMasters && !showNewSupplier && (
                   <button
                     type="button"
-                    onClick={handleCreateSupplier}
-                    disabled={creatingSupplier || isPending}
+                    onClick={() => setShowNewSupplier(true)}
                     className="mt-2 flex items-center gap-1 text-xs font-bold"
                     style={{ color: 'var(--color-saffron)' }}
                   >
-                    <Plus size={12} /> Create supplier &ldquo;{vendorName}&rdquo;
+                    <Plus size={12} /> New supplier{vendorName ? <> &ldquo;{vendorName}&rdquo;</> : ' (no name on bill)'}
                   </button>
                 )}
               </div>
@@ -430,6 +461,34 @@ export function ScanBillModule({
               <div>
                 <label className="block text-[11px] font-bold uppercase tracking-wide mb-2" style={{ color: 'var(--color-muted)' }}>Vendor</label>
                 <input value={vendorName} onChange={e => setVendorName(e.target.value)} placeholder="e.g. ENOC, DEWA…" className={inputBase} style={inputStyle} />
+              </div>
+            )}
+
+            {/* Inline new-supplier form — handwritten bills often have no vendor
+                name or TRN printed, so everything here is typeable. */}
+            {docType === 'purchase' && showNewSupplier && canCreateMasters && (
+              <div className="sm:col-span-2 rounded-[11px] p-3 space-y-2.5" style={{ background: 'var(--color-cream)', border: '1px solid var(--color-border)' }}>
+                <p className="text-[11px] font-bold uppercase tracking-wide" style={{ color: 'var(--color-muted)' }}>New Supplier</p>
+                <div>
+                  <label className="block text-[10.5px] font-semibold mb-1" style={{ color: 'var(--color-muted)' }}>Name *</label>
+                  <input value={vendorName} onChange={e => setVendorName(e.target.value)} placeholder="Type the supplier's name" className={inputBase} style={inputStyle} />
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="block text-[10.5px] font-semibold mb-1" style={{ color: 'var(--color-muted)' }}>Phone</label>
+                    <input value={vendorPhone} onChange={e => setVendorPhone(e.target.value)} placeholder="05x…" inputMode="tel" className={inputBase} style={inputStyle} />
+                  </div>
+                  <div>
+                    <label className="block text-[10.5px] font-semibold mb-1" style={{ color: 'var(--color-muted)' }}>TRN</label>
+                    <input value={vendorTrn} onChange={e => setVendorTrn(e.target.value)} placeholder="1003…" inputMode="numeric" className={inputBase} style={inputStyle} />
+                  </div>
+                </div>
+                <div className="flex gap-2">
+                  <Button variant="ghost" size="sm" onClick={() => setShowNewSupplier(false)} disabled={creatingSupplier}>Cancel</Button>
+                  <Button variant="secondary" size="sm" onClick={handleCreateSupplier} disabled={creatingSupplier || isPending} className="flex-1">
+                    {creatingSupplier ? 'Creating…' : 'Create Supplier'}
+                  </Button>
+                </div>
               </div>
             )}
           </div>
@@ -442,7 +501,9 @@ export function ScanBillModule({
                   Bill Lines ({lines.length})
                 </p>
                 {lines.length === 0 && (
-                  <p className="text-sm" style={{ color: 'var(--color-muted)' }}>No line items could be read from this bill.</p>
+                  <p className="text-sm" style={{ color: 'var(--color-muted)' }}>
+                    No line items could be read from this bill — add them by hand below.
+                  </p>
                 )}
                 {lines.map(line => {
                   const matched = line.itemId ? itemById.get(line.itemId) : undefined
@@ -454,8 +515,18 @@ export function ScanBillModule({
                       style={{ background: line.itemId ? 'var(--color-cream)' : 'var(--color-saffron-soft, #fdf3e0)', border: line.itemId ? undefined : '1px solid var(--color-saffron)' }}
                     >
                       <div className="flex items-start justify-between gap-2 mb-2">
-                        <div className="min-w-0">
-                          <p className="text-xs" style={{ color: 'var(--color-muted)' }}>On bill: <span className="font-semibold" style={{ color: 'var(--color-ink)' }}>{line.billText}</span></p>
+                        <div className="min-w-0 flex-1">
+                          {line.manual ? (
+                            <input
+                              value={line.billText}
+                              onChange={e => setLines(prev => prev.map(l => (l.key === line.key ? { ...l, billText: e.target.value } : l)))}
+                              placeholder="Item name (e.g. Bhindi)"
+                              className="w-full rounded-[8px] px-2.5 py-1.5 text-sm font-semibold focus:outline-none focus:ring-1 focus:ring-saffron"
+                              style={{ border: '1px solid var(--color-border)', background: 'var(--color-surface)', color: 'var(--color-ink)' }}
+                            />
+                          ) : (
+                            <p className="text-xs" style={{ color: 'var(--color-muted)' }}>On bill: <span className="font-semibold" style={{ color: 'var(--color-ink)' }}>{line.billText}</span></p>
+                          )}
                           {matched && line.matchScore != null && (
                             <p className="text-[10.5px] mt-0.5" style={{ color: 'var(--color-green)' }}>
                               ✓ matched to {matched.name} ({Math.round(line.matchScore * 100)}%)
@@ -489,9 +560,29 @@ export function ScanBillModule({
                             </button>
                           )}
                         </div>
+                        {/* Unit is fixed by the inventory item once matched; until
+                            then it's editable — bills often omit it. */}
+                        {!line.itemId && (
+                          <div>
+                            <label className="block text-[10.5px] font-semibold mb-1" style={{ color: 'var(--color-muted)' }}>
+                              Unit{line.billUnit ? '' : ' (not on bill)'}
+                            </label>
+                            <select
+                              value={line.unit}
+                              onChange={e => setLines(prev => prev.map(l => (l.key === line.key ? { ...l, unit: e.target.value } : l)))}
+                              className="w-full rounded-[8px] px-2.5 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-saffron"
+                              style={{ border: '1px solid var(--color-border)', background: 'var(--color-surface)', color: 'var(--color-ink)' }}
+                            >
+                              {UNIT_OPTIONS.map(u => <option key={u} value={u}>{u}</option>)}
+                              {!UNIT_OPTIONS.includes(line.unit as (typeof UNIT_OPTIONS)[number]) && (
+                                <option value={line.unit}>{line.unit}</option>
+                              )}
+                            </select>
+                          </div>
+                        )}
                         <div>
                           <label className="block text-[10.5px] font-semibold mb-1" style={{ color: 'var(--color-muted)' }}>
-                            Qty{matched ? ` (${matched.unit_of_measure})` : line.billUnit ? ` (${line.billUnit})` : ''}
+                            Qty{matched ? ` (${matched.unit_of_measure})` : ` (${line.unit})`}
                           </label>
                           <input
                             type="number" min="0" step="0.001" value={line.quantity} placeholder="0"
@@ -516,6 +607,14 @@ export function ScanBillModule({
                     </div>
                   )
                 })}
+                <button
+                  type="button"
+                  onClick={addManualLine}
+                  className="w-full rounded-[11px] py-2.5 flex items-center justify-center gap-1.5 text-sm font-bold transition-colors hover:bg-cream"
+                  style={{ border: '1.5px dashed var(--color-border)', color: 'var(--color-saffron)' }}
+                >
+                  <Plus size={14} /> Add line manually
+                </button>
                 {lines.length > 0 && (
                   <div className="flex justify-between pt-2" style={{ borderTop: '1px solid var(--color-border)' }}>
                     <span className="font-bold text-sm" style={{ color: 'var(--color-ink)' }}>

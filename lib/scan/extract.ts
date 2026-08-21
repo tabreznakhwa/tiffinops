@@ -22,6 +22,8 @@ export const ScannedDocSchema = z.object({
   /** Is this a raw-material purchase bill or a general business expense? */
   doc_type: z.enum(['purchase', 'expense']),
   vendor_name: z.string().nullable(),
+  /** UAE VAT Tax Registration Number printed on the bill, digits only. */
+  vendor_trn: z.string().nullable(),
   /** Document date, YYYY-MM-DD. Null when unreadable. */
   doc_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable(),
   currency: z.string().nullable(),
@@ -54,13 +56,17 @@ const OUTPUT_SCHEMA = {
   type: 'object',
   additionalProperties: false,
   required: [
-    'doc_type', 'vendor_name', 'doc_date', 'currency', 'line_items',
+    'doc_type', 'vendor_name', 'vendor_trn', 'doc_date', 'currency', 'line_items',
     'subtotal', 'total', 'paid', 'payment_method_hint',
     'suggested_category', 'confidence', 'notes',
   ],
   properties: {
     doc_type: { type: 'string', enum: ['purchase', 'expense'] },
     vendor_name: { anyOf: [{ type: 'string' }, { type: 'null' }] },
+    vendor_trn: {
+      description: 'UAE VAT TRN printed on the bill, digits only — or null',
+      anyOf: [{ type: 'string' }, { type: 'null' }],
+    },
     doc_date: { description: 'YYYY-MM-DD or null', anyOf: [{ type: 'string' }, { type: 'null' }] },
     currency: { anyOf: [{ type: 'string' }, { type: 'null' }] },
     line_items: {
@@ -103,6 +109,7 @@ Classify each document:
 
 Extraction rules:
 - vendor_name: the shop/company that ISSUED the bill, cleaned up ("AL MAYA SUPERMARKET LLC" → "Al Maya Supermarket"). Null if unreadable.
+- vendor_trn: the issuer's UAE VAT TRN if printed (usually 15 digits near "TRN"), digits only. Null when absent — common on handwritten bills.
 - doc_date: the bill's own date as YYYY-MM-DD. Dates in the UAE are usually DD/MM/YYYY — interpret them that way. Null if unreadable; never guess a date that is not on the document.
 - line_items: one entry per purchased line. Clean the names ("BASMATI RCE 5KG XXL" → "basmati rice", with quantity 5 and unit "kg" when the pack size is the quantity). Normalise units to: kg, g, l, ml, pcs, box, packet, dozen. Skip non-product lines (subtotal rows, VAT rows, loyalty points).
   - For an "expense" document line items are optional — a fuel receipt can have a single line "petrol".
