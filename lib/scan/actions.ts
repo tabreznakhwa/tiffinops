@@ -176,6 +176,15 @@ export async function quickCreateItem(input: {
     .single()
   if (error || !data) {
     if (error?.message.includes('idx_inventory_items_name')) {
+      // Create-or-get: the item already exists (case-insensitive) — select it
+      // instead of stranding the user with an error they can't act on.
+      const { data: existing } = await admin
+        .from('inventory_items')
+        .select('id')
+        .ilike('name', name)
+        .limit(1)
+        .maybeSingle()
+      if (existing) return { id: existing.id }
       return { error: 'An item with this name already exists' }
     }
     return { error: error?.message ?? 'Could not create item' }

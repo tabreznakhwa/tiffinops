@@ -15,6 +15,7 @@ import {
   type ScanResult,
 } from '@/lib/scan/actions'
 import { EXPENSE_CATEGORIES, EXPENSE_CATEGORY_LABELS, type ExpenseCategory } from '@/lib/scan/categories'
+import { bestMatch } from '@/lib/scan/match'
 import type { Enums } from '@/lib/supabase/types'
 
 type PaymentMode = Enums<'payment_mode'>
@@ -246,10 +247,13 @@ export function ScanBillModule({
         purchase_price: parseFloat(line.unitPrice) || 0,
       })
       if (res.error || !res.id) { setError(res.error ?? 'Could not create item'); return }
-      setItems(prev => [...prev, {
-        id: res.id!, name: cleanName, unit_of_measure: line.unit || 'pcs',
-        category: null, purchase_price: line.unitPrice || '0',
-      }])
+      // create-or-get can return an item already in the list — don't duplicate
+      setItems(prev => prev.some(i => i.id === res.id)
+        ? prev
+        : [...prev, {
+            id: res.id!, name: cleanName, unit_of_measure: line.unit || 'pcs',
+            category: null, purchase_price: line.unitPrice || '0',
+          }])
       setLines(prev => prev.map(l => (l.key === line.key ? { ...l, itemId: res.id!, matchScore: null } : l)))
       setError(null)
     })
@@ -538,7 +542,20 @@ export function ScanBillModule({
                           {line.manual ? (
                             <input
                               value={line.billText}
-                              onChange={e => setLines(prev => prev.map(l => (l.key === line.key ? { ...l, billText: e.target.value } : l)))}
+                              onChange={e => {
+                                const text = e.target.value
+                                setLines(prev => prev.map(l => {
+                                  if (l.key !== line.key) return l
+                                  // Auto-match while typing, but never clobber a
+                                  // selection the user picked from the dropdown
+                                  // (those have matchScore === null).
+                                  const wasAuto = l.matchScore != null
+                                  const m = bestMatch(text, items)
+                                  if (m && (wasAuto || !l.itemId)) return { ...l, billText: text, itemId: m.id, matchScore: m.score }
+                                  if (!m && wasAuto) return { ...l, billText: text, itemId: '', matchScore: null }
+                                  return { ...l, billText: text }
+                                }))
+                              }}
                               placeholder="Item name (e.g. Bhindi)"
                               className="w-full rounded-[8px] px-2.5 py-1.5 text-sm font-semibold focus:outline-none focus:ring-1 focus:ring-saffron"
                               style={{ border: '1px solid var(--color-border)', background: 'var(--color-surface)', color: 'var(--color-ink)' }}
