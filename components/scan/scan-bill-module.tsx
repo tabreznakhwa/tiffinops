@@ -6,7 +6,7 @@
 
 import { useMemo, useRef, useState, useTransition } from 'react'
 import Link from 'next/link'
-import { Camera, Check, FileText, Loader2, Plus, ScanLine, Sparkles, Trash2, X } from 'lucide-react'
+import { Camera, Check, FileText, Loader2, Plus, ScanLine, Search, Sparkles, Trash2, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { useAppSettings } from '@/components/settings/settings-context'
 import { recordPurchase } from '@/lib/inventory/actions'
@@ -68,6 +68,21 @@ async function compressImage(file: File): Promise<Blob> {
 // ── Review line state ────────────────────────────────────────────────────────
 
 const UNIT_OPTIONS = ['kg', 'g', 'l', 'ml', 'pcs', 'box', 'packet', 'dozen'] as const
+
+/** Infer the stock unit from what's printed on the bill line — "Rice 40Kg"
+    is bought by the kg even when the extracted unit says pcs. */
+function guessUnit(billText: string, unit: string): string {
+  const src = `${unit} ${billText}`.toLowerCase()
+  if (/\d\s*(kg|kgs)\b|\b(kg|kgs|kilo|kilos|kilogram)s?\b/.test(src)) return 'kg'
+  if (/\d\s*(gm|gms|g)\b|\b(gm|gms|gram)s?\b/.test(src)) return 'g'
+  if (/\d\s*(ltr|ltrs|l)\b|\b(ltr|ltrs|litre|liter)s?\b/.test(src)) return 'l'
+  if (/\d\s*ml\b|\bml\b/.test(src)) return 'ml'
+  if (/\b(dozen|dzn)\b/.test(src)) return 'dozen'
+  if (/\b(bunch|bundle)\b/.test(src)) return 'bunch'
+  if (/\b(pkt|packet|pack|pouch)s?\b/.test(src)) return 'packet'
+  if (/\b(box|ctn|carton)\b/.test(src)) return 'box'
+  return unit.trim() || 'pcs'
+}
 
 type ReviewLine = {
   key: number
@@ -241,9 +256,10 @@ export function ScanBillModule({
     startTransition(async () => {
       const cleanName = line.billText.replace(/\s*\([^)]*\)\s*$/, '').trim()
       if (!cleanName) { setError('Type the item name first') ; return }
+      const unit = guessUnit(line.billText, line.unit)
       const res = await quickCreateItem({
         name: cleanName,
-        unit_of_measure: line.unit || 'pcs',
+        unit_of_measure: unit,
         purchase_price: parseFloat(line.unitPrice) || 0,
       })
       if (res.error || !res.id) { setError(res.error ?? 'Could not create item'); return }
@@ -251,7 +267,7 @@ export function ScanBillModule({
       setItems(prev => prev.some(i => i.id === res.id)
         ? prev
         : [...prev, {
-            id: res.id!, name: cleanName, unit_of_measure: line.unit || 'pcs',
+            id: res.id!, name: cleanName, unit_of_measure: unit,
             category: null, purchase_price: line.unitPrice || '0',
           }])
       setLines(prev => prev.map(l => (l.key === line.key ? { ...l, itemId: res.id!, matchScore: null } : l)))
@@ -575,15 +591,11 @@ export function ScanBillModule({
                       </div>
                       <div className="grid grid-cols-2 gap-2 mb-2">
                         <div className="col-span-2">
-                          <select
+                          <ItemPicker
+                            items={items}
                             value={line.itemId}
-                            onChange={e => setLines(prev => prev.map(l => (l.key === line.key ? { ...l, itemId: e.target.value, matchScore: null } : l)))}
-                            className="w-full rounded-[8px] px-2.5 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-saffron"
-                            style={{ border: '1px solid var(--color-border)', background: 'var(--color-surface)', color: line.itemId ? 'var(--color-ink)' : 'var(--color-muted)' }}
-                          >
-                            <option value="">— not matched: pick inventory item —</option>
-                            {items.map(i => <option key={i.id} value={i.id}>{i.name} ({i.unit_of_measure})</option>)}
-                          </select>
+                            onPick={id => setLines(prev => prev.map(l => (l.key === line.key ? { ...l, itemId: id, matchScore: null } : l)))}
+                          />
                           {!line.itemId && canCreateMasters && (
                             <button
                               type="button"
@@ -806,6 +818,97 @@ export function ScanBillModule({
           </div>
         </div>
       )}
+    </div>
+  )
+}
+
+// ── Searchable inventory item picker ─────────────────────────────────────────
+// The item list is 100+ rows now that produce is seeded — a native <select>
+// is unusable on a phone. Closed: a button showing the selection. Open: a
+// search box + filtered list rendered inline (no absolute positioning, so
+// nothing clips inside the scrolling card).
+
+function ItemPicker({ items, value, onPick }: {
+  items: ScanItem[]
+  value: string
+  onPick: (id: string) => void
+}) {
+  const [open, setOpen] = useState(false)
+  const [query, setQuery] = useState('')
+  const selected = value ? items.find(i => i.id === value) : undefined
+
+  const results = useMemo(() => {
+    const tokens = query.toLowerCase().split(/\s+/).filter(Boolean)
+    const list = tokens.length
+      ? items.filter(i => { const n = i.name.toLowerCase(); return tokens.every(t => n.includes(t)) })
+      : items
+    return list.slice(0, 40)
+  }, [items, query])
+
+  if (!open) {
+    return (
+      <button
+        type="button"
+        onClick={() => { setQuery(''); setOpen(true) }}
+        className="w-full rounded-[8px] px-2.5 py-1.5 text-sm text-left flex items-center justify-between gap-2 focus:outline-none focus:ring-1 focus:ring-saffron"
+        style={{ border: '1px solid var(--color-border)', background: 'var(--color-surface)', color: value ? 'var(--color-ink)' : 'var(--color-muted)' }}
+      >
+        <span className="truncate">
+          {selected ? `${selected.name} (${selected.unit_of_measure})` : '— not matched: search inventory —'}
+        </span>
+        <Search size={13} style={{ color: 'var(--color-muted)', flexShrink: 0 }} />
+      </button>
+    )
+  }
+
+  return (
+    <div className="rounded-[8px] overflow-hidden" style={{ border: '1px solid var(--color-saffron)', background: 'var(--color-surface)' }}>
+      <div className="flex items-center gap-1.5 px-2.5 py-1.5" style={{ borderBottom: '1px solid var(--color-border)' }}>
+        <Search size={13} style={{ color: 'var(--color-muted)', flexShrink: 0 }} />
+        <input
+          autoFocus
+          value={query}
+          onChange={e => setQuery(e.target.value)}
+          placeholder="Search items…"
+          className="flex-1 min-w-0 text-sm bg-transparent focus:outline-none"
+          style={{ color: 'var(--color-ink)' }}
+        />
+        <button type="button" onClick={() => setOpen(false)} aria-label="Close search">
+          <X size={14} style={{ color: 'var(--color-muted)' }} />
+        </button>
+      </div>
+      <div className="max-h-44 overflow-y-auto">
+        {value && (
+          <button
+            type="button"
+            onClick={() => { onPick(''); setOpen(false) }}
+            className="w-full text-left px-2.5 py-2 text-xs font-bold"
+            style={{ color: 'var(--color-red)' }}
+          >
+            ✕ Clear selection
+          </button>
+        )}
+        {results.map(i => (
+          <button
+            key={i.id}
+            type="button"
+            onClick={() => { onPick(i.id); setOpen(false) }}
+            className="w-full text-left px-2.5 py-2 text-sm"
+            style={{
+              color: 'var(--color-ink)',
+              background: i.id === value ? 'var(--color-saffron-soft, #fdf3e0)' : undefined,
+              borderTop: '1px solid var(--color-border)',
+            }}
+          >
+            {i.name} <span className="text-xs" style={{ color: 'var(--color-muted)' }}>({i.unit_of_measure})</span>
+          </button>
+        ))}
+        {results.length === 0 && (
+          <p className="px-2.5 py-3 text-xs text-center" style={{ color: 'var(--color-muted)' }}>
+            No items match &ldquo;{query}&rdquo;
+          </p>
+        )}
+      </div>
     </div>
   )
 }
