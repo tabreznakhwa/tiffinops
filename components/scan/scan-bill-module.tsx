@@ -21,7 +21,16 @@ import type { Enums } from '@/lib/supabase/types'
 type PaymentMode = Enums<'payment_mode'>
 
 export type ScanSupplier = { id: string; name: string; supplier_code: string; phone: string | null }
-export type ScanItem = { id: string; name: string; unit_of_measure: string; category: string | null; purchase_price: string }
+export type ScanItem = {
+  id: string
+  name: string
+  unit_of_measure: string
+  category: string | null
+  purchase_price: string
+  /** Last-seen pack config ("carton" of 12 kg) — prefills pack mode. */
+  pack_unit: string | null
+  pack_size: string | null
+}
 
 const inputBase =
   'w-full rounded-[11px] px-3 py-2.5 text-sm bg-surface text-ink focus:outline-none focus:ring-1 focus:ring-saffron'
@@ -84,13 +93,36 @@ function guessUnit(billText: string, unit: string): string {
   return unit.trim() || 'pcs'
 }
 
+const PACK_UNIT_OPTIONS = ['carton', 'tin', 'box', 'bag', 'sack', 'case', 'tray', 'drum', 'can'] as const
+
+/** Detect wholesale pack units (CT/carton/tin/bag…) on a bill line. Suppliers
+    sell chicken by the carton and oil by the tin, but stock lives in kg/l —
+    pack lines get a converter in the review UI. */
+function packUnitOf(unit: string | null, name: string): string | null {
+  const src = `${unit ?? ''} ${name}`.toLowerCase()
+  if (/\b(ct|ctn|crtn|carton)s?\b/.test(src)) return 'carton'
+  if (/\btins?\b/.test(src)) return 'tin'
+  if (/\b(bag|sack)s?\b/.test(src)) return 'bag'
+  if (/\bcases?\b/.test(src)) return 'case'
+  if (/\btrays?\b/.test(src)) return 'tray'
+  if (/\bdrums?\b/.test(src)) return 'drum'
+  if (/\bbox(es)?\b/.test(src)) return 'box'
+  return null
+}
+
 type ReviewLine = {
   key: number
   /** Raw text read off the bill — kept visible so the user can verify. */
   billText: string
   billUnit: string | null
-  /** Unit for a NEW item created from this line — editable when the bill is unclear. */
+  /** Unit for a NEW item created from this line — editable when the bill is unclear.
+      In pack mode this is the BASE stock unit (kg/l/pcs) the pack contents are measured in. */
   unit: string
+  /** Bill sells by packs — quantity = packs, unitPrice = price per pack. */
+  packMode: boolean
+  packUnit: string
+  /** Base units inside one pack (12 kg per carton) — varies per purchase. */
+  packSize: string
   itemId: string          // '' = unmatched
   matchScore: number | null
   quantity: string
@@ -205,11 +237,17 @@ export function ScanBillModule({
     setLines(
       doc.line_items.map((l, i) => {
         const matched = l.match ? itemById.get(l.match.id) : undefined
+        const packWord = packUnitOf(l.unit, l.name)
         return {
           key: i,
           billText: l.name + (l.unit ? ` (${l.unit})` : ''),
           billUnit: l.unit,
-          unit: l.unit ?? 'kg',
+          unit: packWord ? (matched?.unit_of_measure ?? 'kg') : (l.unit ?? 'kg'),
+          packMode: !!packWord,
+          packUnit: packWord ?? 'carton',
+          packSize: matched?.pack_size != null && parseFloat(matched.pack_size) > 0
+            ? parseFloat(matched.pack_size).toString()
+            : '',
           itemId: matched?.id ?? '',
           matchScore: l.match?.score ?? null,
           quantity: l.quantity != null ? String(l.quantity) : '',
@@ -256,7 +294,9 @@ export function ScanBillModule({
     startTransition(async () => {
       const cleanName = line.billText.replace(/\s*\([^)]*\)\s*$/, '').trim()
       if (!cleanName) { setError('Type the item name first') ; return }
-      const unit = guessUnit(line.billText, line.unit)
+      // Pack lines: the new item's stock unit is the BASE unit (kg/l), never
+      // the pack word — guessUnit would read "(carton)" off the bill text.
+      const unit = line.packMode ? (line.unit || 'kg') : guessUnit(line.billText, line.unit)
       const res = await quickCreateItem({
         name: cleanName,
         unit_of_measure: unit,
@@ -269,6 +309,7 @@ export function ScanBillModule({
         : [...prev, {
             id: res.id!, name: cleanName, unit_of_measure: unit,
             category: null, purchase_price: line.unitPrice || '0',
+            pack_unit: null, pack_size: null,
           }])
       setLines(prev => prev.map(l => (l.key === line.key ? { ...l, itemId: res.id!, matchScore: null } : l)))
       setError(null)
@@ -282,6 +323,9 @@ export function ScanBillModule({
       billText: '',
       billUnit: null,
       unit: 'kg',
+      packMode: false,
+      packUnit: 'carton',
+      packSize: '',
       itemId: '',
       matchScore: null,
       quantity: '',
@@ -320,6 +364,10 @@ export function ScanBillModule({
             setError('Every matched line needs a positive quantity and a valid price')
             return
           }
+          if (l.packMode && !(parseFloat(l.packSize) > 0)) {
+            setError(`"${l.billText || 'A pack line'}" needs the contents per ${l.packUnit} (e.g. 12 kg) so stock posts in ${itemById.get(l.itemId)?.unit_of_measure ?? 'base units'}`)
+            return
+          }
         }
         const res = await recordPurchase({
           supplier_id: supplierId,
@@ -329,11 +377,22 @@ export function ScanBillModule({
           notes: 'Recorded via AI bill scan',
           receipt_path: scan?.receiptPath ?? null,
           vat_amount: vatNum > 0 ? vatNum : null,
-          items: usableLines.map(l => ({
-            inventory_item_id: l.itemId,
-            quantity: parseFloat(l.quantity),
-            unit_price: parseFloat(l.unitPrice),
-          })),
+          items: usableLines.map(l => {
+            const qty = parseFloat(l.quantity)
+            const price = parseFloat(l.unitPrice)
+            if (!l.packMode) return { inventory_item_id: l.itemId, quantity: qty, unit_price: price }
+            // Convert packs → base units: stock and costing always live in
+            // kg/l/pcs. 2 carton × 12 kg @ 113/carton → 24 kg @ 9.4167/kg.
+            const size = parseFloat(l.packSize)
+            return {
+              inventory_item_id: l.itemId,
+              quantity: qty * size,
+              unit_price: price / size,
+              pack_qty: qty,
+              pack_size: size,
+              pack_unit: l.packUnit,
+            }
+          }),
         })
         if (res?.error) { setError(res.error); return }
         setDoneMessage(`Purchase recorded · ${currency} ${grandTotal.toFixed(2)}${vatNum > 0 ? ` (incl. VAT ${currency} ${vatNum.toFixed(2)})` : ''} · stock updated`)
@@ -608,12 +667,50 @@ export function ScanBillModule({
                             </button>
                           )}
                         </div>
+                        {/* Pack conversion — suppliers bill cartons/tins, stock
+                            lives in kg/l. Auto-detected from the bill unit;
+                            toggleable when the AI misses it. */}
+                        <label className="col-span-2 flex items-center gap-2 text-xs font-semibold cursor-pointer" style={{ color: 'var(--color-muted)' }}>
+                          <input
+                            type="checkbox"
+                            checked={line.packMode}
+                            onChange={e => setLines(prev => prev.map(l => (l.key === line.key ? { ...l, packMode: e.target.checked } : l)))}
+                            style={{ accentColor: 'var(--color-saffron)' }}
+                          />
+                          Billed in packs (carton / tin / bag)
+                        </label>
+                        {line.packMode && (
+                          <>
+                            <div>
+                              <label className="block text-[10.5px] font-semibold mb-1" style={{ color: 'var(--color-muted)' }}>Pack type</label>
+                              <select
+                                value={line.packUnit}
+                                onChange={e => setLines(prev => prev.map(l => (l.key === line.key ? { ...l, packUnit: e.target.value } : l)))}
+                                className="w-full rounded-[8px] px-2.5 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-saffron"
+                                style={{ border: '1px solid var(--color-border)', background: 'var(--color-surface)', color: 'var(--color-ink)' }}
+                              >
+                                {PACK_UNIT_OPTIONS.map(p => <option key={p} value={p}>{p}</option>)}
+                              </select>
+                            </div>
+                            <div>
+                              <label className="block text-[10.5px] font-semibold mb-1" style={{ color: 'var(--color-muted)' }}>
+                                Per {line.packUnit} ({matched?.unit_of_measure ?? line.unit})
+                              </label>
+                              <input
+                                type="number" min="0" step="0.001" value={line.packSize} placeholder="e.g. 12"
+                                onChange={e => setLines(prev => prev.map(l => (l.key === line.key ? { ...l, packSize: e.target.value } : l)))}
+                                className="w-full rounded-[8px] px-2.5 py-1.5 text-sm num focus:outline-none focus:ring-1 focus:ring-saffron"
+                                style={{ border: '1px solid var(--color-border)', background: 'var(--color-surface)' }}
+                              />
+                            </div>
+                          </>
+                        )}
                         {/* Unit is fixed by the inventory item once matched; until
                             then it's editable — bills often omit it. */}
                         {!line.itemId && (
                           <div>
                             <label className="block text-[10.5px] font-semibold mb-1" style={{ color: 'var(--color-muted)' }}>
-                              Unit{line.billUnit ? '' : ' (not on bill)'}
+                              {line.packMode ? 'Stock unit' : `Unit${line.billUnit ? '' : ' (not on bill)'}`}
                             </label>
                             <select
                               value={line.unit}
@@ -630,7 +727,7 @@ export function ScanBillModule({
                         )}
                         <div>
                           <label className="block text-[10.5px] font-semibold mb-1" style={{ color: 'var(--color-muted)' }}>
-                            Qty{matched ? ` (${matched.unit_of_measure})` : ` (${line.unit})`}
+                            {line.packMode ? `Packs (${line.packUnit})` : `Qty${matched ? ` (${matched.unit_of_measure})` : ` (${line.unit})`}`}
                           </label>
                           <input
                             type="number" min="0" step="0.001" value={line.quantity} placeholder="0"
@@ -640,7 +737,9 @@ export function ScanBillModule({
                           />
                         </div>
                         <div>
-                          <label className="block text-[10.5px] font-semibold mb-1" style={{ color: 'var(--color-muted)' }}>Unit Price ({currency})</label>
+                          <label className="block text-[10.5px] font-semibold mb-1" style={{ color: 'var(--color-muted)' }}>
+                            {line.packMode ? `Price per ${line.packUnit} (${currency})` : `Unit Price (${currency})`}
+                          </label>
                           <input
                             type="number" min="0" step="0.01" value={line.unitPrice} placeholder="0.00"
                             onChange={e => setLines(prev => prev.map(l => (l.key === line.key ? { ...l, unitPrice: e.target.value } : l)))}
@@ -649,6 +748,24 @@ export function ScanBillModule({
                           />
                         </div>
                       </div>
+                      {line.packMode && (() => {
+                        const packs = parseFloat(line.quantity) || 0
+                        const size = parseFloat(line.packSize) || 0
+                        const price = parseFloat(line.unitPrice) || 0
+                        const bu = matched?.unit_of_measure ?? line.unit
+                        if (!(packs > 0 && size > 0)) {
+                          return (
+                            <p className="text-xs font-semibold mb-1" style={{ color: 'var(--color-saffron)' }}>
+                              Enter how many {bu} come in one {line.packUnit} — stock posts in {bu}
+                            </p>
+                          )
+                        }
+                        return (
+                          <p className="text-xs font-bold mb-1 num" style={{ color: 'var(--color-green)' }}>
+                            = {parseFloat((packs * size).toFixed(3))} {bu} in stock @ {currency} {(price / size).toFixed(2)}/{bu}
+                          </p>
+                        )
+                      })()}
                       {line.itemId && lineTotal > 0 && (
                         <p className="text-right text-xs font-bold num" style={{ color: 'var(--color-ember)' }}>{currency} {lineTotal.toFixed(2)}</p>
                       )}

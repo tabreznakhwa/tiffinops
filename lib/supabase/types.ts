@@ -1092,6 +1092,8 @@ export type Database = {
           current_stock: string
           min_stock_level: string
           purchase_price: string
+          pack_unit: string | null
+          pack_size: string | null
           storage_location: string | null
           is_active: boolean
           notes: string | null
@@ -1108,6 +1110,8 @@ export type Database = {
           current_stock?: string
           min_stock_level?: string
           purchase_price?: string
+          pack_unit?: string | null
+          pack_size?: string | null
           storage_location?: string | null
           is_active?: boolean
           notes?: string | null
@@ -1124,6 +1128,8 @@ export type Database = {
           current_stock?: string
           min_stock_level?: string
           purchase_price?: string
+          pack_unit?: string | null
+          pack_size?: string | null
           storage_location?: string | null
           is_active?: boolean
           notes?: string | null
@@ -1245,6 +1251,9 @@ export type Database = {
           quantity: string
           unit_price: string
           total_price: string
+          pack_qty: string | null
+          pack_size: string | null
+          pack_unit: string | null
         }
         Insert: {
           id?: string
@@ -1253,6 +1262,9 @@ export type Database = {
           quantity: string
           unit_price: string
           total_price: string
+          pack_qty?: string | null
+          pack_size?: string | null
+          pack_unit?: string | null
         }
         Update: {
           id?: string
@@ -1261,6 +1273,9 @@ export type Database = {
           quantity?: string
           unit_price?: string
           total_price?: string
+          pack_qty?: string | null
+          pack_size?: string | null
+          pack_unit?: string | null
         }
         Relationships: [
           { foreignKeyName: 'purchase_items_purchase_id_fkey'; columns: ['purchase_id']; referencedRelation: 'purchases'; referencedColumns: ['id'] },

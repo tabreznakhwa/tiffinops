@@ -117,7 +117,7 @@ Extraction rules:
 - vendor_name: the shop/company that ISSUED the bill, cleaned up ("AL MAYA SUPERMARKET LLC" → "Al Maya Supermarket"). Null if unreadable.
 - vendor_trn: the issuer's UAE VAT TRN if printed (usually 15 digits near "TRN"), digits only. Null when absent — common on handwritten bills.
 - doc_date: the bill's own date as YYYY-MM-DD. Dates in the UAE are usually DD/MM/YYYY — interpret them that way. Null if unreadable; never guess a date that is not on the document.
-- line_items: one entry per purchased line. Clean the names ("BASMATI RCE 5KG XXL" → "basmati rice", with quantity 5 and unit "kg" when the pack size is the quantity). Normalise units to: kg, g, l, ml, pcs, box, packet, dozen. Skip non-product lines (subtotal rows, VAT rows, loyalty points).
+- line_items: one entry per purchased line. Clean the names ("BASMATI RCE 5KG XXL" → "basmati rice", with quantity 5 and unit "kg" when the pack size is the quantity). Normalise units to: kg, g, l, ml, pcs, box, packet, dozen. IMPORTANT: when a bill sells by wholesale packs — CT/CTN/carton, tin, bag, sack, case, tray, drum — keep that pack word as the unit ("carton", "tin", "bag"…); do NOT collapse it to pcs, the app converts packs to kg/l during review. Skip non-product lines (subtotal rows, VAT rows, loyalty points).
   - For an "expense" document line items are optional — a fuel receipt can have a single line "petrol".
 - quantity/unit_price/line_total: exactly as printed; null when a value is missing or unreadable. NEVER invent or back-calculate numbers that are not visible.
 - subtotal/total: as printed. total is the final payable amount including VAT.

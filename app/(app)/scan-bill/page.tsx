@@ -13,7 +13,7 @@ export default async function ScanBillPage() {
     admin.from('suppliers').select('id, name, supplier_code, phone').eq('is_active', true).order('name'),
     admin
       .from('inventory_items')
-      .select('id, name, unit_of_measure, category, purchase_price')
+      .select('id, name, unit_of_measure, category, purchase_price, pack_unit, pack_size')
       .eq('is_active', true)
       .order('name'),
   ])

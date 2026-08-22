@@ -169,8 +169,14 @@ async function fetchStockMap(admin: Admin, itemIds: string[]): Promise<Map<strin
 
 export type RecordPurchaseLine = {
   inventory_item_id: string
+  /** Base units (kg/l/pcs) — already converted from packs when applicable. */
   quantity: number
+  /** Price per base unit — pack price ÷ pack size when bought in packs. */
   unit_price: number
+  /** Pack breakdown as printed on the bill ("2 carton × 12 kg") — audit only. */
+  pack_qty?: number | null
+  pack_size?: number | null
+  pack_unit?: string | null
 }
 
 export type RecordPurchaseInput = {
@@ -229,6 +235,9 @@ export async function recordPurchase(input: RecordPurchaseInput): Promise<Invent
       quantity: i.quantity.toFixed(3),
       unit_price: i.unit_price.toFixed(2),
       total_price: (i.quantity * i.unit_price).toFixed(2),
+      pack_qty: i.pack_qty != null ? i.pack_qty.toFixed(3) : null,
+      pack_size: i.pack_size != null ? i.pack_size.toFixed(3) : null,
+      pack_unit: i.pack_unit ?? null,
     })),
   )
   if (itemsErr) {
@@ -278,9 +287,24 @@ export async function recordPurchase(input: RecordPurchaseInput): Promise<Invent
     return { error: `Stock could not be updated, purchase was not created: ${txnErr.message}` }
   }
 
+  // Remember the pack configuration per item ("carton of 12 kg") so the next
+  // scan of the same item prefills it — sizes drift, but last-seen is the
+  // best default.
+  const packByItem = new Map<string, { pack_unit: string; pack_size: number }>()
+  for (const line of input.items) {
+    if (line.pack_unit && line.pack_size != null && line.pack_size > 0) {
+      packByItem.set(line.inventory_item_id, { pack_unit: line.pack_unit, pack_size: line.pack_size })
+    }
+  }
+
   for (const [item_id, info] of stock) {
+    const pack = packByItem.get(item_id)
     await admin.from('inventory_items')
-      .update({ current_stock: info.stock.toFixed(3), purchase_price: info.price.toFixed(2) })
+      .update({
+        current_stock: info.stock.toFixed(3),
+        purchase_price: info.price.toFixed(2),
+        ...(pack ? { pack_unit: pack.pack_unit, pack_size: pack.pack_size.toFixed(3) } : {}),
+      })
       .eq('id', item_id)
   }
 
