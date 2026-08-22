@@ -274,8 +274,12 @@ export function ScanBillModule({
   // ── Confirm ────────────────────────────────────────────────────────────────
 
   const usableLines = lines.filter(l => l.itemId)
-  const subtotal = usableLines.reduce(
-    (s, l) => s + (parseFloat(l.quantity) || 0) * (parseFloat(l.unitPrice) || 0), 0)
+  // Typed amounts count toward the total immediately — matching only controls
+  // stock posting. A line with money on it must be matched (or deleted) before
+  // confirm, so the total shown is always exactly what gets posted.
+  const lineAmount = (l: ReviewLine) => (parseFloat(l.quantity) || 0) * (parseFloat(l.unitPrice) || 0)
+  const subtotal = lines.reduce((s, l) => s + lineAmount(l), 0)
+  const unmatchedWithAmount = lines.filter(l => !l.itemId && lineAmount(l) > 0)
   const vatNum = parseFloat(vatAmount) || 0
   const grandTotal = subtotal + vatNum
   const billTotal = scan?.doc?.total ?? null
@@ -287,6 +291,10 @@ export function ScanBillModule({
       if (docType === 'purchase') {
         if (!supplierId) { setError('Select or create the supplier'); return }
         if (usableLines.length === 0) { setError('Match at least one line to an inventory item'); return }
+        if (unmatchedWithAmount.length > 0) {
+          setError(`${unmatchedWithAmount.length} line${unmatchedWithAmount.length > 1 ? 's have' : ' has'} an amount but no inventory item — pick or create the item, or delete the line`)
+          return
+        }
         for (const l of usableLines) {
           if (!(parseFloat(l.quantity) > 0) || isNaN(parseFloat(l.unitPrice))) {
             setError('Every matched line needs a positive quantity and a valid price')
@@ -662,6 +670,14 @@ export function ScanBillModule({
                       <span className="num font-extrabold text-[17px]" style={{ color: 'var(--color-ink)' }}>{currency} {grandTotal.toFixed(2)}</span>
                     </div>
                   </div>
+                )}
+                {unmatchedWithAmount.length > 0 && (
+                  <p className="text-xs font-semibold rounded-[9px] px-3 py-2" style={{ background: 'var(--color-saffron-soft, #fdf3e0)', color: 'var(--color-ember)' }}>
+                    ⚠ {unmatchedWithAmount.length === 1
+                      ? `"${unmatchedWithAmount[0].billText.trim() || 'One line'}" has an amount but no inventory item`
+                      : `${unmatchedWithAmount.length} lines have amounts but no inventory item`}
+                    {' '}— tap “Create item from this line” or pick an item, so the stock gets updated too.
+                  </p>
                 )}
                 {totalMismatch && (
                   <p className="text-xs font-semibold rounded-[9px] px-3 py-2" style={{ background: 'var(--color-saffron-soft, #fdf3e0)', color: 'var(--color-ember)' }}>
