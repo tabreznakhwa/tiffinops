@@ -187,6 +187,8 @@ export type RecordPurchaseInput = {
   notes?: string | null
   /** Storage path of a scanned bill in the receipts bucket (from /scan-bill). */
   receipt_path?: string | null
+  /** The supplier's own printed invoice number — for duplicate-scan detection. */
+  supplier_invoice_no?: string | null
   /** VAT on the bill (UAE 5%). total_amount = line subtotal + this. */
   vat_amount?: number | null
   items: RecordPurchaseLine[]
@@ -222,6 +224,7 @@ export async function recordPurchase(input: RecordPurchaseInput): Promise<Invent
       total_amount: (subtotal + vat).toFixed(2),
       notes: input.notes?.trim() || null,
       receipt_path: input.receipt_path ?? null,
+      supplier_invoice_no: input.supplier_invoice_no?.trim() || null,
       created_by: user.id,
     })
     .select('id')

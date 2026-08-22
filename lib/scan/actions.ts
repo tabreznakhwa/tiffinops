@@ -41,6 +41,71 @@ export type ScanResult = {
   receiptUrl?: string
   doc?: Omit<ScannedDoc, 'line_items'> & { line_items: ScanLineWithMatch[] }
   supplierMatch?: MatchCandidate | null
+  /** Set when this looks like a bill that was already posted — warn, don't block. */
+  duplicateWarning?: string
+}
+
+/**
+ * Look for an already-posted purchase/expense that matches this scan — same
+ * supplier invoice number, or same date + same total. Returns a human warning
+ * naming the existing record, or null. Warning only: different suppliers can
+ * reuse invoice numbers, and legit same-day same-amount bills exist.
+ */
+async function findDuplicate(
+  admin: ReturnType<typeof createAdminClient>,
+  doc: ScannedDoc,
+): Promise<string | null> {
+  const invoiceNo = doc.invoice_number?.trim()
+
+  if (invoiceNo) {
+    const [{ data: pur }, { data: exp }] = await Promise.all([
+      admin
+        .from('purchases')
+        .select('purchase_number, purchase_date, total_amount')
+        .eq('supplier_invoice_no', invoiceNo)
+        .order('created_at', { ascending: false })
+        .limit(1),
+      admin
+        .from('expenses')
+        .select('expense_number, expense_date, amount')
+        .eq('supplier_invoice_no', invoiceNo)
+        .order('created_at', { ascending: false })
+        .limit(1),
+    ])
+    if (pur?.[0]) {
+      return `Invoice #${invoiceNo} was already recorded as purchase ${pur[0].purchase_number} on ${pur[0].purchase_date} (AED ${pur[0].total_amount}).`
+    }
+    if (exp?.[0]) {
+      return `Invoice #${invoiceNo} was already recorded as expense ${exp[0].expense_number} on ${exp[0].expense_date} (AED ${exp[0].amount}).`
+    }
+  }
+
+  // Fallback for bills without a printed number: same date + same total.
+  if (doc.doc_date && doc.total != null && doc.total > 0) {
+    const total = doc.total.toFixed(2)
+    const [{ data: pur }, { data: exp }] = await Promise.all([
+      admin
+        .from('purchases')
+        .select('purchase_number, total_amount')
+        .eq('purchase_date', doc.doc_date)
+        .eq('total_amount', total)
+        .limit(1),
+      admin
+        .from('expenses')
+        .select('expense_number, amount')
+        .eq('expense_date', doc.doc_date)
+        .eq('amount', total)
+        .limit(1),
+    ])
+    if (pur?.[0]) {
+      return `A purchase with the same date (${doc.doc_date}) and total (AED ${total}) already exists: ${pur[0].purchase_number}.`
+    }
+    if (exp?.[0]) {
+      return `An expense with the same date (${doc.doc_date}) and amount (AED ${total}) already exists: ${exp[0].expense_number}.`
+    }
+  }
+
+  return null
 }
 
 export async function scanReceipt(formData: FormData): Promise<ScanResult> {
@@ -87,16 +152,19 @@ export async function scanReceipt(formData: FormData): Promise<ScanResult> {
     }
   }
 
-  // Fuzzy-match against existing masters so the review form comes pre-filled.
-  const [{ data: suppliers }, { data: items }] = await Promise.all([
+  // Fuzzy-match against existing masters so the review form comes pre-filled,
+  // and check whether this bill was already posted (duplicate scan).
+  const [{ data: suppliers }, { data: items }, duplicateWarning] = await Promise.all([
     admin.from('suppliers').select('id, name').eq('is_active', true),
     admin.from('inventory_items').select('id, name').eq('is_active', true),
+    findDuplicate(admin, outcome.doc),
   ])
 
   const doc = outcome.doc
   return {
     receiptPath: path,
     receiptUrl: signed?.signedUrl,
+    duplicateWarning: duplicateWarning ?? undefined,
     supplierMatch: bestMatch(doc.vendor_name, suppliers ?? []),
     doc: {
       ...doc,
@@ -210,6 +278,8 @@ const CreateExpenseSchema = z.object({
   vat_amount: z.coerce.number().min(0).nullable().optional(),
   payment_method: z.enum(['cash', 'card', 'bank_transfer', 'cheque', 'online', 'wallet', 'other']).nullable().optional(),
   receipt_path: z.string().nullable().optional(),
+  /** The supplier's own invoice number, for duplicate-scan detection. */
+  supplier_invoice_no: z.string().trim().nullable().optional().transform(v => v || null),
   notes: z.string().trim().optional().transform(v => v || null),
 })
 
@@ -222,6 +292,7 @@ export async function createExpense(input: {
   vat_amount?: number | null
   payment_method?: Enums<'payment_mode'> | null
   receipt_path?: string | null
+  supplier_invoice_no?: string | null
   notes?: string
 }): Promise<ExpenseActionResult> {
   const user = await requireAuth()
@@ -248,6 +319,7 @@ export async function createExpense(input: {
     vat_amount: (parsed.data.vat_amount ?? 0).toFixed(2),
     payment_method: parsed.data.payment_method ?? null,
     receipt_path: parsed.data.receipt_path ?? null,
+    supplier_invoice_no: parsed.data.supplier_invoice_no,
     notes: parsed.data.notes,
     created_by: user.id,
   })

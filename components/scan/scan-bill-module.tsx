@@ -6,7 +6,7 @@
 
 import { useMemo, useRef, useState, useTransition } from 'react'
 import Link from 'next/link'
-import { Camera, Check, FileText, Loader2, Plus, ScanLine, Search, Sparkles, Trash2, X } from 'lucide-react'
+import { AlertTriangle, Camera, Check, FileText, Loader2, Plus, ScanLine, Search, Sparkles, Trash2, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { useAppSettings } from '@/components/settings/settings-context'
 import { recordPurchase } from '@/lib/inventory/actions'
@@ -376,6 +376,7 @@ export function ScanBillModule({
           payment_method: paymentMethod || null,
           notes: 'Recorded via AI bill scan',
           receipt_path: scan?.receiptPath ?? null,
+          supplier_invoice_no: scan?.doc?.invoice_number ?? null,
           vat_amount: vatNum > 0 ? vatNum : null,
           items: usableLines.map(l => {
             const qty = parseFloat(l.quantity)
@@ -408,6 +409,7 @@ export function ScanBillModule({
           vat_amount: vatNum > 0 ? vatNum : null,
           payment_method: paymentMethod || null,
           receipt_path: scan?.receiptPath ?? null,
+          supplier_invoice_no: scan?.doc?.invoice_number ?? null,
         })
         if (res?.error) { setError(res.error); return }
         setDoneMessage(`${res.expense_number ?? 'Expense'} recorded · ${currency} ${amt.toFixed(2)}`)
@@ -475,6 +477,23 @@ export function ScanBillModule({
 
       {step === 'review' && scan?.doc && (
         <div className="space-y-4">
+          {/* Possible duplicate scan — warn loudly but let legit repeats through */}
+          {scan.duplicateWarning && (
+            <div
+              className="rounded-[14px] px-4 py-3 flex items-start gap-2.5"
+              style={{ background: 'rgba(220, 68, 50, 0.08)', border: '1px solid var(--color-red)' }}
+            >
+              <AlertTriangle size={18} className="mt-0.5 flex-shrink-0" style={{ color: 'var(--color-red)' }} />
+              <div>
+                <p className="text-sm font-bold" style={{ color: 'var(--color-red)' }}>Possible duplicate scan</p>
+                <p className="text-xs mt-0.5" style={{ color: 'var(--color-ink)' }}>{scan.duplicateWarning}</p>
+                <p className="text-xs mt-1" style={{ color: 'var(--color-muted)' }}>
+                  If you already posted this bill, don&apos;t confirm it again — stock and totals would double.
+                </p>
+              </div>
+            </div>
+          )}
+
           {/* Receipt preview + AI note */}
           <div className="rounded-[14px] overflow-hidden" style={card}>
             {scan.receiptUrl && scan.doc && (

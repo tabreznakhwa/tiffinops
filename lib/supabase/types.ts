@@ -1152,6 +1152,7 @@ export type Database = {
           total_amount: string
           notes: string | null
           receipt_path: string | null
+          supplier_invoice_no: string | null
           created_by: string
           created_at: string
           updated_at: string
@@ -1168,6 +1169,7 @@ export type Database = {
           total_amount?: string
           notes?: string | null
           receipt_path?: string | null
+          supplier_invoice_no?: string | null
           created_by: string
           created_at?: string
           updated_at?: string
@@ -1184,6 +1186,7 @@ export type Database = {
           total_amount?: string
           notes?: string | null
           receipt_path?: string | null
+          supplier_invoice_no?: string | null
           created_by?: string
           created_at?: string
           updated_at?: string
@@ -1204,6 +1207,7 @@ export type Database = {
           vat_amount: string
           payment_method: Database['public']['Enums']['payment_mode'] | null
           receipt_path: string | null
+          supplier_invoice_no: string | null
           notes: string | null
           created_by: string
           created_at: string
@@ -1220,6 +1224,7 @@ export type Database = {
           vat_amount?: string
           payment_method?: Database['public']['Enums']['payment_mode'] | null
           receipt_path?: string | null
+          supplier_invoice_no?: string | null
           notes?: string | null
           created_by: string
           created_at?: string
@@ -1236,6 +1241,7 @@ export type Database = {
           vat_amount?: string
           payment_method?: Database['public']['Enums']['payment_mode'] | null
           receipt_path?: string | null
+          supplier_invoice_no?: string | null
           notes?: string | null
           created_by?: string
           created_at?: string

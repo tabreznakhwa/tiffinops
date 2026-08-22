@@ -24,6 +24,8 @@ export const ScannedDocSchema = z.object({
   vendor_name: z.string().nullable(),
   /** UAE VAT Tax Registration Number printed on the bill, digits only. */
   vendor_trn: z.string().nullable(),
+  /** The bill's own invoice/receipt number — used to catch duplicate scans. */
+  invoice_number: z.string().nullable(),
   /** Document date, YYYY-MM-DD. Null when unreadable. */
   doc_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable(),
   currency: z.string().nullable(),
@@ -58,8 +60,8 @@ const OUTPUT_SCHEMA = {
   type: 'object',
   additionalProperties: false,
   required: [
-    'doc_type', 'vendor_name', 'vendor_trn', 'doc_date', 'currency', 'line_items',
-    'subtotal', 'vat_amount', 'total', 'paid', 'payment_method_hint',
+    'doc_type', 'vendor_name', 'vendor_trn', 'invoice_number', 'doc_date', 'currency',
+    'line_items', 'subtotal', 'vat_amount', 'total', 'paid', 'payment_method_hint',
     'suggested_category', 'confidence', 'notes',
   ],
   properties: {
@@ -67,6 +69,10 @@ const OUTPUT_SCHEMA = {
     vendor_name: { anyOf: [{ type: 'string' }, { type: 'null' }] },
     vendor_trn: {
       description: 'UAE VAT TRN printed on the bill, digits only — or null',
+      anyOf: [{ type: 'string' }, { type: 'null' }],
+    },
+    invoice_number: {
+      description: 'Invoice/bill/receipt number as printed ("277006", "INV-2041") — or null when the document has none',
       anyOf: [{ type: 'string' }, { type: 'null' }],
     },
     doc_date: { description: 'YYYY-MM-DD or null', anyOf: [{ type: 'string' }, { type: 'null' }] },
@@ -116,6 +122,7 @@ Classify each document:
 Extraction rules:
 - vendor_name: the shop/company that ISSUED the bill, cleaned up ("AL MAYA SUPERMARKET LLC" → "Al Maya Supermarket"). Null if unreadable.
 - vendor_trn: the issuer's UAE VAT TRN if printed (usually 15 digits near "TRN"), digits only. Null when absent — common on handwritten bills.
+- invoice_number: the document's own invoice/bill/receipt number as printed (near "Invoice No", "Bill No", "Receipt #"…). Keep it verbatim including letters and dashes. Null when the document has none — common on handwritten bills.
 - doc_date: the bill's own date as YYYY-MM-DD. Dates in the UAE are usually DD/MM/YYYY — interpret them that way. Null if unreadable; never guess a date that is not on the document.
 - line_items: one entry per purchased line. Clean the names ("BASMATI RCE 5KG XXL" → "basmati rice", with quantity 5 and unit "kg" when the pack size is the quantity). Normalise units to: kg, g, l, ml, pcs, box, packet, dozen. IMPORTANT: when a bill sells by wholesale packs — CT/CTN/carton, tin, bag, sack, case, tray, drum — keep that pack word as the unit ("carton", "tin", "bag"…); do NOT collapse it to pcs, the app converts packs to kg/l during review. Skip non-product lines (subtotal rows, VAT rows, loyalty points).
   - For an "expense" document line items are optional — a fuel receipt can have a single line "petrol".
