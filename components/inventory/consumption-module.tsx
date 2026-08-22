@@ -3,9 +3,10 @@
 import { useState, useMemo, useCallback, useTransition } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
-import { ArrowLeft, Plus, Search, Trash2, X } from 'lucide-react'
+import { ArrowLeft, Plus, Search, Trash2, Undo2, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { recordConsumption } from '@/lib/inventory/actions'
+import { recordConsumption, reverseTransaction } from '@/lib/inventory/actions'
+import { ReasonDialog } from './reason-dialog'
 import type { Tables } from '@/lib/supabase/types'
 
 type InventoryItem = Tables<'inventory_items'>
@@ -25,11 +26,13 @@ export function ConsumptionModule({
   entries,
   date,
   canWrite,
+  isOwner,
 }: {
   items: InventoryItem[]
   entries: ConsumptionRow[]
   date: string
   canWrite: boolean
+  isOwner: boolean
 }) {
   const router = useRouter()
   const searchParams = useSearchParams()
@@ -38,6 +41,7 @@ export function ConsumptionModule({
   const [lines, setLines] = useState<Line[]>([])
   const [itemSearch, setItemSearch] = useState('')
   const [error, setError] = useState<string | null>(null)
+  const [reversing, setReversing] = useState<ConsumptionRow | null>(null)
   const [isPending, startTransition] = useTransition()
 
   const itemById = useMemo(() => new Map(items.map((i) => [i.id, i])), [items])
@@ -273,8 +277,8 @@ export function ConsumptionModule({
             <table className="w-full text-sm min-w-[480px]">
               <thead>
                 <tr style={{ background: 'var(--color-cream)', borderBottom: '1px solid var(--color-border)' }}>
-                  {['Item', 'Quantity Used', 'Notes'].map((h) => (
-                    <th key={h} className="text-left px-4 py-3 text-[11px] font-bold uppercase tracking-wide" style={{ color: 'var(--color-muted)' }}>
+                  {['Item', 'Quantity Used', 'Notes', ...(isOwner ? [''] : [])].map((h, hi) => (
+                    <th key={hi} className="text-left px-4 py-3 text-[11px] font-bold uppercase tracking-wide" style={{ color: 'var(--color-muted)' }}>
                       {h}
                     </th>
                   ))}
@@ -288,12 +292,40 @@ export function ConsumptionModule({
                       {Math.abs(parseFloat(e.quantity))} {e.inventory_items?.unit_of_measure}
                     </td>
                     <td className="px-4 py-3" style={{ color: 'var(--color-muted)' }}>{e.notes || '—'}</td>
+                    {isOwner && (
+                      <td className="px-4 py-3 text-right">
+                        <button
+                          type="button"
+                          onClick={() => setReversing(e)}
+                          className="h-8 w-8 inline-flex items-center justify-center rounded-lg transition-colors hover:bg-cream"
+                          title="Reverse this entry"
+                          aria-label={`Reverse ${e.inventory_items?.name ?? 'entry'}`}
+                        >
+                          <Undo2 size={14} style={{ color: 'var(--color-red)' }} />
+                        </button>
+                      </td>
+                    )}
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
         </div>
+      )}
+
+      {reversing && (
+        <ReasonDialog
+          title={`Reverse ${Math.abs(parseFloat(reversing.quantity))} ${reversing.inventory_items?.unit_of_measure ?? ''} of ${reversing.inventory_items?.name ?? 'this item'}?`}
+          message="The stock will be added back and a reversal entry is written to the item ledger. The original entry stays visible."
+          confirmLabel="Reverse Entry"
+          onConfirm={async reason => {
+            const res = await reverseTransaction(reversing.id, reason)
+            if (res?.error) return res.error
+            router.refresh()
+            return null
+          }}
+          onClose={() => setReversing(null)}
+        />
       )}
     </div>
   )

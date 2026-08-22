@@ -36,6 +36,7 @@ export default async function ConsumptionPage({
       entries={(entries ?? []) as unknown as ConsumptionRow[]}
       date={date}
       canWrite={TXN_ROLES.includes(user.role)}
+      isOwner={user.role === 'owner'}
     />
   )
 }

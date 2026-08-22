@@ -39,6 +39,7 @@ export default async function InventoryItemPage({
       transactions={transactions ?? []}
       canManageItem={MASTER_ROLES.includes(user.role)}
       canRecordTxns={TXN_ROLES.includes(user.role)}
+      isOwner={user.role === 'owner'}
     />
   )
 }

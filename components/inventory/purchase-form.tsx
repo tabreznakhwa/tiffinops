@@ -34,7 +34,7 @@ const PAYMENT_METHODS: { value: PaymentMode; label: string }[] = [
 
 // ── Supplier selector ─────────────────────────────────────────────────────────
 
-function SupplierSelector({
+export function SupplierSelector({
   suppliers,
   selected,
   onSelect,

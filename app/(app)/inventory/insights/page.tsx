@@ -5,6 +5,7 @@ import { requireAuth } from '@/lib/auth'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { InsightsModule } from '@/components/inventory/insights-module'
 import type { InsightsData } from '@/components/inventory/insights-module'
+import type { InsightReport, InsightReportRow } from '@/lib/inventory/ai-insights'
 
 // Supabase caps a single select at 1,000 rows — a year of transactions can exceed that.
 const PAGE = 1000
@@ -29,7 +30,7 @@ export default async function InventoryInsightsPage({
 }: {
   searchParams: Promise<{ from?: string; to?: string }>
 }) {
-  await requireAuth() // read-tier page, no role gate — same as /reports
+  const user = await requireAuth() // read-tier page, no role gate — same as /reports
 
   const { from: qFrom, to: qTo } = await searchParams
 
@@ -43,7 +44,7 @@ export default async function InventoryInsightsPage({
 
   const admin = createAdminClient()
 
-  const [transactions, { data: items }, { data: purchases }] = await Promise.all([
+  const [transactions, { data: items }, { data: purchases }, { data: aiRows }] = await Promise.all([
     // Transactions in range — every purchase/consumption/adjustment/damaged/opening_stock row,
     // carrying its own unit_price/total_value snapshot (no need to hit purchase_items separately).
     fetchAllPages<{
@@ -70,7 +71,25 @@ export default async function InventoryInsightsPage({
       .select('supplier_id, purchase_date, total_amount, suppliers(name)')
       .gte('purchase_date', from)
       .lte('purchase_date', to),
+
+    // Latest saved AI Cost Advisor report (generated on demand, kept for history).
+    admin.from('ai_insight_reports')
+      .select('id, report, period_from, period_to, created_at')
+      .eq('scope', 'inventory')
+      .order('created_at', { ascending: false })
+      .limit(1),
   ])
+
+  const latest = aiRows?.[0]
+  const aiReport: InsightReportRow | null = latest
+    ? {
+        id: latest.id,
+        report: latest.report as unknown as InsightReport,
+        period_from: latest.period_from,
+        period_to: latest.period_to,
+        created_at: latest.created_at,
+      }
+    : null
 
   const data: InsightsData = {
     range: { from, to },
@@ -103,5 +122,11 @@ export default async function InventoryInsightsPage({
     })),
   }
 
-  return <InsightsModule data={data} />
+  return (
+    <InsightsModule
+      data={data}
+      aiReport={aiReport}
+      canGenerateAi={['owner', 'manager'].includes(user.role)}
+    />
+  )
 }

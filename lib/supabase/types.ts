@@ -1153,6 +1153,12 @@ export type Database = {
           notes: string | null
           receipt_path: string | null
           supplier_invoice_no: string | null
+          voided_at: string | null
+          voided_by: string | null
+          void_reason: string | null
+          edited_at: string | null
+          edited_by: string | null
+          edit_reason: string | null
           created_by: string
           created_at: string
           updated_at: string
@@ -1170,6 +1176,12 @@ export type Database = {
           notes?: string | null
           receipt_path?: string | null
           supplier_invoice_no?: string | null
+          voided_at?: string | null
+          voided_by?: string | null
+          void_reason?: string | null
+          edited_at?: string | null
+          edited_by?: string | null
+          edit_reason?: string | null
           created_by: string
           created_at?: string
           updated_at?: string
@@ -1187,6 +1199,12 @@ export type Database = {
           notes?: string | null
           receipt_path?: string | null
           supplier_invoice_no?: string | null
+          voided_at?: string | null
+          voided_by?: string | null
+          void_reason?: string | null
+          edited_at?: string | null
+          edited_by?: string | null
+          edit_reason?: string | null
           created_by?: string
           created_at?: string
           updated_at?: string
@@ -1194,6 +1212,36 @@ export type Database = {
         Relationships: [
           { foreignKeyName: 'purchases_supplier_id_fkey'; columns: ['supplier_id']; referencedRelation: 'suppliers'; referencedColumns: ['id'] }
         ]
+      }
+      ai_insight_reports: {
+        Row: {
+          id: string
+          scope: string
+          report: Json
+          period_from: string | null
+          period_to: string | null
+          created_by: string | null
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          scope?: string
+          report: Json
+          period_from?: string | null
+          period_to?: string | null
+          created_by?: string | null
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          scope?: string
+          report?: Json
+          period_from?: string | null
+          period_to?: string | null
+          created_by?: string | null
+          created_at?: string
+        }
+        Relationships: []
       }
       expenses: {
         Row: {

@@ -2,9 +2,10 @@
 
 import { revalidatePath } from 'next/cache'
 import { z } from 'zod'
+import { formatInTimeZone } from 'date-fns-tz'
 import { requireAuth } from '@/lib/auth'
 import { createAdminClient } from '@/lib/supabase/admin'
-import type { Enums } from '@/lib/supabase/types'
+import type { Enums, TablesInsert } from '@/lib/supabase/types'
 
 type Admin = ReturnType<typeof createAdminClient>
 
@@ -313,6 +314,285 @@ export async function recordPurchase(input: RecordPurchaseInput): Promise<Invent
 
   revalidatePath('/inventory')
   revalidatePath('/inventory/purchases')
+  return {}
+}
+
+// ── Owner corrections (void / edit) ─────────────────────────────────────────
+// Purchases are never hard-deleted: voiding reverses the stock with visible
+// adjustment transactions and stamps voided_at/by/reason on the row — same
+// discipline as voiding a payment or an order. Editing reverses the old lines
+// and posts the new ones, so the item ledger shows the full correction.
+
+const ReasonSchema = z.string().trim().min(3, 'Please give a reason (at least 3 characters)')
+
+export async function voidPurchase(id: string, reason: string): Promise<InventoryActionResult> {
+  const user = await requireAuth()
+  if (user.role !== 'owner') return { error: 'Only the owner can void a purchase' }
+  const parsedReason = ReasonSchema.safeParse(reason)
+  if (!parsedReason.success) return { error: parsedReason.error.issues[0]?.message ?? 'Reason is required' }
+
+  const admin = createAdminClient()
+  const { data: purchase } = await admin
+    .from('purchases')
+    .select('id, purchase_number, purchase_date, voided_at')
+    .eq('id', id)
+    .maybeSingle()
+  if (!purchase) return { error: 'Purchase not found' }
+  if (purchase.voided_at) return { error: 'This purchase is already voided' }
+
+  const { data: lines } = await admin
+    .from('purchase_items')
+    .select('inventory_item_id, quantity, unit_price')
+    .eq('purchase_id', id)
+  if (!lines?.length) return { error: 'Purchase has no line items' }
+
+  // Reverse the stock each line added, with a visible adjustment per item.
+  const stock = await fetchStockMap(admin, [...new Set(lines.map(l => l.inventory_item_id))])
+  const today = formatInTimeZone(new Date(), 'Asia/Dubai', 'yyyy-MM-dd')
+  const txnRows = lines.map(line => {
+    const qty = parseFloat(String(line.quantity))
+    const price = parseFloat(String(line.unit_price))
+    const info = stock.get(line.inventory_item_id)
+    const before = info?.stock ?? 0
+    const after = before - qty
+    stock.set(line.inventory_item_id, { stock: after, price: info?.price ?? price })
+    return {
+      item_id: line.inventory_item_id,
+      transaction_type: 'adjustment' as const,
+      transaction_date: today,
+      quantity: (-qty).toFixed(3),
+      stock_before: before.toFixed(3),
+      stock_after: after.toFixed(3),
+      unit_price: price.toFixed(2),
+      total_value: (qty * price).toFixed(2),
+      notes: `Voided ${purchase.purchase_number}: ${parsedReason.data}`,
+      reference_table: 'purchases',
+      reference_id: purchase.id,
+      created_by: user.id,
+    }
+  })
+
+  const { error: txnErr } = await admin.from('inventory_transactions').insert(txnRows)
+  if (txnErr) return { error: `Could not reverse stock: ${txnErr.message}` }
+
+  for (const [item_id, info] of stock) {
+    await admin.from('inventory_items').update({ current_stock: info.stock.toFixed(3) }).eq('id', item_id)
+  }
+
+  const { error } = await admin
+    .from('purchases')
+    .update({ voided_at: new Date().toISOString(), voided_by: user.id, void_reason: parsedReason.data })
+    .eq('id', id)
+    .is('voided_at', null)
+  if (error) return { error: error.message }
+
+  revalidatePath('/inventory')
+  revalidatePath('/inventory/purchases')
+  revalidatePath(`/inventory/purchases/${id}`)
+  return {}
+}
+
+export type UpdatePurchaseInput = {
+  supplier_id: string
+  purchase_date: string
+  payment_status: 'unpaid' | 'partial' | 'paid'
+  payment_method?: Enums<'payment_mode'> | null
+  vat_amount?: number | null
+  items: RecordPurchaseLine[]
+}
+
+export async function updatePurchase(
+  id: string,
+  input: UpdatePurchaseInput,
+  edit_reason: string,
+): Promise<InventoryActionResult> {
+  const user = await requireAuth()
+  if (user.role !== 'owner') return { error: 'Only the owner can edit a purchase' }
+  const parsedReason = ReasonSchema.safeParse(edit_reason)
+  if (!parsedReason.success) return { error: parsedReason.error.issues[0]?.message ?? 'Reason is required' }
+  if (!input.supplier_id) return { error: 'Select a supplier' }
+  if (!input.items.length) return { error: 'Add at least one item' }
+  if (input.items.some(i => !i.inventory_item_id || i.quantity <= 0 || i.unit_price < 0)) {
+    return { error: 'Every line needs an item, a positive quantity and a valid price' }
+  }
+
+  const admin = createAdminClient()
+  const { data: purchase } = await admin
+    .from('purchases')
+    .select('id, purchase_number, voided_at')
+    .eq('id', id)
+    .maybeSingle()
+  if (!purchase) return { error: 'Purchase not found' }
+  if (purchase.voided_at) return { error: 'A voided purchase cannot be edited' }
+
+  const { data: oldLines } = await admin
+    .from('purchase_items')
+    .select('inventory_item_id, quantity, unit_price')
+    .eq('purchase_id', id)
+
+  const itemIds = [
+    ...new Set([...(oldLines ?? []).map(l => l.inventory_item_id), ...input.items.map(i => i.inventory_item_id)]),
+  ]
+  const stock = await fetchStockMap(admin, itemIds)
+  const today = formatInTimeZone(new Date(), 'Asia/Dubai', 'yyyy-MM-dd')
+
+  // One batch: reverse every old line, then post every new line — the item
+  // ledger shows the correction instead of silently rewriting history.
+  const txnRows: TablesInsert<'inventory_transactions'>[] = []
+  for (const line of oldLines ?? []) {
+    const qty = parseFloat(String(line.quantity))
+    const price = parseFloat(String(line.unit_price))
+    const info = stock.get(line.inventory_item_id)
+    const before = info?.stock ?? 0
+    const after = before - qty
+    stock.set(line.inventory_item_id, { stock: after, price: info?.price ?? price })
+    txnRows.push({
+      item_id: line.inventory_item_id,
+      transaction_type: 'adjustment',
+      transaction_date: today,
+      quantity: (-qty).toFixed(3),
+      stock_before: before.toFixed(3),
+      stock_after: after.toFixed(3),
+      unit_price: price.toFixed(2),
+      total_value: (qty * price).toFixed(2),
+      notes: `Edited ${purchase.purchase_number}: ${parsedReason.data}`,
+      reference_table: 'purchases',
+      reference_id: purchase.id,
+      created_by: user.id,
+    })
+  }
+  for (const line of input.items) {
+    const info = stock.get(line.inventory_item_id)
+    const before = info?.stock ?? 0
+    const after = before + line.quantity
+    stock.set(line.inventory_item_id, { stock: after, price: line.unit_price })
+    txnRows.push({
+      item_id: line.inventory_item_id,
+      transaction_type: 'purchase',
+      transaction_date: input.purchase_date,
+      quantity: line.quantity.toFixed(3),
+      stock_before: before.toFixed(3),
+      stock_after: after.toFixed(3),
+      unit_price: line.unit_price.toFixed(2),
+      total_value: (line.quantity * line.unit_price).toFixed(2),
+      notes: `Edited ${purchase.purchase_number}: ${parsedReason.data}`,
+      reference_table: 'purchases',
+      reference_id: purchase.id,
+      created_by: user.id,
+    })
+  }
+
+  const { error: txnErr } = await admin.from('inventory_transactions').insert(txnRows)
+  if (txnErr) return { error: `Could not adjust stock: ${txnErr.message}` }
+
+  // Replace the line items.
+  const { error: delErr } = await admin.from('purchase_items').delete().eq('purchase_id', id)
+  if (delErr) return { error: delErr.message }
+  const { error: insErr } = await admin.from('purchase_items').insert(
+    input.items.map(i => ({
+      purchase_id: id,
+      inventory_item_id: i.inventory_item_id,
+      quantity: i.quantity.toFixed(3),
+      unit_price: i.unit_price.toFixed(2),
+      total_price: (i.quantity * i.unit_price).toFixed(2),
+      pack_qty: i.pack_qty != null ? i.pack_qty.toFixed(3) : null,
+      pack_size: i.pack_size != null ? i.pack_size.toFixed(3) : null,
+      pack_unit: i.pack_unit ?? null,
+    })),
+  )
+  if (insErr) return { error: insErr.message }
+
+  for (const [item_id, info] of stock) {
+    await admin.from('inventory_items')
+      .update({ current_stock: info.stock.toFixed(3), purchase_price: info.price.toFixed(2) })
+      .eq('id', item_id)
+  }
+
+  const subtotal = input.items.reduce((s, i) => s + i.quantity * i.unit_price, 0)
+  const vat = Math.max(0, input.vat_amount ?? 0)
+  const { error } = await admin
+    .from('purchases')
+    .update({
+      supplier_id: input.supplier_id,
+      purchase_date: input.purchase_date,
+      payment_status: input.payment_status,
+      payment_method: input.payment_method ?? null,
+      subtotal: subtotal.toFixed(2),
+      vat_amount: vat.toFixed(2),
+      total_amount: (subtotal + vat).toFixed(2),
+      edited_at: new Date().toISOString(),
+      edited_by: user.id,
+      edit_reason: parsedReason.data,
+    })
+    .eq('id', id)
+  if (error) return { error: error.message }
+
+  revalidatePath('/inventory')
+  revalidatePath('/inventory/purchases')
+  revalidatePath(`/inventory/purchases/${id}`)
+  return {}
+}
+
+/**
+ * Reverse a single ledger entry (consumption / adjustment / damaged /
+ * opening_stock) with an opposite-signed adjustment. Purchase rows must go
+ * through voidPurchase so the whole invoice stays consistent.
+ */
+export async function reverseTransaction(id: string, reason: string): Promise<InventoryActionResult> {
+  const user = await requireAuth()
+  if (user.role !== 'owner') return { error: 'Only the owner can reverse an entry' }
+  const parsedReason = ReasonSchema.safeParse(reason)
+  if (!parsedReason.success) return { error: parsedReason.error.issues[0]?.message ?? 'Reason is required' }
+
+  const admin = createAdminClient()
+  const { data: txn } = await admin
+    .from('inventory_transactions')
+    .select('id, item_id, transaction_type, transaction_date, quantity, unit_price, total_value')
+    .eq('id', id)
+    .maybeSingle()
+  if (!txn) return { error: 'Entry not found' }
+  if (txn.transaction_type === 'purchase') {
+    return { error: 'Purchase lines are reversed by voiding or editing the purchase itself' }
+  }
+
+  const { data: existing } = await admin
+    .from('inventory_transactions')
+    .select('id')
+    .eq('reference_table', 'inventory_transactions')
+    .eq('reference_id', id)
+    .limit(1)
+  if (existing?.length) return { error: 'This entry was already reversed' }
+
+  const qty = parseFloat(String(txn.quantity))
+  const stock = await fetchStockMap(admin, [txn.item_id])
+  const before = stock.get(txn.item_id)?.stock ?? 0
+  const after = before - qty
+
+  const { error: txnErr } = await admin.from('inventory_transactions').insert({
+    item_id: txn.item_id,
+    transaction_type: 'adjustment',
+    transaction_date: formatInTimeZone(new Date(), 'Asia/Dubai', 'yyyy-MM-dd'),
+    quantity: (-qty).toFixed(3),
+    stock_before: before.toFixed(3),
+    stock_after: after.toFixed(3),
+    unit_price: txn.unit_price,
+    total_value: txn.total_value,
+    notes: `Reversal of ${txn.transaction_type} on ${txn.transaction_date}: ${parsedReason.data}`,
+    reference_table: 'inventory_transactions',
+    reference_id: txn.id,
+    created_by: user.id,
+  })
+  if (txnErr) return { error: txnErr.message }
+
+  const { error: stockErr } = await admin
+    .from('inventory_items')
+    .update({ current_stock: after.toFixed(3) })
+    .eq('id', txn.item_id)
+  if (stockErr) return { error: stockErr.message }
+
+  revalidatePath('/inventory')
+  revalidatePath('/inventory/consumption')
+  revalidatePath(`/inventory/${txn.item_id}`)
   return {}
 }
 

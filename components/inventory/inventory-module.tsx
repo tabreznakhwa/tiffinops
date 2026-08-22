@@ -3,7 +3,19 @@
 import { useState, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { Plus, Search, Edit2, X } from 'lucide-react'
+import {
+  ChefHat,
+  ClipboardList,
+  Edit2,
+  Plus,
+  Receipt,
+  ScanLine,
+  Search,
+  ShoppingCart,
+  Sparkles,
+  Truck,
+  X,
+} from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { ItemModal } from './item-modal'
 import { useAppSettings } from '@/components/settings/settings-context'
@@ -15,14 +27,70 @@ function isLowStock(item: InventoryItem) {
   return parseFloat(item.current_stock) <= parseFloat(item.min_stock_level)
 }
 
+// ── Dashboard building blocks ────────────────────────────────────────────────
+
+function KPICard({
+  label,
+  value,
+  sub,
+  accent,
+}: {
+  label: string
+  value: string
+  sub?: string
+  accent: string
+}) {
+  return (
+    <div
+      className="relative rounded-[14px] p-4 overflow-hidden"
+      style={{ background: 'var(--color-surface)', border: '1px solid var(--color-border)', boxShadow: 'var(--shadow-card)' }}
+    >
+      <div className="absolute left-0 top-0 bottom-0 w-1" style={{ background: accent }} />
+      <p className="text-[11px] font-bold uppercase tracking-wide" style={{ color: 'var(--color-muted)' }}>{label}</p>
+      <p className="font-display font-bold text-[19px] mt-1 num" style={{ color: 'var(--color-ink)' }}>{value}</p>
+      {sub && <p className="text-[11px] font-semibold mt-0.5" style={{ color: 'var(--color-muted)' }}>{sub}</p>}
+    </div>
+  )
+}
+
+function ActionTile({
+  href,
+  icon,
+  label,
+  accent,
+}: {
+  href: string
+  icon: React.ReactNode
+  label: string
+  accent?: boolean
+}) {
+  return (
+    <Link
+      href={href}
+      className="flex flex-col items-center justify-center gap-1.5 rounded-[14px] py-3.5 px-2 text-center transition-transform hover:-translate-y-0.5"
+      style={{
+        background: accent ? 'linear-gradient(135deg, var(--color-saffron), var(--color-ember))' : 'var(--color-surface)',
+        border: accent ? 'none' : '1px solid var(--color-border)',
+        boxShadow: 'var(--shadow-card)',
+        color: accent ? '#fff' : 'var(--color-ink)',
+      }}
+    >
+      {icon}
+      <span className="text-[12px] font-bold leading-tight">{label}</span>
+    </Link>
+  )
+}
+
 export function InventoryModule({
   items,
   canManageItems,
   canRecordTxns,
+  stats,
 }: {
   items: InventoryItem[]
   canManageItems: boolean
   canRecordTxns: boolean
+  stats: { purchasesMonth: number; consumptionMonth: number; wastageMonth: number }
 }) {
   const router = useRouter()
   const { currency } = useAppSettings()
@@ -51,6 +119,10 @@ export function InventoryModule({
   }, [items, categoryFilter, search])
 
   const lowStockCount = items.filter(isLowStock).length
+  const stockValue = useMemo(
+    () => items.filter(i => i.is_active).reduce((s, i) => s + parseFloat(i.current_stock) * parseFloat(i.purchase_price), 0),
+    [items],
+  )
 
   function handleDone() {
     router.refresh()
@@ -73,33 +145,56 @@ export function InventoryModule({
             </span>
           </h1>
         </div>
-        <div className="flex gap-2 flex-shrink-0 mt-1">
-          <Link href="/inventory/insights">
-            <Button variant="ghost" size="sm">Insights</Button>
-          </Link>
-          <Link href="/inventory/suppliers">
-            <Button variant="ghost" size="sm">Suppliers</Button>
-          </Link>
-          {canRecordTxns && (
-            <>
-              <Link href="/inventory/purchases">
-                <Button variant="ghost" size="sm">Purchases</Button>
-              </Link>
-              <Link href="/inventory/consumption">
-                <Button variant="ghost" size="sm">Consumption</Button>
-              </Link>
-              <Link href="/inventory/opening-stock">
-                <Button variant="ghost" size="sm">Stock Count</Button>
-              </Link>
-            </>
-          )}
-          {canManageItems && (
-            <Button variant="primary" size="sm" onClick={() => setAddOpen(true)}>
-              <Plus size={15} />
-              Add Item
-            </Button>
-          )}
-        </div>
+        {canManageItems && (
+          <Button variant="primary" size="sm" onClick={() => setAddOpen(true)} className="flex-shrink-0 mt-1">
+            <Plus size={15} />
+            Add Item
+          </Button>
+        )}
+      </div>
+
+      {/* KPI row */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
+        <KPICard
+          label="Stock Value"
+          value={`${currency} ${stockValue.toFixed(0)}`}
+          sub="active items, at last cost"
+          accent="var(--color-saffron)"
+        />
+        <KPICard
+          label="Purchases · This Month"
+          value={`${currency} ${stats.purchasesMonth.toFixed(0)}`}
+          accent="var(--color-green)"
+        />
+        <KPICard
+          label="Consumption · This Month"
+          value={`${currency} ${stats.consumptionMonth.toFixed(0)}`}
+          sub={stats.wastageMonth > 0 ? `+ ${currency} ${stats.wastageMonth.toFixed(0)} wasted` : undefined}
+          accent="var(--color-ember)"
+        />
+        <KPICard
+          label="Low Stock"
+          value={String(lowStockCount)}
+          sub={lowStockCount > 0 ? 'items below minimum' : 'all items above minimum'}
+          accent={lowStockCount > 0 ? 'var(--color-red)' : 'var(--color-green)'}
+        />
+      </div>
+
+      {/* Quick actions */}
+      <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-7 gap-2.5 mb-6">
+        {canRecordTxns && (
+          <>
+            <ActionTile href="/scan-bill" icon={<ScanLine size={19} />} label="Scan Bill" accent />
+            <ActionTile href="/inventory/purchases/new" icon={<ShoppingCart size={19} style={{ color: 'var(--color-saffron)' }} />} label="Record Purchase" />
+            <ActionTile href="/inventory/consumption" icon={<ChefHat size={19} style={{ color: 'var(--color-ember)' }} />} label="Log Consumption" />
+            <ActionTile href="/inventory/opening-stock" icon={<ClipboardList size={19} style={{ color: 'var(--color-blue)' }} />} label="Stock Count" />
+          </>
+        )}
+        {canRecordTxns && (
+          <ActionTile href="/inventory/purchases" icon={<Receipt size={19} style={{ color: 'var(--color-green)' }} />} label="Purchases" />
+        )}
+        <ActionTile href="/inventory/suppliers" icon={<Truck size={19} style={{ color: 'var(--color-muted)' }} />} label="Suppliers" />
+        <ActionTile href="/inventory/insights" icon={<Sparkles size={19} style={{ color: 'var(--color-gold)' }} />} label="Insights" />
       </div>
 
       {/* Search + category filter */}

@@ -10,6 +10,8 @@ import {
 } from 'recharts'
 import { parseISO, startOfWeek, startOfMonth, startOfYear, format } from 'date-fns'
 import { useAppSettings } from '@/components/settings/settings-context'
+import { AIAdvisor } from './ai-advisor'
+import type { InsightReportRow } from '@/lib/inventory/ai-insights'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -152,7 +154,15 @@ const GRANULARITIES: { id: Granularity; label: string }[] = [
   { id: 'month', label: 'Month' }, { id: 'year', label: 'Year' },
 ]
 
-export function InsightsModule({ data }: { data: InsightsData }) {
+export function InsightsModule({
+  data,
+  aiReport,
+  canGenerateAi,
+}: {
+  data: InsightsData
+  aiReport: InsightReportRow | null
+  canGenerateAi: boolean
+}) {
   const { currency } = useAppSettings()
   const router = useRouter()
   const searchParams = useSearchParams()
@@ -360,6 +370,9 @@ export function InsightsModule({ data }: { data: InsightsData }) {
           Insights
         </h1>
       </div>
+
+      {/* AI Cost Advisor */}
+      <AIAdvisor initialReport={aiReport} canGenerate={canGenerateAi} />
 
       {/* Controls */}
       <div

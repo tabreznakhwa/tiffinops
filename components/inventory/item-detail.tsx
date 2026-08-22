@@ -3,11 +3,12 @@
 import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { ArrowLeft, Edit2 } from 'lucide-react'
+import { ArrowLeft, Edit2, Undo2 } from 'lucide-react'
 import { formatInTimeZone } from 'date-fns-tz'
 import { Button } from '@/components/ui/button'
 import { ItemModal } from './item-modal'
-import { recordAdjustment } from '@/lib/inventory/actions'
+import { ReasonDialog } from './reason-dialog'
+import { recordAdjustment, reverseTransaction } from '@/lib/inventory/actions'
 import { useAppSettings } from '@/components/settings/settings-context'
 import type { Tables, Enums } from '@/lib/supabase/types'
 
@@ -31,17 +32,20 @@ export function ItemDetail({
   transactions,
   canManageItem,
   canRecordTxns,
+  isOwner,
 }: {
   item: InventoryItem
   transactions: InventoryTxn[]
   canManageItem: boolean
   canRecordTxns: boolean
+  isOwner: boolean
 }) {
   const router = useRouter()
   const { currency } = useAppSettings()
   const [editOpen, setEditOpen] = useState(false)
   const [adjustOpen, setAdjustOpen] = useState(false)
   const [adjustType, setAdjustType] = useState<'adjustment' | 'damaged'>('adjustment')
+  const [reversing, setReversing] = useState<InventoryTxn | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [isPending, startTransition] = useTransition()
 
@@ -211,8 +215,8 @@ export function ItemDetail({
             <table className="w-full text-sm min-w-[560px]">
               <thead>
                 <tr style={{ background: 'var(--color-cream)', borderBottom: '1px solid var(--color-border)' }}>
-                  {['Date', 'Type', 'Qty', 'Before → After', 'Notes'].map(h => (
-                    <th key={h} className="text-left px-4 py-3 text-[11px] font-bold uppercase tracking-wide" style={{ color: 'var(--color-muted)' }}>
+                  {['Date', 'Type', 'Qty', 'Before → After', 'Notes', ...(isOwner ? [''] : [])].map((h, hi) => (
+                    <th key={hi} className="text-left px-4 py-3 text-[11px] font-bold uppercase tracking-wide" style={{ color: 'var(--color-muted)' }}>
                       {h}
                     </th>
                   ))}
@@ -237,6 +241,22 @@ export function ItemDetail({
                         {parseFloat(t.stock_before).toFixed(2)} → {parseFloat(t.stock_after).toFixed(2)}
                       </td>
                       <td className="px-4 py-3" style={{ color: 'var(--color-muted)' }}>{t.notes || '—'}</td>
+                      {isOwner && (
+                        <td className="px-4 py-3 text-right">
+                          {/* Purchase lines are corrected via the purchase itself (edit/void). */}
+                          {t.transaction_type !== 'purchase' && (
+                            <button
+                              type="button"
+                              onClick={() => setReversing(t)}
+                              className="h-8 w-8 inline-flex items-center justify-center rounded-lg transition-colors hover:bg-cream"
+                              title="Reverse this entry"
+                              aria-label={`Reverse ${cfg.label} of ${t.transaction_date}`}
+                            >
+                              <Undo2 size={14} style={{ color: 'var(--color-red)' }} />
+                            </button>
+                          )}
+                        </td>
+                      )}
                     </tr>
                   )
                 })}
@@ -244,6 +264,21 @@ export function ItemDetail({
             </table>
           </div>
         </div>
+      )}
+
+      {reversing && (
+        <ReasonDialog
+          title={`Reverse ${TXN_LABELS[reversing.transaction_type].label.toLowerCase()} of ${Math.abs(parseFloat(reversing.quantity))} ${item.unit_of_measure}?`}
+          message={`Stock will be corrected by the opposite amount and a reversal entry dated today is added to the ledger. The original ${reversing.transaction_date} entry stays visible.`}
+          confirmLabel="Reverse Entry"
+          onConfirm={async reason => {
+            const res = await reverseTransaction(reversing.id, reason)
+            if (res?.error) return res.error
+            router.refresh()
+            return null
+          }}
+          onClose={() => setReversing(null)}
+        />
       )}
 
       <ItemModal item={item} open={editOpen} onClose={() => setEditOpen(false)} onSuccess={() => router.refresh()} />

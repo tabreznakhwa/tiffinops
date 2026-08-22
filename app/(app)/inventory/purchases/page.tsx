@@ -36,6 +36,9 @@ export default async function PurchasesPage({
       total_amount,
       notes,
       receipt_path,
+      voided_at,
+      void_reason,
+      edited_at,
       suppliers ( name, supplier_code ),
       purchase_items ( quantity )
     `)
@@ -48,6 +51,7 @@ export default async function PurchasesPage({
     <PurchasesModule
       purchases={(data ?? []) as unknown as PurchaseRow[]}
       canWrite={TXN_ROLES.includes(user.role)}
+      isOwner={user.role === 'owner'}
       initialFrom={from}
       initialTo={to}
     />

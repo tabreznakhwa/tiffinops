@@ -3,10 +3,12 @@
 import { useState, useMemo, useTransition } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
-import { ArrowLeft, Paperclip, Plus, Search } from 'lucide-react'
+import { ArrowLeft, Ban, Paperclip, Pencil, Plus, Search } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { useAppSettings } from '@/components/settings/settings-context'
 import { getReceiptUrl } from '@/lib/scan/actions'
+import { voidPurchase } from '@/lib/inventory/actions'
+import { ReasonDialog } from './reason-dialog'
 
 export type PurchaseRow = {
   id: string
@@ -16,6 +18,9 @@ export type PurchaseRow = {
   total_amount: string
   notes: string | null
   receipt_path: string | null
+  voided_at: string | null
+  void_reason: string | null
+  edited_at: string | null
   suppliers: { name: string; supplier_code: string } | null
   purchase_items: { quantity: string }[]
 }
@@ -48,11 +53,13 @@ function nDaysAgoStr(n: number) {
 export function PurchasesModule({
   purchases,
   canWrite,
+  isOwner,
   initialFrom,
   initialTo,
 }: {
   purchases: PurchaseRow[]
   canWrite: boolean
+  isOwner: boolean
   initialFrom: string
   initialTo: string
 }) {
@@ -63,6 +70,7 @@ export function PurchasesModule({
   const [fromDate, setFromDate] = useState(initialFrom)
   const [toDate, setToDate] = useState(initialTo)
   const [search, setSearch] = useState('')
+  const [voiding, setVoiding] = useState<PurchaseRow | null>(null)
 
   function applyDateRange() {
     const params = new URLSearchParams(searchParams.toString())
@@ -91,7 +99,11 @@ export function PurchasesModule({
     )
   }, [purchases, search])
 
-  const totalSpend = useMemo(() => filtered.reduce((s, p) => s + parseFloat(p.total_amount), 0), [filtered])
+  // Voided purchases stay visible for the trail but never count in the total.
+  const totalSpend = useMemo(
+    () => filtered.filter(p => !p.voided_at).reduce((s, p) => s + parseFloat(p.total_amount), 0),
+    [filtered],
+  )
 
   const [, startTransition] = useTransition()
   function openReceipt(path: string) {
@@ -177,8 +189,8 @@ export function PurchasesModule({
             <table className="w-full text-sm min-w-[640px]">
               <thead>
                 <tr style={{ background: 'var(--color-cream)', borderBottom: '1px solid var(--color-border)' }}>
-                  {['Invoice', 'Supplier', 'Date', 'Items', 'Total', 'Status'].map((h) => (
-                    <th key={h} className="text-left px-4 py-3 text-[11px] font-bold uppercase tracking-wide" style={{ color: 'var(--color-muted)' }}>
+                  {['Invoice', 'Supplier', 'Date', 'Items', 'Total', 'Status', ...(isOwner ? [''] : [])].map((h, hi) => (
+                    <th key={hi} className="text-left px-4 py-3 text-[11px] font-bold uppercase tracking-wide" style={{ color: 'var(--color-muted)' }}>
                       {h}
                     </th>
                   ))}
@@ -187,15 +199,21 @@ export function PurchasesModule({
               <tbody>
                 {filtered.map((p, i) => {
                   const cfg = PAYMENT_STATUS_CONFIG[p.payment_status] ?? PAYMENT_STATUS_CONFIG.unpaid
+                  const voided = !!p.voided_at
                   return (
-                    <tr key={p.id} style={{ borderTop: i > 0 ? '1px solid var(--color-border)' : undefined }}>
+                    <tr key={p.id} style={{ borderTop: i > 0 ? '1px solid var(--color-border)' : undefined, opacity: voided ? 0.55 : 1 }}>
                       <td className="px-4 py-3 font-semibold num" style={{ color: 'var(--color-ink)' }}>
                         <span className="inline-flex items-center gap-1.5">
-                          {p.purchase_number}
+                          <span style={voided ? { textDecoration: 'line-through' } : undefined}>{p.purchase_number}</span>
                           {p.receipt_path && (
                             <button type="button" onClick={() => openReceipt(p.receipt_path!)} aria-label="View scanned bill" title="View scanned bill">
                               <Paperclip size={13} style={{ color: 'var(--color-saffron)' }} />
                             </button>
+                          )}
+                          {!voided && p.edited_at && (
+                            <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-pill" style={{ background: 'var(--color-cream)', color: 'var(--color-muted)' }} title="Edited by owner">
+                              edited
+                            </span>
                           )}
                         </span>
                       </td>
@@ -205,12 +223,49 @@ export function PurchasesModule({
                       </td>
                       <td className="px-4 py-3" style={{ color: 'var(--color-muted)' }}>{fmtDate(p.purchase_date)}</td>
                       <td className="px-4 py-3 num" style={{ color: 'var(--color-muted)' }}>{p.purchase_items.length}</td>
-                      <td className="px-4 py-3 num font-semibold" style={{ color: 'var(--color-ink)' }}>{currency} {parseFloat(p.total_amount).toFixed(2)}</td>
-                      <td className="px-4 py-3">
-                        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10.5px] font-bold" style={{ background: cfg.bg, color: cfg.color }}>
-                          {cfg.label}
-                        </span>
+                      <td className="px-4 py-3 num font-semibold" style={{ color: 'var(--color-ink)', textDecoration: voided ? 'line-through' : undefined }}>
+                        {currency} {parseFloat(p.total_amount).toFixed(2)}
                       </td>
+                      <td className="px-4 py-3">
+                        {voided ? (
+                          <span
+                            className="inline-flex items-center px-2 py-0.5 rounded-full text-[10.5px] font-bold"
+                            style={{ background: 'var(--color-cream)', color: 'var(--color-muted)' }}
+                            title={p.void_reason ?? undefined}
+                          >
+                            Voided
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10.5px] font-bold" style={{ background: cfg.bg, color: cfg.color }}>
+                            {cfg.label}
+                          </span>
+                        )}
+                      </td>
+                      {isOwner && (
+                        <td className="px-4 py-3">
+                          {!voided && (
+                            <div className="flex items-center justify-end gap-0.5">
+                              <Link
+                                href={`/inventory/purchases/${p.id}`}
+                                className="h-8 w-8 flex items-center justify-center rounded-lg transition-colors hover:bg-cream"
+                                title="Edit purchase"
+                                aria-label={`Edit ${p.purchase_number}`}
+                              >
+                                <Pencil size={14} style={{ color: 'var(--color-muted)' }} />
+                              </Link>
+                              <button
+                                type="button"
+                                onClick={() => setVoiding(p)}
+                                className="h-8 w-8 flex items-center justify-center rounded-lg transition-colors hover:bg-cream"
+                                title="Void purchase"
+                                aria-label={`Void ${p.purchase_number}`}
+                              >
+                                <Ban size={14} style={{ color: 'var(--color-red)' }} />
+                              </button>
+                            </div>
+                          )}
+                        </td>
+                      )}
                     </tr>
                   )
                 })}
@@ -218,6 +273,21 @@ export function PurchasesModule({
             </table>
           </div>
         </div>
+      )}
+
+      {voiding && (
+        <ReasonDialog
+          title={`Void ${voiding.purchase_number}?`}
+          message={`Stock added by this purchase will be removed again and the ${currency} ${parseFloat(voiding.total_amount).toFixed(2)} total will no longer count. The record stays visible as voided.`}
+          confirmLabel="Void Purchase"
+          onConfirm={async reason => {
+            const res = await voidPurchase(voiding.id, reason)
+            if (res?.error) return res.error
+            router.refresh()
+            return null
+          }}
+          onClose={() => setVoiding(null)}
+        />
       )}
     </div>
   )
