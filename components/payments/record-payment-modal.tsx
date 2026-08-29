@@ -57,11 +57,15 @@ export function RecordPaymentModal({
   customers,
   preselectedCustomer,
   initialAmount,
+  initialInvoiceId,
   onClose,
 }: {
   customers: Customer[]
   preselectedCustomer?: Customer
   initialAmount?: string
+  // Preselects this invoice in the "Apply to Invoice" picker once the
+  // customer's open invoices load (used by the month-wise outstanding rows).
+  initialInvoiceId?: string
   onClose: () => void
 }) {
   const [query, setQuery]           = useState('')
@@ -97,14 +101,22 @@ export function RecordPaymentModal({
       setInvoicesLoading(true)
       try {
         const invs = await getCustomerOpenInvoices(customer!.id)
-        if (!cancelled) setOpenInvoices(invs)
+        if (!cancelled) {
+          setOpenInvoices(invs)
+          // Lock onto the requested invoice (month-wise "Pay" buttons). The
+          // caller's initialAmount already holds that month's remaining, so
+          // only the selection needs setting here.
+          if (initialInvoiceId && invs.some(inv => inv.id === initialInvoiceId)) {
+            setSelectedInvoiceId(initialInvoiceId)
+          }
+        }
       } finally {
         if (!cancelled) setInvoicesLoading(false)
       }
     }
     load()
     return () => { cancelled = true }
-  }, [customer])
+  }, [customer, initialInvoiceId])
 
   const selectedInvoice = openInvoices.find(inv => inv.id === selectedInvoiceId) ?? null
 

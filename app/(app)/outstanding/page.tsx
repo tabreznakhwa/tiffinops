@@ -7,9 +7,29 @@ import { getSettings } from '@/lib/settings/getSettings'
 import { getCustomerBalancesInRange, getCustomerLastPayments, getCustomerOutstandingSince, getCustomerOldestUnpaidInvoice, getCustomerAdjustmentTotalsInRange } from '@/lib/db/aggregates'
 import { chargeForCustomer, groupSubscriptionsByCustomer } from '@/lib/billing/subscription-charge'
 import { OutstandingModule } from '@/components/outstanding/outstanding-module'
-import type { OutstandingRow } from '@/components/outstanding/outstanding-module'
+import type { OutstandingRow, MonthBill } from '@/components/outstanding/outstanding-module'
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/
+
+const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+
+// Page through a Supabase query 1000 rows at a time (PostgREST caps a single
+// request at 1000 rows, and billed invoices will outgrow that within months).
+const PAGE = 1000
+async function fetchPaged<T>(
+  build: (from: number, to: number) => PromiseLike<{ data: T[] | null; error: { message: string } | null }>,
+): Promise<T[]> {
+  const out: T[] = []
+  let o = 0
+  while (true) {
+    const { data, error } = await build(o, o + PAGE - 1)
+    if (error) throw new Error(error.message)
+    out.push(...(data ?? []))
+    if ((data ?? []).length < PAGE) break
+    o += PAGE
+  }
+  return out
+}
 
 // Whole days from a 'YYYY-MM-DD' date to today (positive = in the past).
 function daysSince(date: string, today: string): number {
@@ -70,6 +90,8 @@ export default async function OutstandingPage({
     oldestDebts,
     oldestInvoices,
     adjustmentTotals,
+    billedInvoices,
+    linkedPayments,
   ] = await Promise.all([
     getSettings(),
     admin
@@ -92,6 +114,25 @@ export default async function OutstandingPage({
     getCustomerOldestUnpaidInvoice(admin),
     // Discounts / write-offs that settle residual balances
     getCustomerAdjustmentTotalsInRange(admin, effectiveFrom, effectiveTo),
+    // Every billed invoice — feeds the month-wise breakdown so payments can be
+    // cleared cycle by cycle. Always all-time (a date filter shouldn't hide
+    // an older unpaid month).
+    fetchPaged<{
+      id: string; customer_id: string | null; invoice_number: string
+      invoice_date: string; billing_period_end: string | null
+      total_amount: string; status: string
+    }>((f, t) => admin
+      .from('invoices')
+      .select('id, customer_id, invoice_number, invoice_date, billing_period_end, total_amount, status')
+      .in('status', ['issued', 'partial', 'paid', 'overdue'])
+      .range(f, t)),
+    // Payments applied to a specific invoice — the per-month "paid" amounts
+    fetchPaged<{ invoice_id: string | null; amount: string }>((f, t) => admin
+      .from('payments')
+      .select('invoice_id, amount')
+      .not('invoice_id', 'is', null)
+      .is('voided_at', null)
+      .range(f, t)),
   ])
 
   const customerList = customers ?? []
@@ -110,6 +151,44 @@ export default async function OutstandingPage({
   const oldestDebtMap = new Map(oldestDebts.map(d => [d.customer_id, d.outstanding_since]))
   const oldestInvoiceMap = new Map(oldestInvoices.map(d => [d.customer_id, d.oldest_due_date]))
   const subsByCustomer = groupSubscriptionsByCustomer(allSubs)
+
+  // ── Month-wise bills ───────────────────────────────────────────────────────
+  // One entry per billed invoice, bucketed under the month its billing cycle
+  // ends in (26 Jul → 25 Aug counts as August, matching the statements). Paid
+  // = payments explicitly applied to that invoice, so "clearing" a month means
+  // recording its payment against that month's invoice.
+  const paidByInvoice = new Map<string, number>()
+  for (const p of linkedPayments) {
+    if (!p.invoice_id) continue
+    paidByInvoice.set(p.invoice_id, (paidByInvoice.get(p.invoice_id) ?? 0) + parseFloat(String(p.amount)))
+  }
+
+  const monthBillsByCustomer = new Map<string, MonthBill[]>()
+  for (const inv of billedInvoices) {
+    if (!inv.customer_id) continue
+    const anchor = inv.billing_period_end || inv.invoice_date
+    const y = Number(anchor.slice(0, 4))
+    const m = Number(anchor.slice(5, 7))
+    const billed = parseFloat(String(inv.total_amount))
+    const paid = Math.min(paidByInvoice.get(inv.id) ?? 0, billed)
+    const remaining = Math.max(0, billed - paid)
+    const bill: MonthBill = {
+      invoiceId:     inv.id,
+      invoiceNumber: inv.invoice_number,
+      monthKey:      `${y}-${String(m).padStart(2, '0')}`,
+      monthLabel:    `${MONTH_NAMES[m - 1]} ${y}`,
+      billed,
+      paid,
+      remaining,
+      status: inv.status === 'paid' || remaining <= 0.005 ? 'paid' : paid > 0.005 ? 'partial' : 'unpaid',
+    }
+    const list = monthBillsByCustomer.get(inv.customer_id)
+    if (list) list.push(bill)
+    else monthBillsByCustomer.set(inv.customer_id, [bill])
+  }
+  for (const list of monthBillsByCustomer.values()) {
+    list.sort((a, b) => a.monthKey.localeCompare(b.monthKey) || a.invoiceNumber.localeCompare(b.invoiceNumber))
+  }
 
   const rows: OutstandingRow[] = customerList
     .map(c => {
@@ -171,6 +250,12 @@ export default async function OutstandingPage({
         nextDueInDays = -daysSince(nextDue, today) // negative = overdue by |n| days
       }
 
+      const monthBills = monthBillsByCustomer.get(c.id) ?? []
+      // Payments not applied to any invoice — explains why a month can still
+      // show Unpaid even though money came in (old payments predate linking).
+      const linkedPaid = monthBills.reduce((s, b) => s + b.paid, 0)
+      const unallocatedPaid = Math.max(0, totalPaid - linkedPaid)
+
       return {
         id:            c.id,
         full_name:     c.full_name,
@@ -200,6 +285,8 @@ export default async function OutstandingPage({
         daysSinceLastPayment: lastPayment?.last_payment_date
           ? daysSince(lastPayment.last_payment_date, today)
           : null,
+        monthBills,
+        unallocatedPaid,
       }
     })
     .sort((a, b) => b.outstanding - a.outstanding)

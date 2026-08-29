@@ -1,7 +1,7 @@
 'use client'
 
-import { useState, useMemo, useTransition } from 'react'
-import { Search, Pencil, Check, X, HandCoins, MessageCircle, BadgePercent } from 'lucide-react'
+import { Fragment, useState, useMemo, useTransition } from 'react'
+import { Search, Pencil, Check, X, HandCoins, MessageCircle, BadgePercent, ChevronDown, ChevronRight } from 'lucide-react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { DatePresetPicker } from '@/components/ui/date-preset-picker'
@@ -9,6 +9,20 @@ import { AreaFilter, collectAreas, matchesArea } from '@/components/ui/area-filt
 import { updateSubscriptionStartDate, updateSubscriptionPauseDate } from '@/lib/fixed-menu/actions'
 import { createBalanceAdjustment } from '@/lib/adjustments/actions'
 import { RecordPaymentModal } from '@/components/payments/record-payment-modal'
+
+// One billed invoice bucketed under the month its cycle ends in (26 Jul →
+// 25 Aug = August). Paid = payments applied to that invoice, so clearing a
+// month = recording its payment against this invoice.
+export type MonthBill = {
+  invoiceId:     string
+  invoiceNumber: string
+  monthKey:      string   // 'YYYY-MM' — sort key
+  monthLabel:    string   // 'Aug 2026'
+  billed:        number
+  paid:          number
+  remaining:     number
+  status:        'paid' | 'partial' | 'unpaid'
+}
 
 // One fully-computed table row. All aggregation happens on the server so the
 // browser never receives raw order or payment rows.
@@ -39,6 +53,14 @@ export type OutstandingRow = {
   outstandingSince:   string | null
   daysOutstanding:    number | null
   daysSinceLastPayment: number | null
+  monthBills:      MonthBill[]
+  unallocatedPaid: number
+}
+
+const BILL_STATUS_META: Record<MonthBill['status'], { label: string; bg: string; color: string }> = {
+  paid:    { label: 'Paid',    bg: '#DCFCE7', color: '#166534' },
+  partial: { label: 'Partial', bg: '#FEF3C7', color: '#92400E' },
+  unpaid:  { label: 'Unpaid',  bg: '#FEE2E2', color: '#991B1B' },
 }
 
 const TYPE_LABELS: Record<string, string> = {
@@ -303,8 +325,11 @@ export function OutstandingModule({ rows, totalCustomers, currency, userRole, ra
   const canRecordPayment = ['owner', 'manager', 'accounts', 'data_entry'].includes(userRole)
   const canSettle = userRole === 'owner'
   const router = useRouter()
-  const [payRow, setPayRow] = useState<OutstandingRow | null>(null)
+  // Pay target: whole-balance (from the row button) or one month's invoice
+  // (from the expanded breakdown — locks the modal to that invoice).
+  const [payTarget, setPayTarget] = useState<{ row: OutstandingRow; invoiceId?: string; amount?: string } | null>(null)
   const [settleRow, setSettleRow] = useState<OutstandingRow | null>(null)
+  const [expandedId, setExpandedId] = useState<string | null>(null)
   const [view,        setView]        = useState<ViewMode>('owing')
   const [search,      setSearch]      = useState('')
   const [typeFilter,  setTypeFilter]  = useState<string>('')
@@ -563,21 +588,46 @@ export function OutstandingModule({ rows, totalCustomers, currency, userRole, ra
                   const tc = TYPE_COLORS[row.customer_type] ?? TYPE_COLORS.a_la_carte
                   const flag = view === 'owing' ? flagMap.get(row.id) : undefined
                   const fm = flag ? FLAG_META[flag.level] : null
+                  const expanded = expandedId === row.id
+                  const unpaidMonths = row.monthBills.filter(b => b.status !== 'paid').length
                   return (
+                    <Fragment key={row.id}>
                     <tr
-                      key={row.id}
                       style={{
-                        borderBottom: i < filtered.length - 1 ? '1px solid var(--color-border)' : undefined,
+                        borderBottom: !expanded && i < filtered.length - 1 ? '1px solid var(--color-border)' : undefined,
                         // Overdue rows carry a red left edge so they pop even when scrolling fast
                         boxShadow: flag?.level === 'overdue' ? `inset 3px 0 0 ${fm!.dot}` : undefined,
                       }}
                     >
                       <td className="px-4 py-3 text-xs font-bold" style={{ color: 'var(--color-muted)' }}>{i + 1}</td>
                       <td className="px-4 py-3">
-                        <Link href={`/customers/${row.id}`} className="hover:underline">
-                          <span className="font-semibold block" style={{ color: 'var(--color-ink)' }}>{row.full_name}</span>
-                          <span className="text-xs" style={{ color: 'var(--color-muted)' }}>{row.customer_code}</span>
-                        </Link>
+                        <div className="flex items-start gap-1">
+                          {row.monthBills.length > 0 && (
+                            <button
+                              type="button"
+                              onClick={() => setExpandedId(expanded ? null : row.id)}
+                              title={expanded ? 'Hide month-wise bills' : 'Show month-wise bills'}
+                              className="flex-shrink-0 mt-0.5 -ml-1 p-0.5 rounded hover:opacity-70"
+                              style={{ color: 'var(--color-saffron)' }}
+                            >
+                              {expanded ? <ChevronDown size={15} /> : <ChevronRight size={15} />}
+                            </button>
+                          )}
+                          <Link href={`/customers/${row.id}`} className="hover:underline">
+                            <span className="font-semibold block" style={{ color: 'var(--color-ink)' }}>{row.full_name}</span>
+                            <span className="text-xs" style={{ color: 'var(--color-muted)' }}>{row.customer_code}</span>
+                          </Link>
+                        </div>
+                        {row.monthBills.length > 0 && !expanded && unpaidMonths > 0 && (
+                          <button
+                            type="button"
+                            onClick={() => setExpandedId(row.id)}
+                            className="mt-1 px-2 py-0.5 rounded-full text-[10px] font-bold whitespace-nowrap"
+                            style={{ background: '#FEE2E2', color: '#991B1B' }}
+                          >
+                            {unpaidMonths} month{unpaidMonths > 1 ? 's' : ''} unpaid
+                          </button>
+                        )}
                         {flag && fm && (
                           <span
                             className="mt-1 flex items-center gap-1 w-fit px-2 py-0.5 rounded-full text-[10px] font-bold whitespace-nowrap"
@@ -798,7 +848,7 @@ export function OutstandingModule({ rows, totalCustomers, currency, userRole, ra
                           {canRecordPayment && (
                             <button
                               type="button"
-                              onClick={() => setPayRow(row)}
+                              onClick={() => setPayTarget({ row, amount: row.outstanding > 0 ? row.outstanding.toFixed(2) : undefined })}
                               title="Record a payment for this customer"
                               className="flex items-center gap-1 px-2 py-1 rounded-[8px] text-[11px] font-bold whitespace-nowrap"
                               style={{ background: 'var(--color-green-soft, #DCFCE7)', color: 'var(--color-green, #2E7D4F)', border: '1px solid var(--color-green, #2E7D4F)' }}
@@ -835,6 +885,72 @@ export function OutstandingModule({ rows, totalCustomers, currency, userRole, ra
                         </div>
                       </td>
                     </tr>
+                    {/* Month-wise breakdown — one line per billed invoice, so
+                        each month can be cleared (paid) independently */}
+                    {expanded && (
+                      <tr style={{ borderBottom: i < filtered.length - 1 ? '1px solid var(--color-border)' : undefined }}>
+                        <td colSpan={10} className="px-4 pb-4 pt-0">
+                          <div className="ml-6 rounded-[10px] overflow-hidden" style={{ background: 'var(--color-cream)', border: '1px solid var(--color-border)' }}>
+                            <table className="w-full text-xs border-collapse">
+                              <thead>
+                                <tr style={{ borderBottom: '1px solid var(--color-border)' }}>
+                                  {['Month', 'Invoice', 'Billed', 'Paid', 'Remaining', 'Status', ''].map((h, hi) => (
+                                    <th
+                                      key={hi}
+                                      className={`px-3 py-2 text-[10px] font-bold uppercase tracking-wide ${hi >= 2 && hi <= 4 ? 'text-right' : 'text-left'}`}
+                                      style={{ color: 'var(--color-muted)' }}
+                                    >{h}</th>
+                                  ))}
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {row.monthBills.map((b, bi) => {
+                                  const bm = BILL_STATUS_META[b.status]
+                                  return (
+                                    <tr key={b.invoiceId} style={{ borderTop: bi > 0 ? '1px solid var(--color-border)' : undefined }}>
+                                      <td className="px-3 py-2 font-bold" style={{ color: 'var(--color-ink)' }}>{b.monthLabel}</td>
+                                      <td className="px-3 py-2" style={{ color: 'var(--color-muted)' }}>{b.invoiceNumber}</td>
+                                      <td className="px-3 py-2 text-right font-mono" style={{ color: 'var(--color-ink)' }}>{currency} {b.billed.toFixed(2)}</td>
+                                      <td className="px-3 py-2 text-right font-mono" style={{ color: 'var(--color-green, #2E7D4F)' }}>
+                                        {b.paid > 0 ? `${currency} ${b.paid.toFixed(2)}` : '—'}
+                                      </td>
+                                      <td className="px-3 py-2 text-right font-mono font-bold" style={{ color: b.remaining > 0.005 ? 'var(--color-red, #C0392B)' : 'var(--color-muted)' }}>
+                                        {b.remaining > 0.005 ? `${currency} ${b.remaining.toFixed(2)}` : '—'}
+                                      </td>
+                                      <td className="px-3 py-2">
+                                        <span className="px-2 py-0.5 rounded-full text-[10px] font-bold" style={{ background: bm.bg, color: bm.color }}>
+                                          {bm.label}
+                                        </span>
+                                      </td>
+                                      <td className="px-3 py-2 text-right">
+                                        {canRecordPayment && b.status !== 'paid' && (
+                                          <button
+                                            type="button"
+                                            onClick={() => setPayTarget({ row, invoiceId: b.invoiceId, amount: b.remaining.toFixed(2) })}
+                                            title={`Record payment for ${b.monthLabel} (${b.invoiceNumber})`}
+                                            className="inline-flex items-center gap-1 px-2 py-0.5 rounded-[6px] text-[10px] font-bold whitespace-nowrap"
+                                            style={{ background: 'var(--color-green-soft, #DCFCE7)', color: 'var(--color-green, #2E7D4F)', border: '1px solid var(--color-green, #2E7D4F)' }}
+                                          >
+                                            <HandCoins size={11} /> Pay
+                                          </button>
+                                        )}
+                                      </td>
+                                    </tr>
+                                  )
+                                })}
+                              </tbody>
+                            </table>
+                            {row.unallocatedPaid > 0.005 && (
+                              <p className="px-3 py-2 text-[10px]" style={{ color: 'var(--color-muted)', borderTop: '1px dashed var(--color-border)' }}>
+                                {currency} {row.unallocatedPaid.toFixed(2)} received but not linked to any month&apos;s invoice —
+                                older payments recorded without an invoice. The overall Outstanding column already counts them.
+                              </p>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+                    </Fragment>
                   )
                 })}
               </tbody>
@@ -855,19 +971,22 @@ export function OutstandingModule({ rows, totalCustomers, currency, userRole, ra
         )}
       </div>
 
-      {/* Record Payment — customer locked to the clicked row; balances refresh on close */}
-      {payRow && (
+      {/* Record Payment — customer locked to the clicked row; when opened from
+          a month line the invoice is preselected too, so paying clears that
+          month. Balances refresh on close. */}
+      {payTarget && (
         <RecordPaymentModal
           customers={[]}
           preselectedCustomer={{
-            id:            payRow.id,
-            full_name:     payRow.full_name,
-            customer_code: payRow.customer_code,
-            mobile_number: payRow.mobile_number,
-            area:          payRow.area,
+            id:            payTarget.row.id,
+            full_name:     payTarget.row.full_name,
+            customer_code: payTarget.row.customer_code,
+            mobile_number: payTarget.row.mobile_number,
+            area:          payTarget.row.area,
           }}
-          initialAmount={payRow.outstanding > 0 ? payRow.outstanding.toFixed(2) : undefined}
-          onClose={() => { setPayRow(null); router.refresh() }}
+          initialAmount={payTarget.amount}
+          initialInvoiceId={payTarget.invoiceId}
+          onClose={() => { setPayTarget(null); router.refresh() }}
         />
       )}
 
