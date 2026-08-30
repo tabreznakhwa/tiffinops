@@ -60,11 +60,15 @@ export function SubscribeModal({
   plans,
   customers,
   subscription,
+  preselectedCustomer,
   onClose,
 }: {
   plans: Plan[]
   customers: Customer[]
   subscription?: EditableSubscription
+  // Locks the modal to this customer (no search / no Change) — used by the
+  // Outstanding page's per-row "Add plan" action.
+  preselectedCustomer?: Customer
   onClose: () => void
 }) {
   const { currency } = useAppSettings()
@@ -74,7 +78,7 @@ export function SubscribeModal({
   const [query, setQuery]                       = useState('')
   const [showList, setShowList]                 = useState(false)
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(
-    subscription?.customers ?? null
+    subscription?.customers ?? preselectedCustomer ?? null
   )
   const [selectedPlan, setSelectedPlan]         = useState<Plan | null>(
     plans.find(p => p.id === subscription?.fixed_plan_id) ?? null
@@ -201,8 +205,8 @@ export function SubscribeModal({
               Customer {!isEdit && '*'}
             </label>
 
-            {isEdit ? (
-              // Fixed chip — customer can't be changed on edit
+            {isEdit || preselectedCustomer ? (
+              // Fixed chip — customer can't be changed on edit / when preselected
               <div
                 className="rounded-[10px] px-3 py-2.5"
                 style={{ background: 'var(--color-cream)', border: '1px solid var(--color-border)' }}

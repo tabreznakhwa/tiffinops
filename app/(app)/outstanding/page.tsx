@@ -84,6 +84,7 @@ export default async function OutstandingPage({
   const [
     settings,
     { data: customers },
+    { data: plansData },
     { data: subsData },
     balances,
     lastPayments,
@@ -99,6 +100,11 @@ export default async function OutstandingPage({
       .select('id, full_name, customer_code, customer_type, payment_terms, mobile_number, area, status')
       .in('status', ['active', 'paused'])
       .order('full_name', { ascending: true }),
+    // Fixed plans — feed the per-row "Add plan" modal
+    admin
+      .from('fixed_plans')
+      .select('*')
+      .order('plan_name', { ascending: true }),
     // Every subscription row — all statuses. Needed so overlapping rows can be
     // clamped before charges are summed.
     admin
@@ -294,6 +300,7 @@ export default async function OutstandingPage({
   return (
     <OutstandingModule
       rows={rows}
+      plans={plansData ?? []}
       totalCustomers={customerList.length}
       currency={settings.currency}
       userRole={user.role}

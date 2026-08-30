@@ -1,7 +1,7 @@
 'use client'
 
 import { Fragment, useState, useMemo, useTransition } from 'react'
-import { Search, Pencil, Check, X, HandCoins, MessageCircle, BadgePercent, ChevronDown, ChevronRight } from 'lucide-react'
+import { Search, Pencil, Check, X, HandCoins, MessageCircle, BadgePercent, ChevronDown, ChevronRight, CalendarPlus, UtensilsCrossed } from 'lucide-react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { DatePresetPicker } from '@/components/ui/date-preset-picker'
@@ -9,6 +9,8 @@ import { AreaFilter, collectAreas, matchesArea } from '@/components/ui/area-filt
 import { updateSubscriptionStartDate, updateSubscriptionPauseDate } from '@/lib/fixed-menu/actions'
 import { createBalanceAdjustment } from '@/lib/adjustments/actions'
 import { RecordPaymentModal } from '@/components/payments/record-payment-modal'
+import { SubscribeModal } from '@/components/fixed-menu/subscribe-modal'
+import type { Tables } from '@/lib/supabase/types'
 
 // One billed invoice bucketed under the month its cycle ends in (26 Jul →
 // 25 Aug = August). Paid = payments applied to that invoice, so clearing a
@@ -76,6 +78,7 @@ const TYPE_COLORS: Record<string, { bg: string; color: string }> = {
 
 interface Props {
   rows:           OutstandingRow[]
+  plans:          Tables<'fixed_plans'>[]
   totalCustomers: number
   currency:       string
   userRole:       string
@@ -318,17 +321,20 @@ function SettleDialog({
   )
 }
 
-export function OutstandingModule({ rows, totalCustomers, currency, userRole, rangeFrom, rangeTo }: Props) {
+export function OutstandingModule({ rows, plans, totalCustomers, currency, userRole, rangeFrom, rangeTo }: Props) {
   const canEditStartDate = userRole === 'owner'
   const canEditPauseDate = ['owner', 'manager', 'data_entry'].includes(userRole)
   // Mirrors recordPayment()'s role gate (the server re-checks anyway).
   const canRecordPayment = ['owner', 'manager', 'accounts', 'data_entry'].includes(userRole)
   const canSettle = userRole === 'owner'
+  // Mirrors createSubscription()'s / order creation's role gates.
+  const canAddPlanOrMeal = ['owner', 'manager', 'data_entry'].includes(userRole)
   const router = useRouter()
   // Pay target: whole-balance (from the row button) or one month's invoice
   // (from the expanded breakdown — locks the modal to that invoice).
   const [payTarget, setPayTarget] = useState<{ row: OutstandingRow; invoiceId?: string; amount?: string } | null>(null)
   const [settleRow, setSettleRow] = useState<OutstandingRow | null>(null)
+  const [subRow, setSubRow]       = useState<OutstandingRow | null>(null)
   const [expandedId, setExpandedId] = useState<string | null>(null)
   const [view,        setView]        = useState<ViewMode>('owing')
   const [search,      setSearch]      = useState('')
@@ -882,6 +888,29 @@ export function OutstandingModule({ rows, totalCustomers, currency, userRole, ra
                               </a>
                             ) : null
                           })()}
+                          {canAddPlanOrMeal && (
+                            <>
+                              <Link
+                                href={`/orders/new?customer_id=${row.id}`}
+                                title="Add a meal (new order) for this customer"
+                                className="flex items-center justify-center w-[26px] h-[26px] rounded-[8px]"
+                                style={{ background: 'var(--color-blue-soft, #EFF6FF)', color: 'var(--color-blue, #2563EB)', border: '1px solid var(--color-blue, #2563EB)' }}
+                              >
+                                <UtensilsCrossed size={13} />
+                              </Link>
+                              <button
+                                type="button"
+                                onClick={() => setSubRow(row)}
+                                title={row.subId
+                                  ? 'Add a subscription plan (replaces the current one from its start date)'
+                                  : 'Add a subscription plan for this customer'}
+                                className="flex items-center justify-center w-[26px] h-[26px] rounded-[8px]"
+                                style={{ background: 'var(--color-purple-soft, #F5F3FF)', color: 'var(--color-purple, #7C3AED)', border: '1px solid var(--color-purple, #7C3AED)' }}
+                              >
+                                <CalendarPlus size={13} />
+                              </button>
+                            </>
+                          )}
                         </div>
                       </td>
                     </tr>
@@ -997,6 +1026,22 @@ export function OutstandingModule({ rows, totalCustomers, currency, userRole, ra
           currency={currency}
           onClose={() => setSettleRow(null)}
           onDone={() => { setSettleRow(null); router.refresh() }}
+        />
+      )}
+
+      {/* Add subscription plan — customer locked to the clicked row */}
+      {subRow && (
+        <SubscribeModal
+          plans={plans}
+          customers={[]}
+          preselectedCustomer={{
+            id:            subRow.id,
+            full_name:     subRow.full_name,
+            customer_code: subRow.customer_code,
+            mobile_number: subRow.mobile_number,
+            customer_type: subRow.customer_type,
+          }}
+          onClose={() => { setSubRow(null); router.refresh() }}
         />
       )}
     </div>
