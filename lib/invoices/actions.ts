@@ -8,6 +8,7 @@ import { generateAlaCarteInvoices } from '@/lib/invoices/generateAlaCarteInvoice
 import { generatePrepaidAnniversaryInvoices } from '@/lib/invoices/generatePrepaidInvoices'
 import { formatInTimeZone } from 'date-fns-tz'
 import { applySurplusReconciliation as applySurplusReconciliationCore } from '@/lib/invoices/reconcileSurplus'
+import { reconcileInvoicePaymentStatus } from '@/lib/invoices/reconcile'
 import type { GenerateResult } from '@/lib/invoices/generateMonthlyInvoices'
 import type { AlaCarteGenerateResult } from '@/lib/invoices/generateAlaCarteInvoices'
 import type { ApplyResult } from '@/lib/invoices/reconcileSurplus'
@@ -562,6 +563,94 @@ export async function voidInvoice(id: string, reason: string): Promise<InvoiceAc
   if (error) return { error: error.message }
 
   revalidatePath('/invoices')
+  return { invoice_id: id }
+}
+
+// ── applyInvoiceDiscount ─────────────────────────────────────────────────────
+//
+// Owner-only discount on a single invoice — used by the Outstanding page's
+// month-wise breakdown so one month's bill can be reduced without touching the
+// customer's other cycles. Bumps discount_amount / lowers total_amount, keeps
+// the VAT-inclusive tax and the invoice's ledger debit in sync, records the
+// reason in the notes, and re-checks paid/partial against the new total (a
+// discount down to what's already paid flips the invoice to Paid).
+
+export async function applyInvoiceDiscount(
+  id: string,
+  amount: number,
+  reason: string
+): Promise<InvoiceActionResult> {
+  const user = await requireAuth()
+  if (user.role !== 'owner') return { error: 'Only the owner can discount invoices' }
+
+  if (!Number.isFinite(amount) || amount <= 0) return { error: 'Enter a discount greater than 0' }
+  if (!reason || reason.trim().length < 3) return { error: 'Please give a reason (at least 3 characters)' }
+
+  const admin = createAdminClient()
+
+  const { data: inv, error: fetchErr } = await admin
+    .from('invoices')
+    .select('id, invoice_number, status, discount_amount, total_amount, notes')
+    .eq('id', id)
+    .single()
+  if (fetchErr || !inv) return { error: 'Invoice not found' }
+  if (!['issued', 'partial', 'overdue'].includes(inv.status)) {
+    return { error: `Cannot discount a ${inv.status.replace('_', ' ')} invoice` }
+  }
+
+  // Discount is capped at what's still unpaid — money already received can't
+  // be discounted away (that would need a refund, not a discount).
+  const { data: payments } = await admin
+    .from('payments')
+    .select('amount')
+    .eq('invoice_id', id)
+    .is('voided_at', null)
+  const paid      = (payments ?? []).reduce((s, p) => s + parseFloat(String(p.amount)), 0)
+  const oldTotal  = parseFloat(String(inv.total_amount))
+  const remaining = oldTotal - paid
+  if (amount > remaining + 0.005) {
+    return { error: `Discount exceeds the remaining balance (${remaining.toFixed(2)})` }
+  }
+
+  const { data: settingsRow } = await admin.from('app_settings').select('vat_percent').eq('id', 1).single()
+  const vatRate = parseFloat(String(settingsRow?.vat_percent ?? '5'))
+
+  const newTotal    = Math.max(0, parseFloat((oldTotal - amount).toFixed(2)))
+  const newDiscount = parseFloat(String(inv.discount_amount ?? '0')) + amount
+  const newTax      = (newTotal * vatRate) / (100 + vatRate)
+  const today       = formatInTimeZone(new Date(), 'Asia/Dubai', 'yyyy-MM-dd')
+  const note        = `Discount ${amount.toFixed(2)} (${today}): ${reason.trim()}`
+
+  // Guard on the old total so a concurrent edit fails loudly instead of
+  // silently stacking on stale numbers.
+  const { data: updated, error: updateErr } = await admin
+    .from('invoices')
+    .update({
+      discount_amount: newDiscount.toFixed(2),
+      tax_amount:      newTax.toFixed(2),
+      total_amount:    newTotal.toFixed(2),
+      notes: inv.notes ? `${inv.notes}\n${note}` : note,
+    })
+    .eq('id', id)
+    .eq('total_amount', inv.total_amount)
+    .select('id')
+  if (updateErr) return { error: updateErr.message }
+  if (!updated || updated.length === 0) {
+    return { error: 'Invoice changed while discounting — reload and try again' }
+  }
+
+  // Keep the ledger debit for this invoice in sync with the new total
+  await admin
+    .from('ledger_entries')
+    .update({ debit_amount: newTotal.toFixed(2) })
+    .eq('reference_table', 'invoices')
+    .eq('reference_id', id)
+    .eq('entry_type', 'invoice')
+
+  await reconcileInvoicePaymentStatus(admin, id)
+
+  revalidatePath('/invoices')
+  revalidatePath('/outstanding')
   return { invoice_id: id }
 }
 

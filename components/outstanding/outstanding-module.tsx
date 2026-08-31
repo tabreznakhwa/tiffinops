@@ -8,6 +8,7 @@ import { DatePresetPicker } from '@/components/ui/date-preset-picker'
 import { AreaFilter, collectAreas, matchesArea } from '@/components/ui/area-filter'
 import { updateSubscriptionStartDate, updateSubscriptionPauseDate } from '@/lib/fixed-menu/actions'
 import { createBalanceAdjustment } from '@/lib/adjustments/actions'
+import { applyInvoiceDiscount } from '@/lib/invoices/actions'
 import { RecordPaymentModal } from '@/components/payments/record-payment-modal'
 import { SubscribeModal } from '@/components/fixed-menu/subscribe-modal'
 import type { Tables } from '@/lib/supabase/types'
@@ -321,6 +322,144 @@ function SettleDialog({
   )
 }
 
+// ── Invoice discount dialog ──────────────────────────────────────────────────
+// Owner-only discount on ONE month's invoice, opened from the expanded
+// month-wise breakdown. Reduces that invoice's total (discount_amount goes
+// up), so the month's Billed/Remaining drop everywhere — statements included.
+
+function InvoiceDiscountDialog({
+  row,
+  bill,
+  currency,
+  onClose,
+  onDone,
+}: {
+  row: OutstandingRow
+  bill: MonthBill
+  currency: string
+  onClose: () => void
+  onDone: () => void
+}) {
+  const [amount, setAmount]   = useState(bill.remaining > 0 ? bill.remaining.toFixed(2) : '')
+  const [reason, setReason]   = useState('')
+  const [loading, setLoading] = useState(false)
+  const [error, setError]     = useState('')
+
+  const amountNum = parseFloat(amount)
+  const fullClear = !isNaN(amountNum) && Math.abs(amountNum - bill.remaining) < 0.005
+  const tooMuch   = !isNaN(amountNum) && amountNum > bill.remaining + 0.005
+  const canSubmit = !loading && !isNaN(amountNum) && amountNum > 0 && !tooMuch && reason.trim().length >= 3
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault()
+    if (!canSubmit) return
+    setError('')
+    setLoading(true)
+    const result = await applyInvoiceDiscount(bill.invoiceId, amountNum, reason.trim())
+    setLoading(false)
+    if (result.error) { setError(result.error); return }
+    onDone()
+  }
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center p-4"
+      style={{ background: 'rgba(34,26,19,.55)' }}
+      onClick={e => e.target === e.currentTarget && onClose()}
+    >
+      <div className="relative w-full max-w-sm rounded-[18px] p-6 shadow-xl" style={{ background: 'var(--color-surface)' }}>
+        <button
+          onClick={onClose}
+          className="absolute right-4 top-4 flex items-center justify-center w-8 h-8 rounded-full"
+          style={{ color: 'var(--color-muted)' }}
+          aria-label="Close"
+        >
+          <X size={18} />
+        </button>
+
+        <p className="text-xs font-bold uppercase tracking-widest mb-0.5" style={{ color: 'var(--color-saffron)', letterSpacing: '.12em' }}>
+          Invoice Discount
+        </p>
+        <h2 className="font-display font-bold text-[19px] mb-1" style={{ color: 'var(--color-ink)' }}>
+          {row.full_name}
+        </h2>
+        <p className="text-xs mb-4" style={{ color: 'var(--color-muted)' }}>
+          {bill.monthLabel} · {bill.invoiceNumber} · Remaining:{' '}
+          <span className="font-bold" style={{ color: 'var(--color-red, #C0392B)' }}>{currency} {bill.remaining.toFixed(2)}</span>
+          {' · '}Lowers this invoice&apos;s bill — cash books stay untouched.
+        </p>
+
+        <form onSubmit={handleSubmit} className="space-y-4">
+          {/* Amount */}
+          <div>
+            <label className="block text-xs font-semibold mb-1.5" style={{ color: 'var(--color-muted)' }}>
+              Discount Amount ({currency}) *
+            </label>
+            <input
+              type="number"
+              value={amount}
+              onChange={e => setAmount(e.target.value)}
+              min="0.01"
+              step="0.01"
+              required
+              className="w-full rounded-[10px] px-3 py-2.5 text-sm num focus:outline-none focus:ring-1 focus:ring-saffron"
+              style={{ background: 'var(--color-cream)', border: '1px solid var(--color-border)', color: 'var(--color-ink)' }}
+            />
+            <p className="text-[11px] mt-1" style={{ color: tooMuch ? 'var(--color-red, #C0392B)' : fullClear ? 'var(--color-green, #2E7D4F)' : 'var(--color-muted)' }}>
+              {tooMuch
+                ? `Can't exceed the remaining ${currency} ${bill.remaining.toFixed(2)} — money already paid needs a refund, not a discount`
+                : fullClear
+                  ? `✓ Clears ${bill.monthLabel} in full — the invoice becomes Paid`
+                  : !isNaN(amountNum) && amountNum > 0
+                    ? `Partial — ${currency} ${(bill.remaining - amountNum).toFixed(2)} will remain due for ${bill.monthLabel}`
+                    : 'Prefilled with the month’s remaining balance'}
+            </p>
+          </div>
+
+          {/* Reason */}
+          <div>
+            <label className="block text-xs font-semibold mb-1.5" style={{ color: 'var(--color-muted)' }}>
+              Reason *
+            </label>
+            <textarea
+              value={reason}
+              onChange={e => setReason(e.target.value)}
+              rows={2}
+              required
+              placeholder="e.g. Missed deliveries during Eid week"
+              className="w-full rounded-[10px] px-3 py-2.5 text-sm focus:outline-none focus:ring-1 focus:ring-saffron resize-none"
+              style={{ background: 'var(--color-cream)', border: '1px solid var(--color-border)', color: 'var(--color-ink)' }}
+            />
+          </div>
+
+          {error && (
+            <p className="text-sm font-semibold" style={{ color: 'var(--color-red)' }}>{error}</p>
+          )}
+
+          <div className="flex gap-2 pt-1">
+            <button
+              type="button"
+              onClick={onClose}
+              className="flex-1 py-2.5 rounded-[10px] text-sm font-semibold"
+              style={{ background: 'var(--color-cream)', border: '1px solid var(--color-border)', color: 'var(--color-muted)' }}
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={!canSubmit}
+              className="flex-1 py-2.5 rounded-[10px] text-sm font-semibold disabled:opacity-50"
+              style={{ background: 'var(--color-saffron)', color: '#fff' }}
+            >
+              {loading ? 'Applying…' : 'Apply Discount'}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  )
+}
+
 export function OutstandingModule({ rows, plans, totalCustomers, currency, userRole, rangeFrom, rangeTo }: Props) {
   const canEditStartDate = userRole === 'owner'
   const canEditPauseDate = ['owner', 'manager', 'data_entry'].includes(userRole)
@@ -334,6 +473,8 @@ export function OutstandingModule({ rows, plans, totalCustomers, currency, userR
   // (from the expanded breakdown — locks the modal to that invoice).
   const [payTarget, setPayTarget] = useState<{ row: OutstandingRow; invoiceId?: string; amount?: string } | null>(null)
   const [settleRow, setSettleRow] = useState<OutstandingRow | null>(null)
+  // One month's invoice being discounted (from the expanded breakdown)
+  const [discountTarget, setDiscountTarget] = useState<{ row: OutstandingRow; bill: MonthBill } | null>(null)
   const [subRow, setSubRow]       = useState<OutstandingRow | null>(null)
   const [expandedId, setExpandedId] = useState<string | null>(null)
   const [view,        setView]        = useState<ViewMode>('owing')
@@ -952,17 +1093,30 @@ export function OutstandingModule({ rows, plans, totalCustomers, currency, userR
                                         </span>
                                       </td>
                                       <td className="px-3 py-2 text-right">
-                                        {canRecordPayment && b.status !== 'paid' && (
-                                          <button
-                                            type="button"
-                                            onClick={() => setPayTarget({ row, invoiceId: b.invoiceId, amount: b.remaining.toFixed(2) })}
-                                            title={`Record payment for ${b.monthLabel} (${b.invoiceNumber})`}
-                                            className="inline-flex items-center gap-1 px-2 py-0.5 rounded-[6px] text-[10px] font-bold whitespace-nowrap"
-                                            style={{ background: 'var(--color-green-soft, #DCFCE7)', color: 'var(--color-green, #2E7D4F)', border: '1px solid var(--color-green, #2E7D4F)' }}
-                                          >
-                                            <HandCoins size={11} /> Pay
-                                          </button>
-                                        )}
+                                        <div className="inline-flex items-center gap-1.5">
+                                          {canRecordPayment && b.status !== 'paid' && (
+                                            <button
+                                              type="button"
+                                              onClick={() => setPayTarget({ row, invoiceId: b.invoiceId, amount: b.remaining.toFixed(2) })}
+                                              title={`Record payment for ${b.monthLabel} (${b.invoiceNumber})`}
+                                              className="inline-flex items-center gap-1 px-2 py-0.5 rounded-[6px] text-[10px] font-bold whitespace-nowrap"
+                                              style={{ background: 'var(--color-green-soft, #DCFCE7)', color: 'var(--color-green, #2E7D4F)', border: '1px solid var(--color-green, #2E7D4F)' }}
+                                            >
+                                              <HandCoins size={11} /> Pay
+                                            </button>
+                                          )}
+                                          {canSettle && b.status !== 'paid' && b.remaining > 0.005 && (
+                                            <button
+                                              type="button"
+                                              onClick={() => setDiscountTarget({ row, bill: b })}
+                                              title={`Discount ${b.monthLabel} (${b.invoiceNumber})`}
+                                              className="inline-flex items-center gap-1 px-2 py-0.5 rounded-[6px] text-[10px] font-bold whitespace-nowrap"
+                                              style={{ background: 'var(--color-saffron-soft, #FEF4E6)', color: 'var(--color-saffron, #E8890C)', border: '1px solid var(--color-saffron, #E8890C)' }}
+                                            >
+                                              <BadgePercent size={11} /> Discount
+                                            </button>
+                                          )}
+                                        </div>
                                       </td>
                                     </tr>
                                   )
@@ -1026,6 +1180,17 @@ export function OutstandingModule({ rows, plans, totalCustomers, currency, userR
           currency={currency}
           onClose={() => setSettleRow(null)}
           onDone={() => { setSettleRow(null); router.refresh() }}
+        />
+      )}
+
+      {/* Per-invoice discount from the month-wise breakdown — owner only */}
+      {discountTarget && (
+        <InvoiceDiscountDialog
+          row={discountTarget.row}
+          bill={discountTarget.bill}
+          currency={currency}
+          onClose={() => setDiscountTarget(null)}
+          onDone={() => { setDiscountTarget(null); router.refresh() }}
         />
       )}
 
