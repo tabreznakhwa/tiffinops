@@ -5,7 +5,7 @@ import { requireAuth } from '@/lib/auth'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { getSettings } from '@/lib/settings/getSettings'
 import { getCustomerBalancesInRange, getCustomerLastPayments, getCustomerOutstandingSince, getCustomerOldestUnpaidInvoice, getCustomerAdjustmentTotalsInRange } from '@/lib/db/aggregates'
-import { chargeForCustomer, groupSubscriptionsByCustomer } from '@/lib/billing/subscription-charge'
+import { chargeForCustomer, groupSubscriptionsByCustomer, mealPeriodsCoveredOn } from '@/lib/billing/subscription-charge'
 import { OutstandingModule } from '@/components/outstanding/outstanding-module'
 import type { OutstandingRow, MonthBill } from '@/components/outstanding/outstanding-module'
 
@@ -93,6 +93,7 @@ export default async function OutstandingPage({
     adjustmentTotals,
     billedInvoices,
     linkedPayments,
+    fixedMenuMealOrders,
   ] = await Promise.all([
     getSettings(),
     admin
@@ -139,6 +140,21 @@ export default async function OutstandingPage({
       .not('invoice_id', 'is', null)
       .is('voided_at', null)
       .range(f, t)),
+    // Fixed-menu customers' credit orders, WITH meal_period — so their
+    // "fixed-plan discount" below can be limited to orders their plan
+    // actually covers, instead of blanket-discounting everything they order
+    // (the same bug already fixed in the invoice generators). Scoped to
+    // customer_type = 'fixed_menu' via the embedded-resource filter so this
+    // doesn't scan every customer's orders.
+    fetchPaged<{ customer_id: string | null; order_date: string; meal_period: string; total_amount: string }>((f, t) => admin
+      .from('orders')
+      .select('customer_id, order_date, meal_period, total_amount, customers!inner(customer_type)')
+      .eq('customers.customer_type', 'fixed_menu')
+      .eq('is_credit', true)
+      .not('order_status', 'in', '(cancelled,voided,draft)')
+      .gte('order_date', effectiveFrom)
+      .lte('order_date', effectiveTo)
+      .range(f, t) as never),
   ])
 
   const customerList = customers ?? []
@@ -157,6 +173,15 @@ export default async function OutstandingPage({
   const oldestDebtMap = new Map(oldestDebts.map(d => [d.customer_id, d.outstanding_since]))
   const oldestInvoiceMap = new Map(oldestInvoices.map(d => [d.customer_id, d.oldest_due_date]))
   const subsByCustomer = groupSubscriptionsByCustomer(allSubs)
+
+  const mealOrdersByCustomer = new Map<string, { order_date: string; meal_period: string; total_amount: number }[]>()
+  for (const o of fixedMenuMealOrders) {
+    if (!o.customer_id) continue
+    const list = mealOrdersByCustomer.get(o.customer_id)
+    const row = { order_date: o.order_date, meal_period: o.meal_period, total_amount: parseFloat(o.total_amount) }
+    if (list) list.push(row)
+    else mealOrdersByCustomer.set(o.customer_id, [row])
+  }
 
   // ── Month-wise bills ───────────────────────────────────────────────────────
   // One entry per billed invoice, bucketed under the month its billing cycle
@@ -213,12 +238,19 @@ export default async function OutstandingPage({
 
       const lastPayment = lastPaymentMap.get(c.id)
 
-      // Fixed-menu customers pay a flat plan rate: the plan covers whatever
-      // they order, so the "incremental" order total is discounted away and the
-      // bill caps at the subscription charge. Orders stay visible as usage.
+      // Fixed-menu customers pay a flat plan rate: orders from a meal period
+      // their plan covers are discounted away (the plan already paid for
+      // them); orders from a meal period the plan does NOT cover (e.g. a
+      // lunch-only plan customer also ordering breakfast) are genuine extras
+      // and must stay in totalBilled, billed in full — never netted to zero.
       const isFixed = c.customer_type === 'fixed_menu'
       const hasPlan = subCharge > 0
-      const fixedDiscount = isFixed && hasPlan ? orderBilled : 0
+      const inPlanUsage = isFixed && hasPlan
+        ? (mealOrdersByCustomer.get(c.id) ?? [])
+            .filter(o => mealPeriodsCoveredOn(custSubs, o.order_date)?.has(o.meal_period))
+            .reduce((s, o) => s + o.total_amount, 0)
+        : 0
+      const fixedDiscount = inPlanUsage
 
       const totalBilled = orderBilled + subCharge - fixedDiscount
       // Discounts / write-offs settle residual balances without a fake payment

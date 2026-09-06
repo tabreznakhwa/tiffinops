@@ -9,6 +9,7 @@ import { PlanModal } from './plan-modal'
 import { SubscribeModal } from './subscribe-modal'
 import type { EditableSubscription } from './subscribe-modal'
 import { MealPauseModal } from './meal-pause-modal'
+import { EndSubscriptionModal } from './end-subscription-modal'
 import { useAppSettings } from '@/components/settings/settings-context'
 import type { Tables } from '@/lib/supabase/types'
 
@@ -93,6 +94,7 @@ export function FixedMenuModule({
   const [showSubscribeModal, setShowSubscribeModal] = useState(false)
   const [editSubscription, setEditSubscription]     = useState<EditableSubscription | undefined>()
   const [pauseMealSub, setPauseMealSub] = useState<{ id: string; meals: string[] } | undefined>()
+  const [endSubTarget, setEndSubTarget] = useState<{ id: string; name: string } | undefined>()
   const [busy, setBusy]                 = useState<string | null>(null)
 
   // ── Derived counts ──────────────────────────────────────────────────────────
@@ -489,12 +491,12 @@ export function FixedMenuModule({
                               {loading ? '…' : 'Pause'}
                             </button>
                             <button
-                              onClick={() => handleSubStatus(sub.id, 'cancelled')}
+                              onClick={() => setEndSubTarget({ id: sub.id, name: sub.customers?.full_name ?? 'this customer' })}
                               disabled={loading}
                               className="px-3 py-1.5 rounded-[8px] text-xs font-semibold disabled:opacity-50"
                               style={{ background: 'var(--color-red-soft)', color: 'var(--color-red)', border: '1px solid #FECACA' }}
                             >
-                              {loading ? '…' : 'Cancel'}
+                              Cancel
                             </button>
                           </>
                         )}
@@ -509,12 +511,12 @@ export function FixedMenuModule({
                               {loading ? '…' : 'Resume'}
                             </button>
                             <button
-                              onClick={() => handleSubStatus(sub.id, 'cancelled')}
+                              onClick={() => setEndSubTarget({ id: sub.id, name: sub.customers?.full_name ?? 'this customer' })}
                               disabled={loading}
                               className="px-3 py-1.5 rounded-[8px] text-xs font-semibold disabled:opacity-50"
                               style={{ background: 'var(--color-red-soft)', color: 'var(--color-red)', border: '1px solid #FECACA' }}
                             >
-                              {loading ? '…' : 'Cancel'}
+                              Cancel
                             </button>
                           </>
                         )}
@@ -677,6 +679,14 @@ export function FixedMenuModule({
           subscriptionId={pauseMealSub.id}
           availableMeals={pauseMealSub.meals}
           onClose={() => { setPauseMealSub(undefined); router.refresh() }}
+        />
+      )}
+      {endSubTarget && (
+        <EndSubscriptionModal
+          subscriptionId={endSubTarget.id}
+          customerName={endSubTarget.name}
+          onClose={() => setEndSubTarget(undefined)}
+          onDone={() => { setEndSubTarget(undefined); router.refresh() }}
         />
       )}
     </div>

@@ -11,6 +11,7 @@ import { createBalanceAdjustment } from '@/lib/adjustments/actions'
 import { applyInvoiceDiscount } from '@/lib/invoices/actions'
 import { RecordPaymentModal } from '@/components/payments/record-payment-modal'
 import { SubscribeModal } from '@/components/fixed-menu/subscribe-modal'
+import { EndSubscriptionModal } from '@/components/fixed-menu/end-subscription-modal'
 import type { Tables } from '@/lib/supabase/types'
 
 // One billed invoice bucketed under the month its cycle ends in (26 Jul →
@@ -468,6 +469,8 @@ export function OutstandingModule({ rows, plans, totalCustomers, currency, userR
   const canSettle = userRole === 'owner'
   // Mirrors createSubscription()'s / order creation's role gates.
   const canAddPlanOrMeal = ['owner', 'manager', 'data_entry'].includes(userRole)
+  // Mirrors updateSubscriptionStatus()'s ADMIN_ROLES gate for cancel/complete
+  const canCancelSub = ['owner', 'manager'].includes(userRole)
   const router = useRouter()
   // Pay target: whole-balance (from the row button) or one month's invoice
   // (from the expanded breakdown — locks the modal to that invoice).
@@ -476,6 +479,7 @@ export function OutstandingModule({ rows, plans, totalCustomers, currency, userR
   // One month's invoice being discounted (from the expanded breakdown)
   const [discountTarget, setDiscountTarget] = useState<{ row: OutstandingRow; bill: MonthBill } | null>(null)
   const [subRow, setSubRow]       = useState<OutstandingRow | null>(null)
+  const [endSubTarget, setEndSubTarget] = useState<{ id: string; name: string } | null>(null)
   const [expandedId, setExpandedId] = useState<string | null>(null)
   const [view,        setView]        = useState<ViewMode>('owing')
   const [search,      setSearch]      = useState('')
@@ -925,6 +929,16 @@ export function OutstandingModule({ rows, plans, totalCustomers, currency, userR
                             {dateError && editingDate?.customerId === row.id && (
                               <p className="text-[10px]" style={{ color: 'var(--color-red)' }}>{dateError}</p>
                             )}
+
+                            {canCancelSub && (
+                              <button
+                                onClick={() => setEndSubTarget({ id: row.subId!, name: row.full_name })}
+                                className="text-[10px] font-bold px-1.5 py-0.5 rounded-[4px] mt-0.5"
+                                style={{ background: 'var(--color-red-soft)', color: 'var(--color-red)' }}
+                              >
+                                Cancel
+                              </button>
+                            )}
                           </div>
                         ) : (
                           <span className="text-[11px]" style={{ color: 'var(--color-muted)' }}>—</span>
@@ -941,6 +955,11 @@ export function OutstandingModule({ rows, plans, totalCustomers, currency, userR
                             <div className="text-[10px]" style={{ color: 'var(--color-green, #2E7D4F)' }}>
                               Fixed-plan discount −{currency} {row.fixedDiscount.toFixed(2)}
                             </div>
+                            {row.orderBilled > row.fixedDiscount + 0.005 && (
+                              <div className="text-[10px] font-semibold" style={{ color: 'var(--color-red, #C0392B)' }}>
+                                of which {currency} {(row.orderBilled - row.fixedDiscount).toFixed(2)} billed in full (outside plan)
+                              </div>
+                            )}
                           </>
                         ) : (
                           <>
@@ -1207,6 +1226,16 @@ export function OutstandingModule({ rows, plans, totalCustomers, currency, userR
             customer_type: subRow.customer_type,
           }}
           onClose={() => { setSubRow(null); router.refresh() }}
+        />
+      )}
+
+      {/* End (pause/cancel) subscription — owner/manager only */}
+      {endSubTarget && (
+        <EndSubscriptionModal
+          subscriptionId={endSubTarget.id}
+          customerName={endSubTarget.name}
+          onClose={() => setEndSubTarget(null)}
+          onDone={() => { setEndSubTarget(null); router.refresh() }}
         />
       )}
     </div>

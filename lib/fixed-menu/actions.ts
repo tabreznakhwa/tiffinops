@@ -259,9 +259,12 @@ export async function updateSubscription(
   return {}
 }
 
+const DATE_RE = /^\d{4}-\d{2}-\d{2}$/
+
 export async function updateSubscriptionStatus(
   id: string,
-  status: 'active' | 'paused' | 'cancelled' | 'completed'
+  status: 'active' | 'paused' | 'cancelled' | 'completed',
+  effectiveDate?: string,
 ): Promise<FixedMenuActionResult> {
   const user = await requireAuth()
   const isDestructive = status === 'cancelled' || status === 'completed'
@@ -269,9 +272,11 @@ export async function updateSubscriptionStatus(
   if (!isDestructive && !CREATE_ROLES.includes(user.role)) return { error: 'Owner, Manager or Data Entry role required' }
 
   const admin = createAdminClient()
-  // Record the date for any terminal/paused transition; clear it when re-activating
+  // Record the date for any terminal/paused transition; clear it when re-activating.
+  // A caller-supplied date (e.g. "this was actually a pause from the 3rd") wins when
+  // valid; otherwise falls back to today, matching the old always-today behavior.
   const endDate = (status === 'cancelled' || status === 'completed' || status === 'paused')
-    ? formatInTimeZone(new Date(), 'Asia/Dubai', 'yyyy-MM-dd')
+    ? (effectiveDate && DATE_RE.test(effectiveDate) ? effectiveDate : formatInTimeZone(new Date(), 'Asia/Dubai', 'yyyy-MM-dd'))
     : null
 
   const { error } = await admin
@@ -311,6 +316,32 @@ export async function updateSubscriptionPauseDate(
   if (!CREATE_ROLES.includes(user.role)) return { error: 'Owner, Manager or Data Entry role required' }
 
   const admin = createAdminClient()
+
+  // This field is only ever meant to fine-tune the pause/cancel date on a
+  // subscription that's already paused/cancelled/completed — it must never be
+  // the thing that silently puts a subscription into "active with an end_date
+  // set" (an invariant violation: only updateSubscriptionStatus's non-active
+  // branches should ever set end_date, and always alongside a status change).
+  // If someone uses this field on a still-active row, treat setting a date as
+  // implicitly pausing it, matching what the date visually communicates.
+  if (endDate) {
+    const { data: current } = await admin
+      .from('customer_subscriptions')
+      .select('status')
+      .eq('id', id)
+      .single()
+    if (current?.status === 'active') {
+      const { error } = await admin
+        .from('customer_subscriptions')
+        .update({ end_date: endDate, status: 'paused' })
+        .eq('id', id)
+      if (error) return { error: error.message }
+      revalidatePath('/outstanding')
+      revalidatePath('/fixed-menu')
+      return {}
+    }
+  }
+
   const { error } = await admin
     .from('customer_subscriptions')
     .update({ end_date: endDate })

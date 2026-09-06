@@ -141,6 +141,28 @@ export function chargeForCustomer(
   return total
 }
 
+/**
+ * The meal periods covered on `date` by whichever of this customer's
+ * subscriptions was in force then — the most recent one with
+ * start_date <= date, same resolution rule the invoice generators and the
+ * fixed-plan audit use. Returns null when no subscription had started yet by
+ * that date, or the resolved one has no plan info (treat as "not covered" —
+ * conservative, since an order can't have been a genuine in-plan freebie if
+ * we can't tell what the plan was).
+ */
+export function mealPeriodsCoveredOn(
+  subs: ChargeableSubscription[],
+  date: string,
+): Set<string> | null {
+  let best: ChargeableSubscription | null = null
+  for (const s of subs) {
+    if (s.start_date > date) continue
+    if (!best || s.start_date > best.start_date) best = s
+  }
+  if (!best?.meal_periods?.length) return null
+  return new Set(best.meal_periods)
+}
+
 /** Group subscription rows by customer_id. */
 export function groupSubscriptionsByCustomer<T extends { customer_id?: string }>(
   subs: T[],

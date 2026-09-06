@@ -79,7 +79,7 @@ export async function generatePrepaidAnniversaryInvoices(
       start_date,
       agreed_monthly_price,
       fixed_plan_id,
-      fixed_plans(plan_name),
+      fixed_plans(plan_name, meal_periods),
       customers(full_name, customer_code, payment_terms, customer_type)
     `)
     .eq('status', 'active')
@@ -116,7 +116,7 @@ export async function generatePrepaidAnniversaryInvoices(
   }
   const furthestPeriodEnd = [...periodEndByCustomer.values()].reduce((a, b) => (a > b ? a : b), today)
 
-  type FixedOrderRow = { customer_id: string; order_date: string; total_amount: string }
+  type FixedOrderRow = { customer_id: string; order_date: string; meal_period: string; total_amount: string }
   const fixedOrders: FixedOrderRow[] = []
   if (fixedCustomerIds.length) {
     const PAGE = 1000
@@ -124,7 +124,7 @@ export async function generatePrepaidAnniversaryInvoices(
     while (true) {
       const { data } = await admin
         .from('orders')
-        .select('customer_id, order_date, total_amount')
+        .select('customer_id, order_date, meal_period, total_amount')
         .in('customer_id', fixedCustomerIds)
         .eq('is_credit', true)
         .not('order_status', 'in', '(cancelled,voided,draft)')
@@ -162,7 +162,7 @@ export async function generatePrepaidAnniversaryInvoices(
       continue
     }
 
-    const plan = sub.fixed_plans as unknown as { plan_name: string } | null
+    const plan = sub.fixed_plans as unknown as { plan_name: string; meal_periods: string[] | null } | null
 
     const amount = parseFloat(String(sub.agreed_monthly_price))
     if (!amount || amount <= 0) {
@@ -172,11 +172,26 @@ export async function generatePrepaidAnniversaryInvoices(
 
     const periodEnd = periodEndByCustomer.get(sub.customer_id)!
 
-    const usage = customer?.customer_type === 'fixed_menu'
-      ? fixedOrders
-          .filter(o => o.customer_id === sub.customer_id && o.order_date >= today && o.order_date <= periodEnd)
-          .reduce((s, o) => s + parseFloat(o.total_amount), 0)
-      : 0
+    // Orders from a meal period the plan covers are "usage" absorbed by a
+    // matching discount; orders from a meal period the plan does NOT cover
+    // are genuine extras and are billed in full.
+    const coveredMeals = new Set(plan?.meal_periods ?? [])
+    let inPlanUsage = 0
+    const outOfPlanExtras: Partial<Record<'breakfast' | 'lunch' | 'dinner', number>> = {}
+    if (customer?.customer_type === 'fixed_menu') {
+      for (const o of fixedOrders) {
+        if (o.customer_id !== sub.customer_id) continue
+        if (o.order_date < today || o.order_date > periodEnd) continue
+        const amt = parseFloat(o.total_amount)
+        if (coveredMeals.has(o.meal_period)) {
+          inPlanUsage += amt
+        } else {
+          const key = o.meal_period as 'breakfast' | 'lunch' | 'dinner'
+          outOfPlanExtras[key] = (outOfPlanExtras[key] ?? 0) + amt
+        }
+      }
+    }
+    const outOfPlanTotal = Object.values(outOfPlanExtras).reduce((s, v) => s + (v ?? 0), 0)
 
     const { data: invoiceNumber, error: numErr } = await admin.rpc('next_invoice_number')
     if (numErr || !invoiceNumber) {
@@ -194,7 +209,7 @@ export async function generatePrepaidAnniversaryInvoices(
         invoice_type:          'fixed_monthly',
         billing_period_start:  today,
         billing_period_end:    periodEnd,
-        ...computeFixedInvoiceAmounts(amount, usage, vatRate),
+        ...computeFixedInvoiceAmounts(amount, inPlanUsage, outOfPlanTotal, vatRate),
         status:                'draft',
         notes:                 null,
         created_by:            createdBy === 'system-cron' ? null : createdBy,
@@ -212,7 +227,8 @@ export async function generatePrepaidAnniversaryInvoices(
       planName:  plan?.plan_name ?? 'Fixed Plan',
       monthLabel,
       amount,
-      usage,
+      inPlanUsage,
+      outOfPlanExtras,
     })
 
     const { error: itemErr } = await admin.from('invoice_items').insert(lineItems)
