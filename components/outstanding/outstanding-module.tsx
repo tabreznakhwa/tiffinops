@@ -1144,8 +1144,10 @@ export function OutstandingModule({ rows, plans, totalCustomers, currency, userR
                             </table>
                             {row.unallocatedPaid > 0.005 && (
                               <p className="px-3 py-2 text-[10px]" style={{ color: 'var(--color-muted)', borderTop: '1px dashed var(--color-border)' }}>
-                                {currency} {row.unallocatedPaid.toFixed(2)} received but not linked to any month&apos;s invoice —
-                                older payments recorded without an invoice. The overall Outstanding column already counts them.
+                                {currency} {row.unallocatedPaid.toFixed(2)} isn&apos;t reflected in the table above — either an older
+                                payment recorded before invoice-linking existed, or a payment that paid more than one invoice&apos;s
+                                own total (each invoice&apos;s Paid column caps at its own amount). Either way, it&apos;s already
+                                counted in the Outstanding total below.
                               </p>
                             )}
                           </div>
