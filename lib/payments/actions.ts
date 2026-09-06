@@ -190,7 +190,7 @@ export async function deletePayment(id: string): Promise<PaymentActionResult> {
 
   const { data: existing, error: fetchErr } = await admin
     .from('payments')
-    .select('voided_at')
+    .select('voided_at, invoice_id')
     .eq('id', id)
     .single()
 
@@ -201,6 +201,14 @@ export async function deletePayment(id: string): Promise<PaymentActionResult> {
 
   const { error } = await admin.from('payments').delete().eq('id', id)
   if (error) return { error: error.message }
+
+  // Removing a linked payment can drop the invoice back out of paid/partial —
+  // keep its status in sync, same as voidPayment does. Without this an
+  // invoice can be left showing "Paid" with its full amount still remaining.
+  if (existing.invoice_id) {
+    await reconcileInvoicePaymentStatus(admin, existing.invoice_id)
+    revalidatePath('/invoices')
+  }
 
   revalidatePath('/payments')
   return {}
