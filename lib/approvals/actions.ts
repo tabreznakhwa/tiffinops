@@ -3,12 +3,13 @@
 import { revalidatePath } from 'next/cache'
 import { requireAuth } from '@/lib/auth'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { applySubscriptionApproval } from '@/lib/fixed-menu/subscription-approval'
 
 // ── requestApproval ────────────────────────────────────────────────────────────
 
 export async function requestApproval(input: {
   request_type: 'delete' | 'edit'
-  target_table: 'order' | 'payment' | 'invoice'
+  target_table: 'order' | 'payment' | 'invoice' | 'subscription'
   target_id: string
   reason: string
   proposed_changes?: Record<string, unknown> | null
@@ -45,10 +46,6 @@ export async function approveRequest(
   resolution_note?: string
 ): Promise<{ error?: string }> {
   const user = await requireAuth()
-  if (!['owner', 'manager'].includes(user.role)) {
-    return { error: 'Only the owner or manager can approve requests' }
-  }
-
   const admin = createAdminClient()
 
   // Fetch the pending request
@@ -61,8 +58,22 @@ export async function approveRequest(
 
   if (fetchErr || !req) return { error: 'Request not found or already resolved' }
 
+  // Subscription changes are monetary (they retroactively change an already
+  // issued invoice) — owner policy restricts these to owner-only, narrower
+  // than the usual owner-or-manager approval convention.
+  if (req.target_table === 'subscription') {
+    if (user.role !== 'owner') return { error: 'Only the owner can approve subscription changes' }
+  } else if (!['owner', 'manager'].includes(user.role)) {
+    return { error: 'Only the owner or manager can approve requests' }
+  }
+
   // Execute the action
-  if (req.request_type === 'delete') {
+  if (req.target_table === 'subscription') {
+    const { error } = await applySubscriptionApproval(admin, req, user.id)
+    if (error) return { error }
+    revalidatePath('/fixed-menu')
+    revalidatePath('/outstanding')
+  } else if (req.request_type === 'delete') {
     if (req.target_table === 'payment') {
       const { error: voidErr } = await admin
         .from('payments')
@@ -160,9 +171,6 @@ export async function rejectRequest(
   resolution_note: string
 ): Promise<{ error?: string }> {
   const user = await requireAuth()
-  if (!['owner', 'manager'].includes(user.role)) {
-    return { error: 'Only the owner or manager can reject requests' }
-  }
 
   if (!resolution_note?.trim()) {
     return { error: 'A reason is required when rejecting a request' }
@@ -178,7 +186,17 @@ export async function rejectRequest(
     .eq('status', 'pending')
     .single()
 
-  if (reqData?.request_type === 'edit' && reqData?.target_table === 'invoice') {
+  if (!reqData) return { error: 'Request not found or already resolved' }
+
+  // Same owner-only narrowing as approveRequest — subscription changes are
+  // monetary, so only the owner may resolve them either way.
+  if (reqData.target_table === 'subscription') {
+    if (user.role !== 'owner') return { error: 'Only the owner can reject subscription changes' }
+  } else if (!['owner', 'manager'].includes(user.role)) {
+    return { error: 'Only the owner or manager can reject requests' }
+  }
+
+  if (reqData.request_type === 'edit' && reqData.target_table === 'invoice') {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const changes = reqData.proposed_changes as any
     if (changes?.type === 'ala_carte_batch' && Array.isArray(changes.invoice_ids)) {

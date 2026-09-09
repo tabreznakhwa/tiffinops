@@ -1468,7 +1468,7 @@ export type Database = {
       ledger_type: 'order' | 'invoice' | 'payment' | 'discount' | 'refund' | 'write_off' | 'adjustment' | 'opening_balance'
       approval_request_type: 'delete' | 'edit'
       approval_status: 'pending' | 'approved' | 'rejected'
-      approval_target: 'order' | 'payment' | 'invoice'
+      approval_target: 'order' | 'payment' | 'invoice' | 'subscription'
       inventory_txn_type: 'purchase' | 'consumption' | 'adjustment' | 'damaged' | 'opening_stock'
     }
     CompositeTypes: Record<PropertyKey, never>

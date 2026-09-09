@@ -31,6 +31,7 @@ export function MealPauseModal({
   const [reason, setReason]         = useState('')
   const [loading, setLoading]       = useState(false)
   const [error, setError]           = useState('')
+  const [pendingApproval, setPendingApproval] = useState(false)
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -47,10 +48,43 @@ export function MealPauseModal({
 
     setLoading(false)
     if (result.error) { setError(result.error); return }
+    if (result.pendingApproval) { setPendingApproval(true); return }
     onClose()
   }
 
   const canSubmit = !!meal && pauseStart !== '' && !loading
+
+  if (pendingApproval) {
+    return (
+      <div
+        className="fixed inset-0 z-50 flex items-center justify-center p-4"
+        style={{ background: 'rgba(34,26,19,.55)' }}
+        onClick={e => e.target === e.currentTarget && onClose()}
+      >
+        <div
+          className="relative w-full max-w-sm rounded-[18px] p-6 shadow-xl text-center"
+          style={{ background: 'var(--color-surface)' }}
+        >
+          <p className="text-xs font-bold uppercase tracking-widest mb-0.5" style={{ color: 'var(--color-saffron)', letterSpacing: '.12em' }}>
+            Pause a Meal
+          </p>
+          <h2 className="font-display font-bold text-[20px] mb-2" style={{ color: 'var(--color-ink)' }}>
+            Sent for owner approval
+          </h2>
+          <p className="text-sm mb-5" style={{ color: 'var(--color-muted)' }}>
+            This is a backdated change and can affect an already-issued invoice, so it needs the owner&apos;s approval before it applies. You&apos;ll see it on the Approvals page once resolved.
+          </p>
+          <button
+            onClick={onClose}
+            className="w-full rounded-[10px] px-4 py-2.5 text-sm font-semibold"
+            style={{ background: 'var(--color-saffron)', color: '#fff' }}
+          >
+            Close
+          </button>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div

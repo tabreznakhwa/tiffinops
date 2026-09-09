@@ -10,7 +10,7 @@ import { approveRequest, rejectRequest } from '@/lib/approvals/actions'
 export type EnrichedRequest = {
   id: string
   request_type: 'delete' | 'edit'
-  target_table: 'order' | 'payment' | 'invoice'
+  target_table: 'order' | 'payment' | 'invoice' | 'subscription'
   target_id: string
   reason: string
   status: 'pending' | 'approved' | 'rejected'
@@ -28,6 +28,7 @@ export type ApprovalsModuleProps = {
   requests: EnrichedRequest[]
   pendingCount: number
   isOwnerOrManager: boolean
+  isOwner: boolean
 }
 
 // ── Badge configs ──────────────────────────────────────────────────────────────
@@ -38,9 +39,10 @@ const REQUEST_TYPE_CONFIG = {
 } as const
 
 const TARGET_TABLE_CONFIG = {
-  payment: { label: 'Payment', bg: 'var(--color-green-soft)',  color: 'var(--color-green)'  },
-  order:   { label: 'Order',   bg: 'var(--color-blue-soft)',   color: 'var(--color-blue)'   },
-  invoice: { label: 'Invoice', bg: 'var(--color-purple-soft)', color: 'var(--color-purple)' },
+  payment:      { label: 'Payment',      bg: 'var(--color-green-soft)',  color: 'var(--color-green)'  },
+  order:        { label: 'Order',        bg: 'var(--color-blue-soft)',   color: 'var(--color-blue)'   },
+  invoice:      { label: 'Invoice',      bg: 'var(--color-purple-soft)', color: 'var(--color-purple)' },
+  subscription: { label: 'Subscription', bg: '#FEF3C7',                  color: 'var(--color-gold)'   },
 } as const
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
@@ -175,12 +177,17 @@ function ActionPanel({ id }: { id: string }) {
 function RequestCard({
   req,
   isOwnerOrManager,
+  isOwner,
 }: {
   req: EnrichedRequest
   isOwnerOrManager: boolean
+  isOwner: boolean
 }) {
   const rtCfg  = REQUEST_TYPE_CONFIG[req.request_type]
   const tblCfg = TARGET_TABLE_CONFIG[req.target_table]
+  // Subscription changes are monetary — owner policy restricts these to
+  // owner-only, narrower than the usual owner-or-manager convention.
+  const canResolve = req.target_table === 'subscription' ? isOwner : isOwnerOrManager
 
   return (
     <div
@@ -248,10 +255,15 @@ function RequestCard({
           )}
 
           {/* Action panel — inline, shown below the details */}
-          {req.status === 'pending' && isOwnerOrManager && (
+          {req.status === 'pending' && canResolve && (
             <div className="mt-3">
               <ActionPanel id={req.id} />
             </div>
+          )}
+          {req.status === 'pending' && !canResolve && req.target_table === 'subscription' && isOwnerOrManager && (
+            <p className="text-[11px] mt-2 italic" style={{ color: 'var(--color-muted)' }}>
+              Only the owner can approve or reject subscription changes.
+            </p>
           )}
         </div>
       </div>
@@ -284,6 +296,7 @@ export function ApprovalsModule({
   requests,
   pendingCount,
   isOwnerOrManager,
+  isOwner,
 }: ApprovalsModuleProps) {
   const [activeTab, setActiveTab] = useState<Tab>('pending')
 
@@ -388,6 +401,7 @@ export function ApprovalsModule({
               key={req.id}
               req={req}
               isOwnerOrManager={isOwnerOrManager}
+              isOwner={isOwner}
             />
           ))}
         </div>

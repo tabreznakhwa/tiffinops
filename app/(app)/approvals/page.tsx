@@ -3,6 +3,7 @@ export const dynamic = 'force-dynamic'
 import { formatInTimeZone } from 'date-fns-tz'
 import { requireAuth } from '@/lib/auth'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { previewSubscriptionApprovalImpact } from '@/lib/fixed-menu/subscription-approval'
 import { ApprovalsModule } from '@/components/approvals/approvals-module'
 import type { EnrichedRequest } from '@/components/approvals/approvals-module'
 
@@ -11,7 +12,7 @@ import type { EnrichedRequest } from '@/components/approvals/approvals-module'
 type RawApprovalRequest = {
   id: string
   request_type: 'delete' | 'edit'
-  target_table: 'order' | 'payment' | 'invoice'
+  target_table: 'order' | 'payment' | 'invoice' | 'subscription'
   target_id: string
   reason: string
   proposed_changes: unknown
@@ -47,6 +48,20 @@ type RawUser = {
   role: string
 }
 
+type RawCustomer = {
+  id: string
+  full_name: string
+  customer_code: string
+}
+
+const SUBSCRIPTION_KIND_LABELS: Record<string, string> = {
+  meal_pause:   'Stop a meal',
+  meal_resume:  'Resume a meal',
+  status_change: 'Pause/cancel subscription',
+  pause_date:   'Change pause/end date',
+  start_date:   'Change start date',
+}
+
 // ── Page ───────────────────────────────────────────────────────────────────────
 
 export default async function ApprovalsPage() {
@@ -68,6 +83,13 @@ export default async function ApprovalsPage() {
   const orderIds = [...new Set(
     requests.filter(r => r.target_table === 'order').map(r => r.target_id)
   )]
+  const subscriptionCustomerIds = [...new Set(
+    requests
+      .filter(r => r.target_table === 'subscription')
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      .map(r => (r.proposed_changes as any)?.customer_id)
+      .filter((id): id is string => !!id)
+  )]
 
   // 3. Collect unique user IDs (requestors + resolvers)
   const userIds = [...new Set([
@@ -80,6 +102,7 @@ export default async function ApprovalsPage() {
     { data: rawPayments },
     { data: rawOrders },
     { data: rawUsers },
+    { data: rawCustomers },
   ] = await Promise.all([
     paymentIds.length > 0
       ? admin
@@ -101,16 +124,25 @@ export default async function ApprovalsPage() {
           .select('id, full_name, role')
           .in('id', userIds)
       : { data: [] },
+
+    subscriptionCustomerIds.length > 0
+      ? admin
+          .from('customers')
+          .select('id, full_name, customer_code')
+          .in('id', subscriptionCustomerIds)
+      : { data: [] },
   ])
 
-  const payments = (rawPayments ?? []) as unknown as RawPayment[]
-  const orders   = (rawOrders   ?? []) as unknown as RawOrder[]
-  const users    = (rawUsers    ?? []) as unknown as RawUser[]
+  const payments  = (rawPayments  ?? []) as unknown as RawPayment[]
+  const orders    = (rawOrders    ?? []) as unknown as RawOrder[]
+  const users     = (rawUsers     ?? []) as unknown as RawUser[]
+  const customers = (rawCustomers ?? []) as unknown as RawCustomer[]
 
   // 5. Build lookup maps
-  const paymentMap = new Map(payments.map(p => [p.id, p]))
-  const orderMap   = new Map(orders.map(o => [o.id, o]))
-  const userMap    = new Map(users.map(u => [u.id, u]))
+  const paymentMap  = new Map(payments.map(p => [p.id, p]))
+  const orderMap    = new Map(orders.map(o => [o.id, o]))
+  const userMap     = new Map(users.map(u => [u.id, u]))
+  const customerMap = new Map(customers.map(c => [c.id, c]))
 
   // Fetch currency for display
   const { data: settingsRow } = await admin.from('app_settings').select('currency').eq('id', 1).single()
@@ -121,7 +153,7 @@ export default async function ApprovalsPage() {
   }
 
   // 6. Enrich requests
-  const enriched: EnrichedRequest[] = requests.map(req => {
+  const enriched: EnrichedRequest[] = await Promise.all(requests.map(async req => {
     const requestor = userMap.get(req.requested_by)
     const resolver  = req.resolved_by ? userMap.get(req.resolved_by) : null
 
@@ -151,6 +183,47 @@ export default async function ApprovalsPage() {
         target_customer = `${changes.customer_count} customers`
         target_date     = changes.month
       }
+    } else if (req.target_table === 'subscription') {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const changes = req.proposed_changes as any
+      const kindLabel = SUBSCRIPTION_KIND_LABELS[changes?.kind] ?? 'Subscription change'
+      const c = changes?.customer_id ? customerMap.get(changes.customer_id) : null
+      target_customer = c?.full_name ?? '—'
+      switch (changes?.kind) {
+        case 'meal_pause':
+          target_label = `${kindLabel} — ${changes.meal_period} from ${changes.pause_start}${changes.pause_end ? ` to ${changes.pause_end}` : ''}`
+          target_date  = changes.pause_start
+          break
+        case 'meal_resume':
+          target_label = `${kindLabel} from ${changes.resume_date}`
+          target_date  = changes.resume_date
+          break
+        case 'status_change':
+          target_label = `${changes.status} — effective ${changes.effective_date}`
+          target_date  = changes.effective_date
+          break
+        case 'pause_date':
+          target_label = `${kindLabel} to ${changes.end_date}`
+          target_date  = changes.end_date
+          break
+        case 'start_date':
+          target_label = `${kindLabel} to ${changes.start_date}`
+          target_date  = changes.start_date
+          break
+        default:
+          target_label = kindLabel
+      }
+
+      // Preview the "staff-error credit" side effect (see
+      // finalizeBackdatedSubscriptionChange) so the owner can see, before
+      // approving, that orders logged after the requested stop date will be
+      // voided rather than billed — only worth computing while still pending.
+      if (req.status === 'pending') {
+        const impact = await previewSubscriptionApprovalImpact(admin, req.target_id, changes)
+        if (impact) {
+          target_label += ` · ⚠ ${impact.count} order(s) already logged after the stop date (${currency} ${impact.total.toFixed(2)}) will be voided as a staff-error credit, not billed`
+        }
+      }
     }
 
     return {
@@ -169,16 +242,18 @@ export default async function ApprovalsPage() {
       target_customer,
       target_date,
     }
-  })
+  }))
 
   const pendingCount = enriched.filter(r => r.status === 'pending').length
   const isOwnerOrManager = ['owner', 'manager'].includes(user.role)
+  const isOwner = user.role === 'owner'
 
   return (
     <ApprovalsModule
       requests={enriched}
       pendingCount={pendingCount}
       isOwnerOrManager={isOwnerOrManager}
+      isOwner={isOwner}
     />
   )
 }

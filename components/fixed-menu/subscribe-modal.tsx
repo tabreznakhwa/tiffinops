@@ -90,6 +90,7 @@ export function SubscribeModal({
   const [notes, setNotes]                       = useState(subscription?.notes ?? '')
   const [loading, setLoading]                   = useState(false)
   const [error, setError]                       = useState('')
+  const [pendingApproval, setPendingApproval]   = useState(false)
 
   // Per-meal price breakdown — only relevant for plans covering 2+ meals.
   const [mealPrices, setMealPrices]             = useState<Record<string, string>>(
@@ -167,10 +168,43 @@ export function SubscribeModal({
 
     setLoading(false)
     if (result.error) { setError(result.error); return }
+    if (result.pendingApproval) { setPendingApproval(true); return }
     onClose()
   }
 
   const canSubmit = !!selectedCustomer && !!selectedPlan && startDate !== '' && price !== '' && mealSplitValid && !loading
+
+  if (pendingApproval) {
+    return (
+      <div
+        className="fixed inset-0 z-50 flex items-center justify-center p-4"
+        style={{ background: 'rgba(34,26,19,.55)' }}
+        onClick={e => e.target === e.currentTarget && onClose()}
+      >
+        <div
+          className="relative w-full max-w-md rounded-[18px] p-6 shadow-xl text-center"
+          style={{ background: 'var(--color-surface)' }}
+        >
+          <p className="text-xs font-bold uppercase tracking-widest mb-0.5" style={{ color: 'var(--color-saffron)', letterSpacing: '.12em' }}>
+            {isEdit ? 'Edit Subscription' : 'New Subscription'}
+          </p>
+          <h2 className="font-display font-bold text-[20px] mb-2" style={{ color: 'var(--color-ink)' }}>
+            Sent for owner approval
+          </h2>
+          <p className="text-sm mb-5" style={{ color: 'var(--color-muted)' }}>
+            This start-date change is backdated and can affect an already-issued invoice, so it needs the owner&apos;s approval before it applies. You&apos;ll see it on the Approvals page once resolved.
+          </p>
+          <button
+            onClick={onClose}
+            className="w-full rounded-[10px] px-4 py-2.5 text-sm font-semibold"
+            style={{ background: 'var(--color-saffron)', color: '#fff' }}
+          >
+            Close
+          </button>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div

@@ -55,13 +55,17 @@ export function buildFixedPlanLineItems(params: {
   amount: number
   inPlanUsage: number
   outOfPlanExtras: Partial<Record<'breakfast' | 'lunch' | 'dinner', number>>
+  // Set when `amount` was reduced from the plan's flat rate by a per-meal
+  // pause (see lib/fixed-menu/proration.ts) — appended to the plan line so
+  // the invoice stays self-explanatory to staff and the customer.
+  prorationNote?: string
 }): FixedInvoiceLineItem[] {
-  const { invoiceId, planName, monthLabel, amount, inPlanUsage, outOfPlanExtras } = params
+  const { invoiceId, planName, monthLabel, amount, inPlanUsage, outOfPlanExtras, prorationNote } = params
 
   const lineItems: FixedInvoiceLineItem[] = [{
     invoice_id:  invoiceId,
     order_id:    null,
-    description: `Monthly Fixed Plan — ${planName} — ${monthLabel}`,
+    description: `Monthly Fixed Plan — ${planName} — ${monthLabel}${prorationNote ? ` (${prorationNote})` : ''}`,
     quantity:    '1',
     unit_price:  amount.toFixed(2),
     total_price: amount.toFixed(2),

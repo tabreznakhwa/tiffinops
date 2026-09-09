@@ -20,6 +20,18 @@ export type ProrationInput = {
   pauses: MealPause[]                           // pauses for this subscription only
   rangeFrom: string                             // 'YYYY-MM-DD'
   rangeTo: string                               // 'YYYY-MM-DD'
+  // Total length (in days) of the billing cycle [rangeFrom, rangeTo] belongs
+  // to, when that whole range IS one cycle — e.g. a prepaid anniversary cycle
+  // (customer's start-day to the day before their next anniversary), which
+  // routinely crosses two calendar months of different lengths. When set,
+  // proration is done once against this fixed denominator instead of being
+  // fragmented per calendar month — so an uninterrupted cycle always bills
+  // the flat agreedMonthlyPrice, and only a genuinely partial cycle (cut
+  // short by a pause or subEnd) is charged less, in proportion to the whole
+  // cycle's own length. Omit for calls that span multiple/partial calendar
+  // months by design (postpaid monthly billing, or a multi-month summary),
+  // where per-calendar-month proration is the correct, existing behavior.
+  cycleDays?: number
 }
 
 function daysInMonth(year: number, month: number): number {
@@ -30,7 +42,7 @@ function toUTCDate(d: string): Date {
   return new Date(d + 'T00:00:00Z')
 }
 
-function addDaysStr(d: string, n: number): string {
+export function addDaysStr(d: string, n: number): string {
   const date = toUTCDate(d)
   date.setUTCDate(date.getUTCDate() + n)
   return date.toISOString().slice(0, 10)
@@ -49,7 +61,15 @@ function mealMonthlyPrice(meal: string, input: ProrationInput): number {
   if (input.mealPrices && input.mealPrices[meal] != null) {
     return parseFloat(String(input.mealPrices[meal]))
   }
-  return input.mealPeriods.length > 0 ? input.agreedMonthlyPrice / input.mealPeriods.length : 0
+  return input.mealPeriods.length > 0 ? input.agreedMonthlyPrice / input.mealPeriods.length : input.agreedMonthlyPrice
+}
+
+export function isMealPausedOn(pauses: MealPause[], meal: string, date: string): boolean {
+  return pauses.some(p =>
+    p.meal_period === meal &&
+    p.pause_start <= date &&
+    (p.pause_end == null || p.pause_end >= date)
+  )
 }
 
 // Count days in [from, to] (inclusive) that fall inside a pause window for `meal`.
@@ -67,16 +87,37 @@ function pausedDaysInRange(pauses: MealPause[], meal: string, from: string, to: 
 }
 
 export function calcSubscriptionCharge(input: ProrationInput): number {
-  const effectiveSubEnd =
-    (input.subStatus === 'cancelled' || input.subStatus === 'completed') && input.subEnd
-      ? input.subEnd
-      : input.rangeTo
+  // `end_date` is a billing cutoff in real data, even when old rows were left
+  // as "active" after being replaced. Always cap by it to avoid billing past
+  // the selected stop/pause date.
+  const effectiveSubEnd = input.subEnd ?? input.rangeTo
 
   const clampedStart = maxStr(input.subStart, input.rangeFrom)
   const clampedEnd   = minStr(effectiveSubEnd, input.rangeTo)
   if (clampedStart > clampedEnd) return 0
 
   let total = 0
+
+  if (input.cycleDays && input.cycleDays > 0) {
+    // Whole-cycle proration: [rangeFrom, rangeTo] IS one billing cycle (e.g. a
+    // prepaid anniversary month), so charge against that cycle's own fixed
+    // length rather than fragmenting by calendar month — an uninterrupted
+    // cycle bills the flat agreedMonthlyPrice no matter which/how-many
+    // calendar months it crosses; only a pause or an early subEnd reduces it.
+    const totalDaysInRange =
+      Math.round((toUTCDate(clampedEnd).getTime() - toUTCDate(clampedStart).getTime()) / 86400000) + 1
+
+    const meals = input.mealPeriods.length ? input.mealPeriods : ['__flat__']
+    for (const meal of meals) {
+      const monthlyPrice = mealMonthlyPrice(meal, input)
+      const pausedDays   = Math.min(totalDaysInRange, pausedDaysInRange(input.pauses, meal, clampedStart, clampedEnd))
+      const chargedDays  = Math.max(0, totalDaysInRange - pausedDays)
+      total += (monthlyPrice * chargedDays) / input.cycleDays
+    }
+
+    return Math.round(total * 100) / 100
+  }
+
   let cursor = clampedStart
 
   while (cursor <= clampedEnd) {
@@ -89,7 +130,8 @@ export function calcSubscriptionCharge(input: ProrationInput): number {
     const activeDaysInMonth =
       Math.round((toUTCDate(windowEnd).getTime() - toUTCDate(cursor).getTime()) / 86400000) + 1
 
-    for (const meal of input.mealPeriods) {
+    const meals = input.mealPeriods.length ? input.mealPeriods : ['__flat__']
+    for (const meal of meals) {
       const monthlyPrice = mealMonthlyPrice(meal, input)
       const pausedDays   = Math.min(activeDaysInMonth, pausedDaysInRange(input.pauses, meal, cursor, windowEnd))
       const chargedDays  = Math.max(0, activeDaysInMonth - pausedDays)

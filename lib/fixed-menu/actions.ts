@@ -6,11 +6,47 @@ import { formatInTimeZone } from 'date-fns-tz'
 import { requireAuth } from '@/lib/auth'
 import { createAdminClient } from '@/lib/supabase/admin'
 import type { Enums } from '@/lib/supabase/types'
+import { isBackdatedChange, createSubscriptionApprovalRequest, reconcileInvoicesForSubscription, finalizeBackdatedSubscriptionChange } from '@/lib/fixed-menu/subscription-approval'
 
 const ADMIN_ROLES:  Enums<'user_role'>[] = ['owner', 'manager']
 const CREATE_ROLES: Enums<'user_role'>[] = ['owner', 'manager', 'data_entry']
 
-export type FixedMenuActionResult = { error?: string }
+export type FixedMenuActionResult = { error?: string; pendingApproval?: boolean }
+
+// A backdated date change is monetary (it can shrink or grow an already
+// invoiced amount), so it always goes to the owner for approval instead of
+// applying immediately — see lib/fixed-menu/subscription-approval.ts. The
+// owner is both the requester and the sole approver in that case, so letting
+// the owner apply it directly (and immediately reconciling any invoice it
+// touches) skips a pointless self-approval round trip.
+async function gateOrApply(
+  admin: ReturnType<typeof createAdminClient>,
+  isOwner: boolean,
+  userId: string,
+  customerId: string,
+  subscriptionId: string,
+  affectedFrom: string,
+  affectedTo: string | null,
+  kind: 'meal_pause' | 'meal_resume' | 'status_change' | 'pause_date' | 'start_date',
+  reason: string,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  payload: Record<string, any>,
+  apply: () => Promise<{ error?: string }>,
+): Promise<FixedMenuActionResult> {
+  const backdated = await isBackdatedChange(admin, customerId, affectedFrom, affectedTo)
+  if (backdated && !isOwner) {
+    const { error } = await createSubscriptionApprovalRequest(admin, userId, kind, subscriptionId, customerId, reason, payload)
+    if (error) return { error }
+    return { pendingApproval: true }
+  }
+  const { error } = await apply()
+  if (error) return { error }
+  if (backdated) {
+    const result = await finalizeBackdatedSubscriptionChange(admin, kind, subscriptionId, customerId, payload, userId, reason)
+    if (result.error) return { error: result.error }
+  }
+  return {}
+}
 
 // ── Plans ──────────────────────────────────────────────────────────────────────
 
@@ -243,6 +279,45 @@ export async function updateSubscription(
   )
   if (mealPricesError) return { error: mealPricesError }
 
+  // A start-date edit here is the one date field this form can move — and,
+  // same as the dedicated updateSubscriptionStartDate action, a backdated
+  // move can retroactively change an already-issued invoice's proration, so
+  // it needs owner approval too (unless the owner is the one making it).
+  const { data: existing } = await admin.from('customer_subscriptions').select('customer_id, start_date').eq('id', id).single()
+  if (!existing) return { error: 'Subscription not found' }
+
+  if (existing.start_date !== parsed.data.start_date) {
+    const earliest = parsed.data.start_date < existing.start_date ? parsed.data.start_date : existing.start_date
+    const result = await gateOrApply(
+      admin, user.role === 'owner', user.id, existing.customer_id, id,
+      earliest, null, 'start_date',
+      `Change start date to ${parsed.data.start_date}`,
+      {
+        start_date:           parsed.data.start_date,
+        fixed_plan_id:        parsed.data.fixed_plan_id,
+        agreed_monthly_price: parsed.data.agreed_monthly_price.toFixed(2),
+        meal_prices,
+        notes:                parsed.data.notes,
+      },
+      async () => {
+        const { error } = await admin
+          .from('customer_subscriptions')
+          .update({
+            fixed_plan_id:        parsed.data.fixed_plan_id,
+            start_date:           parsed.data.start_date,
+            agreed_monthly_price: parsed.data.agreed_monthly_price.toFixed(2),
+            meal_prices,
+            notes:                parsed.data.notes,
+          })
+          .eq('id', id)
+        return { error: error?.message }
+      },
+    )
+    if (result.error) return result
+    revalidatePath('/fixed-menu')
+    return result
+  }
+
   const { error } = await admin
     .from('customer_subscriptions')
     .update({
@@ -279,14 +354,31 @@ export async function updateSubscriptionStatus(
     ? (effectiveDate && DATE_RE.test(effectiveDate) ? effectiveDate : formatInTimeZone(new Date(), 'Asia/Dubai', 'yyyy-MM-dd'))
     : null
 
-  const { error } = await admin
-    .from('customer_subscriptions')
-    .update({ status, end_date: endDate })
-    .eq('id', id)
+  // Reactivating (clearing end_date) only expands future billing — it never
+  // retroactively shrinks an already-issued invoice, so it never needs approval.
+  if (!endDate) {
+    const { error } = await admin.from('customer_subscriptions').update({ status, end_date: null }).eq('id', id)
+    if (error) return { error: error.message }
+    revalidatePath('/fixed-menu')
+    return {}
+  }
 
-  if (error) return { error: error.message }
+  const { data: sub } = await admin.from('customer_subscriptions').select('customer_id').eq('id', id).single()
+  if (!sub) return { error: 'Subscription not found' }
+
+  const result = await gateOrApply(
+    admin, user.role === 'owner', user.id, sub.customer_id, id,
+    endDate, null, 'status_change',
+    `${status === 'paused' ? 'Pause' : status === 'cancelled' ? 'Cancel' : 'Complete'} subscription effective ${endDate}`,
+    { status, effective_date: endDate },
+    async () => {
+      const { error } = await admin.from('customer_subscriptions').update({ status, end_date: endDate }).eq('id', id)
+      return { error: error?.message }
+    },
+  )
+  if (result.error) return result
   revalidatePath('/fixed-menu')
-  return {}
+  return result
 }
 
 export async function updateSubscriptionStartDate(
@@ -297,12 +389,25 @@ export async function updateSubscriptionStartDate(
   if (user.role !== 'owner') return { error: 'Only Owner can change the start date' }
 
   const admin = createAdminClient()
+  const { data: existing } = await admin.from('customer_subscriptions').select('customer_id, start_date').eq('id', id).single()
+
   const { error } = await admin
     .from('customer_subscriptions')
     .update({ start_date: startDate })
     .eq('id', id)
 
   if (error) return { error: error.message }
+
+  // The owner is the sole approver for backdated changes anyway — apply
+  // directly, but still auto-reconcile any already-issued invoice this
+  // start-date correction affects.
+  if (existing) {
+    const earliest = startDate < existing.start_date ? startDate : existing.start_date
+    if (await isBackdatedChange(admin, existing.customer_id, earliest, null)) {
+      await reconcileInvoicesForSubscription(admin, id, user.id, `Start date changed to ${startDate}`)
+    }
+  }
+
   revalidatePath('/outstanding')
   revalidatePath('/fixed-menu')
   return {}
@@ -327,19 +432,29 @@ export async function updateSubscriptionPauseDate(
   if (endDate) {
     const { data: current } = await admin
       .from('customer_subscriptions')
-      .select('status')
+      .select('customer_id, status')
       .eq('id', id)
       .single()
-    if (current?.status === 'active') {
-      const { error } = await admin
-        .from('customer_subscriptions')
-        .update({ end_date: endDate, status: 'paused' })
-        .eq('id', id)
-      if (error) return { error: error.message }
-      revalidatePath('/outstanding')
-      revalidatePath('/fixed-menu')
-      return {}
-    }
+    if (!current) return { error: 'Subscription not found' }
+
+    const setsToPaused = current.status === 'active'
+    const result = await gateOrApply(
+      admin, user.role === 'owner', user.id, current.customer_id, id,
+      endDate, null, 'pause_date',
+      `Set pause/end date to ${endDate}`,
+      { end_date: endDate, sets_paused: setsToPaused },
+      async () => {
+        const { error } = await admin
+          .from('customer_subscriptions')
+          .update(setsToPaused ? { end_date: endDate, status: 'paused' } : { end_date: endDate })
+          .eq('id', id)
+        return { error: error?.message }
+      },
+    )
+    if (result.error) return result
+    revalidatePath('/outstanding')
+    revalidatePath('/fixed-menu')
+    return result
   }
 
   const { error } = await admin
@@ -387,7 +502,7 @@ export async function pauseSubscriptionMeal(input: {
 
   const { data: sub } = await admin
     .from('customer_subscriptions')
-    .select('fixed_plan_id, fixed_plans(meal_periods)')
+    .select('customer_id, fixed_plan_id, fixed_plans(meal_periods)')
     .eq('id', parsed.data.subscription_id)
     .single()
   if (!sub) return { error: 'Subscription not found' }
@@ -406,19 +521,33 @@ export async function pauseSubscriptionMeal(input: {
     return { error: `${parsed.data.meal_period} is already paused — resume it first` }
   }
 
-  const { error } = await admin.from('subscription_meal_pauses').insert({
-    subscription_id: parsed.data.subscription_id,
-    meal_period: parsed.data.meal_period,
-    pause_start: parsed.data.pause_start,
-    pause_end: parsed.data.pause_end ?? null,
-    reason: parsed.data.reason,
-    created_by: user.id,
-  })
-  if (error) return { error: error.message }
+  const result = await gateOrApply(
+    admin, user.role === 'owner', user.id, sub.customer_id, parsed.data.subscription_id,
+    parsed.data.pause_start, parsed.data.pause_end ?? null, 'meal_pause',
+    `Stop ${parsed.data.meal_period} from ${parsed.data.pause_start}${parsed.data.reason ? ` — ${parsed.data.reason}` : ''}`,
+    {
+      meal_period: parsed.data.meal_period,
+      pause_start: parsed.data.pause_start,
+      pause_end: parsed.data.pause_end ?? null,
+      reason: parsed.data.reason ?? null,
+    },
+    async () => {
+      const { error } = await admin.from('subscription_meal_pauses').insert({
+        subscription_id: parsed.data.subscription_id,
+        meal_period: parsed.data.meal_period,
+        pause_start: parsed.data.pause_start,
+        pause_end: parsed.data.pause_end ?? null,
+        reason: parsed.data.reason,
+        created_by: user.id,
+      })
+      return { error: error?.message }
+    },
+  )
+  if (result.error) return result
 
   revalidatePath('/fixed-menu')
   revalidatePath('/outstanding')
-  return {}
+  return result
 }
 
 export async function resumeSubscriptionMeal(
@@ -431,24 +560,32 @@ export async function resumeSubscriptionMeal(
   const admin = createAdminClient()
   const { data: pause } = await admin
     .from('subscription_meal_pauses')
-    .select('pause_start, pause_end')
+    .select('subscription_id, pause_start, pause_end, customer_subscriptions(customer_id)')
     .eq('id', pauseId)
     .single()
   if (!pause) return { error: 'Pause record not found' }
   if (pause.pause_end) return { error: 'This pause has already ended' }
+  const customerId = (pause.customer_subscriptions as unknown as { customer_id: string } | null)?.customer_id
+  if (!customerId) return { error: 'Subscription not found' }
 
   const end = resumeDate ?? formatInTimeZone(new Date(), 'Asia/Dubai', 'yyyy-MM-dd')
   if (end < pause.pause_start) return { error: 'Resume date cannot be before the pause start date' }
 
-  const { error } = await admin
-    .from('subscription_meal_pauses')
-    .update({ pause_end: end })
-    .eq('id', pauseId)
-  if (error) return { error: error.message }
+  const result = await gateOrApply(
+    admin, user.role === 'owner', user.id, customerId, pause.subscription_id,
+    end, null, 'meal_resume',
+    `Resume meal from ${end} (pause ${pauseId})`,
+    { pause_id: pauseId, resume_date: end },
+    async () => {
+      const { error } = await admin.from('subscription_meal_pauses').update({ pause_end: end }).eq('id', pauseId)
+      return { error: error?.message }
+    },
+  )
+  if (result.error) return result
 
   revalidatePath('/fixed-menu')
   revalidatePath('/outstanding')
-  return {}
+  return result
 }
 
 export async function deleteSubscriptionMealPause(id: string): Promise<FixedMenuActionResult> {
@@ -456,8 +593,17 @@ export async function deleteSubscriptionMealPause(id: string): Promise<FixedMenu
   if (user.role !== 'owner') return { error: 'Only the owner can delete a pause record' }
 
   const admin = createAdminClient()
+  const { data: pause } = await admin.from('subscription_meal_pauses').select('subscription_id, pause_start').eq('id', id).single()
+
   const { error } = await admin.from('subscription_meal_pauses').delete().eq('id', id)
   if (error) return { error: error.message }
+
+  // Deleting a pause can retroactively change what an already-issued
+  // invoice should have charged — only the owner can do this, so apply +
+  // reconcile directly rather than routing through approval.
+  if (pause) {
+    await reconcileInvoicesForSubscription(admin, pause.subscription_id, user.id, `Removed pause record starting ${pause.pause_start}`)
+  }
 
   revalidatePath('/fixed-menu')
   revalidatePath('/outstanding')

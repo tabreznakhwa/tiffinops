@@ -1,6 +1,17 @@
 import { createAdminClient } from '@/lib/supabase/admin'
 import { formatInTimeZone } from 'date-fns-tz'
 import { computeFixedInvoiceAmounts, buildFixedPlanLineItems } from './fixedPlanInvoiceLines'
+import { calcSubscriptionCharge, isMealPausedOn, type MealPause } from '@/lib/fixed-menu/proration'
+
+// Human-readable note for the invoice line when a meal pause reduced the
+// flat plan rate for this billing period — keeps the bill self-explanatory.
+function prorationNoteFor(pauses: MealPause[]): string | undefined {
+  if (!pauses.length) return undefined
+  const label = (m: string) => m.charAt(0).toUpperCase() + m.slice(1)
+  return pauses
+    .map(p => `${label(p.meal_period)} paused ${p.pause_start}${p.pause_end ? ` to ${p.pause_end}` : ' onward'}`)
+    .join('; ')
+}
 
 export type GenerateResult = {
   generated: number
@@ -70,6 +81,10 @@ export async function generateMonthlyInvoices(
       id,
       customer_id,
       agreed_monthly_price,
+      meal_prices,
+      start_date,
+      end_date,
+      status,
       fixed_plan_id,
       fixed_plans(plan_name, meal_periods),
       customers(full_name, customer_code, payment_terms, customer_type)
@@ -117,6 +132,24 @@ export async function generateMonthlyInvoices(
     }
   }
 
+  // Meal pauses overlapping this billing period, per subscription — used to
+  // prorate the flat plan rate for any meal a customer stopped mid-cycle.
+  const pausesBySub = new Map<string, MealPause[]>()
+  const postpaidSubIds = postpaidSubs.map(s => s.id)
+  if (postpaidSubIds.length) {
+    const { data: pauseRows } = await admin
+      .from('subscription_meal_pauses')
+      .select('subscription_id, meal_period, pause_start, pause_end')
+      .in('subscription_id', postpaidSubIds)
+      .lte('pause_start', periodEnd)
+      .or(`pause_end.is.null,pause_end.gte.${periodStart}`)
+    for (const p of pauseRows ?? []) {
+      const list = pausesBySub.get(p.subscription_id) ?? []
+      list.push({ meal_period: p.meal_period, pause_start: p.pause_start, pause_end: p.pause_end })
+      pausesBySub.set(p.subscription_id, list)
+    }
+  }
+
   // Fetch existing invoices for this billing period to skip duplicates
   const { data: existingInvoices } = await admin
     .from('invoices')
@@ -151,11 +184,27 @@ export async function generateMonthlyInvoices(
 
     const plan = sub.fixed_plans as unknown as { plan_name: string; meal_periods: string[] | null } | null
 
-    const amount = parseFloat(String(sub.agreed_monthly_price))
-    if (!amount || amount <= 0) {
+    const rawAmount = parseFloat(String(sub.agreed_monthly_price))
+    if (!rawAmount || rawAmount <= 0) {
       skipped++
       continue
     }
+
+    // Prorate the flat plan rate for any meal the customer stopped mid-cycle
+    // (subscription_meal_pauses) — see lib/fixed-menu/proration.ts.
+    const subPauses = pausesBySub.get(sub.id) ?? []
+    const amount = calcSubscriptionCharge({
+      mealPeriods:        plan?.meal_periods ?? [],
+      agreedMonthlyPrice: rawAmount,
+      mealPrices:         sub.meal_prices,
+      subStart:           sub.start_date,
+      subEnd:             sub.end_date,
+      subStatus:          sub.status,
+      pauses:             subPauses,
+      rangeFrom:          periodStart,
+      rangeTo:            periodEnd,
+    })
+    const prorationNote = prorationNoteFor(subPauses)
 
     // Extra credit orders this customer placed in their billing period. For a
     // fixed-menu customer, orders from a meal period the plan covers are
@@ -169,7 +218,7 @@ export async function generateMonthlyInvoices(
         if (o.customer_id !== sub.customer_id) continue
         if (o.order_date < periodStart || o.order_date > periodEnd) continue
         const amt = parseFloat(o.total_amount)
-        if (coveredMeals.has(o.meal_period)) {
+        if (coveredMeals.has(o.meal_period) && !isMealPausedOn(subPauses, o.meal_period, o.order_date)) {
           inPlanUsage += amt
         } else {
           const key = o.meal_period as 'breakfast' | 'lunch' | 'dinner'
@@ -178,6 +227,13 @@ export async function generateMonthlyInvoices(
       }
     }
     const outOfPlanTotal = Object.values(outOfPlanExtras).reduce((s, v) => s + (v ?? 0), 0)
+
+    // A meal pause covering the whole period can bring the prorated plan
+    // charge to zero — skip only if there's truly nothing to bill.
+    if (amount <= 0 && outOfPlanTotal <= 0) {
+      skipped++
+      continue
+    }
 
     // Generate invoice number
     const { data: invoiceNumber, error: numErr } = await admin.rpc('next_invoice_number')
@@ -218,6 +274,7 @@ export async function generateMonthlyInvoices(
       amount,
       inPlanUsage,
       outOfPlanExtras,
+      prorationNote,
     })
 
     const { error: itemErr } = await admin.from('invoice_items').insert(lineItems)

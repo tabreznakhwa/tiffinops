@@ -86,6 +86,7 @@ export default async function OutstandingPage({
     { data: customers },
     { data: plansData },
     { data: subsData },
+    mealPauses,
     balances,
     lastPayments,
     oldestDebts,
@@ -110,7 +111,13 @@ export default async function OutstandingPage({
     // clamped before charges are summed.
     admin
       .from('customer_subscriptions')
-      .select('id, customer_id, start_date, end_date, agreed_monthly_price, status, fixed_plans(meal_periods)'),
+      .select('id, customer_id, start_date, end_date, agreed_monthly_price, meal_prices, status, fixed_plans(meal_periods)'),
+    fetchPaged<{ subscription_id: string; meal_period: string; pause_start: string; pause_end: string | null }>((f, t) => admin
+      .from('subscription_meal_pauses')
+      .select('subscription_id, meal_period, pause_start, pause_end')
+      .lte('pause_start', effectiveTo)
+      .or(`pause_end.is.null,pause_end.gte.${effectiveFrom}`)
+      .range(f, t)),
     // Per-customer order and payment totals, aggregated in Postgres
     getCustomerBalancesInRange(admin, effectiveFrom, effectiveTo),
     // Per-customer most recent payment — all-time, not scoped to the range above
@@ -158,15 +165,27 @@ export default async function OutstandingPage({
   ])
 
   const customerList = customers ?? []
+  const pausesBySub = new Map<string, { meal_period: string; pause_start: string; pause_end: string | null }[]>()
+  for (const p of mealPauses ?? []) {
+    const list = pausesBySub.get(p.subscription_id)
+    const row = { meal_period: p.meal_period, pause_start: p.pause_start, pause_end: p.pause_end }
+    if (list) list.push(row)
+    else pausesBySub.set(p.subscription_id, [row])
+  }
   const allSubs = ((subsData ?? []) as unknown as {
     id: string
     customer_id: string
     start_date: string
     end_date: string | null
     agreed_monthly_price: string
+    meal_prices: Record<string, string> | null
     status: string
     fixed_plans: { meal_periods: string[] | null } | null
-  }[]).map(s => ({ ...s, meal_periods: s.fixed_plans?.meal_periods ?? null }))
+  }[]).map(s => ({
+    ...s,
+    meal_periods: s.fixed_plans?.meal_periods ?? null,
+    meal_pauses: pausesBySub.get(s.id) ?? [],
+  }))
 
   const balanceMap = new Map(balances.map(b => [b.customer_id, b]))
   const lastPaymentMap = new Map(lastPayments.map(p => [p.customer_id, p]))

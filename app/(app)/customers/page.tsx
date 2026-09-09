@@ -24,6 +24,7 @@ export default async function CustomersPage() {
   const [
     { data: customers },
     { data: allSubs },
+    { data: mealPauses },
     orderAndPaymentTotals,
   ] = await Promise.all([
     admin.from('customers').select('*').order('full_name'),
@@ -31,7 +32,12 @@ export default async function CustomersPage() {
     // Every subscription row — all statuses, so overlapping rows can be clamped
     admin
       .from('customer_subscriptions')
-      .select('id, customer_id, start_date, end_date, status, agreed_monthly_price, fixed_plans(meal_periods)'),
+      .select('id, customer_id, start_date, end_date, status, agreed_monthly_price, meal_prices, fixed_plans(meal_periods)'),
+    admin
+      .from('subscription_meal_pauses')
+      .select('subscription_id, meal_period, pause_start, pause_end')
+      .lte('pause_start', billTo)
+      .or(`pause_end.is.null,pause_end.gte.${monthStart}`),
 
     // Orders billed and payments received this month, aggregated in Postgres
     getCustomerBalancesInRange(admin, monthStart, billTo),
@@ -41,15 +47,29 @@ export default async function CustomersPage() {
   // Using the flat monthly rate here used to over-bill anyone who joined
   // mid-month; chargeForCustomer also removes double-billing when an old
   // subscription overlaps its replacement.
+  const pausesBySub = new Map<string, { meal_period: string; pause_start: string; pause_end: string | null }[]>()
+  for (const p of mealPauses ?? []) {
+    const list = pausesBySub.get(p.subscription_id)
+    const row = { meal_period: p.meal_period, pause_start: p.pause_start, pause_end: p.pause_end }
+    if (list) list.push(row)
+    else pausesBySub.set(p.subscription_id, [row])
+  }
+
   const subsByCustomer = groupSubscriptionsByCustomer(
     ((allSubs ?? []) as unknown as {
+      id: string
       customer_id: string
       start_date: string
       end_date: string | null
       status: string
       agreed_monthly_price: string
+      meal_prices: Record<string, string> | null
       fixed_plans: { meal_periods: string[] | null } | null
-    }[]).map(s => ({ ...s, meal_periods: s.fixed_plans?.meal_periods ?? null }))
+    }[]).map(s => ({
+      ...s,
+      meal_periods: s.fixed_plans?.meal_periods ?? null,
+      meal_pauses: pausesBySub.get(s.id) ?? [],
+    }))
   )
 
   // positive = amount still due; negative = credit/overpaid

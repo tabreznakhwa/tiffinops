@@ -27,6 +27,9 @@ export default async function DashboardPage({
   const monthStart = `${monthStr}-01`
   const [y, m]   = monthStr.split('-').map(Number)
   const monthEnd = new Date(y, m, 1).toISOString().split('T')[0]
+  const monthLastDay = new Date(new Date(monthEnd + 'T00:00:00Z').getTime() - 86400000)
+    .toISOString().split('T')[0]
+  const billToday = todayStr < monthLastDay ? todayStr : monthLastDay
 
   // Last 30 days
   const d30Start = new Date(now.getTime() - 29 * 86400000).toISOString().split('T')[0]
@@ -85,6 +88,7 @@ export default async function DashboardPage({
     { data: allCustomers },
     { data: newCustomers },
     { data: allSubs },
+    { data: mealPauses },
     { data: todayOrders },
     { count: pendingApprovals },
     { data: recentPayments },
@@ -110,7 +114,11 @@ export default async function DashboardPage({
     // ALL subscriptions (not just active) — needed so overlapping rows can be
     // clamped before charges are summed. See lib/billing/subscription-charge.
     admin.from('customer_subscriptions')
-      .select('id, customer_id, start_date, end_date, status, agreed_monthly_price, customers(full_name, customer_code), fixed_plans(meal_periods)'),
+      .select('id, customer_id, start_date, end_date, status, agreed_monthly_price, meal_prices, customers(full_name, customer_code), fixed_plans(meal_periods)'),
+    admin.from('subscription_meal_pauses')
+      .select('subscription_id, meal_period, pause_start, pause_end')
+      .lte('pause_start', billToday)
+      .or(`pause_end.is.null,pause_end.gte.${monthStart}`),
     admin.from('orders').select('id, meal_period')
       .eq('order_date', todayStr).not('order_status', 'in', EXCLUDE_STATUSES),
     admin.from('approval_requests').select('*', { count: 'exact', head: true }).eq('status', 'pending'),
@@ -147,12 +155,24 @@ export default async function DashboardPage({
     end_date: string | null
     status: string
     agreed_monthly_price: string
+    meal_prices: Record<string, string> | null
     customers: { full_name: string; customer_code: string } | null
     fixed_plans: { meal_periods: string[] | null } | null
     meal_periods?: string[] | null
   }
+  const pausesBySub = new Map<string, { meal_period: string; pause_start: string; pause_end: string | null }[]>()
+  for (const p of mealPauses ?? []) {
+    const list = pausesBySub.get(p.subscription_id)
+    const row = { meal_period: p.meal_period, pause_start: p.pause_start, pause_end: p.pause_end }
+    if (list) list.push(row)
+    else pausesBySub.set(p.subscription_id, [row])
+  }
   const allSubRows = ((allSubs ?? []) as unknown as SubRow[])
-    .map(s => ({ ...s, meal_periods: s.fixed_plans?.meal_periods ?? null }))
+    .map(s => ({
+      ...s,
+      meal_periods: s.fixed_plans?.meal_periods ?? null,
+      meal_pauses: pausesBySub.get(s.id) ?? [],
+    }))
   const activeSubRows = allSubRows.filter(s => s.status === 'active')
 
   const todayRevenue  = (todayPayments ?? []).reduce((s, p) => s + parseFloat(String(p.amount)), 0)
@@ -204,10 +224,6 @@ export default async function DashboardPage({
   for (const p of monthPayWithCust ?? []) {
     monthPayMap.set(p.customer_id, (monthPayMap.get(p.customer_id) ?? 0) + parseFloat(String(p.amount)))
   }
-
-  const monthLastDay = new Date(new Date(monthEnd + 'T00:00:00Z').getTime() - 86400000)
-    .toISOString().split('T')[0]
-  const billToday = todayStr < monthLastDay ? todayStr : monthLastDay
 
   const subsByCustomer = groupSubscriptionsByCustomer(allSubRows)
 

@@ -34,3 +34,6 @@ Thumbs.db
 
 .vercel
 .env*
+
+# graphify tool cache/output — not part of the app
+graphify-out/

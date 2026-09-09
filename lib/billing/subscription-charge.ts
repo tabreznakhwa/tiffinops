@@ -5,6 +5,8 @@
 // Previously the Dashboard and Customers page used the flat monthly rate,
 // which over-billed anyone who joined mid-month.
 
+import { calcSubscriptionCharge, isMealPausedOn, type MealPause } from '@/lib/fixed-menu/proration'
+
 export type ChargeableSubscription = {
   id?: string
   customer_id?: string
@@ -12,6 +14,8 @@ export type ChargeableSubscription = {
   end_date: string | null      // 'YYYY-MM-DD' — billing cutoff for paused/cancelled
   status: string
   agreed_monthly_price: string | number
+  meal_prices?: Record<string, string | number> | null
+  meal_pauses?: MealPause[]
   /**
    * Meals this plan covers, from fixed_plans.meal_periods. Only subscriptions
    * covering the same meals supersede one another; a breakfast plan and a
@@ -134,7 +138,17 @@ export function chargeForCustomer(
         if (!effectiveEnd || effectiveEnd > dayBeforeNext) effectiveEnd = dayBeforeNext
       }
 
-      total += chargeForRange(sub.start_date, effectiveEnd, rate, rangeFrom, rangeTo)
+      total += calcSubscriptionCharge({
+        mealPeriods:        sub.meal_periods ?? [],
+        agreedMonthlyPrice: rate,
+        mealPrices:         sub.meal_prices ?? null,
+        subStart:           sub.start_date,
+        subEnd:             effectiveEnd,
+        subStatus:          sub.status,
+        pauses:             sub.meal_pauses ?? [],
+        rangeFrom,
+        rangeTo,
+      })
     }
   }
 
@@ -160,7 +174,7 @@ export function mealPeriodsCoveredOn(
     if (!best || s.start_date > best.start_date) best = s
   }
   if (!best?.meal_periods?.length) return null
-  return new Set(best.meal_periods)
+  return new Set(best.meal_periods.filter(m => !isMealPausedOn(best.meal_pauses ?? [], m, date)))
 }
 
 /** Group subscription rows by customer_id. */

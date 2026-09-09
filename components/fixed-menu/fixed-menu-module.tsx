@@ -96,6 +96,11 @@ export function FixedMenuModule({
   const [pauseMealSub, setPauseMealSub] = useState<{ id: string; meals: string[] } | undefined>()
   const [endSubTarget, setEndSubTarget] = useState<{ id: string; name: string } | undefined>()
   const [busy, setBusy]                 = useState<string | null>(null)
+  // Backdated changes don't apply immediately — they go to the owner for
+  // approval instead (see lib/fixed-menu/subscription-approval.ts). This
+  // banner is the only feedback for the quick from-card actions below, since
+  // nothing on the card itself would otherwise change to signal that.
+  const [notice, setNotice] = useState('')
 
   // ── Derived counts ──────────────────────────────────────────────────────────
 
@@ -148,15 +153,27 @@ export function FixedMenuModule({
 
   async function handleSubStatus(id: string, status: 'active' | 'paused' | 'cancelled' | 'completed') {
     setBusy(id)
-    await updateSubscriptionStatus(id, status)
+    setNotice('')
+    const result = await updateSubscriptionStatus(id, status)
     setBusy(null)
+    if (result?.error) {
+      setNotice(result.error)
+    } else if (result?.pendingApproval) {
+      setNotice('This is a backdated change, so it needs owner approval before it applies. Submitted for review.')
+    }
     router.refresh()
   }
 
   async function handleResumeMeal(pauseId: string) {
     setBusy('pause-' + pauseId)
-    await resumeSubscriptionMeal(pauseId)
+    setNotice('')
+    const result = await resumeSubscriptionMeal(pauseId)
     setBusy(null)
+    if (result?.error) {
+      setNotice(result.error)
+    } else if (result?.pendingApproval) {
+      setNotice('This is a backdated change, so it needs owner approval before it applies. Submitted for review.')
+    }
     router.refresh()
   }
 
@@ -183,6 +200,18 @@ export function FixedMenuModule({
 
   return (
     <div>
+      {notice && (
+        <div
+          className="flex items-start justify-between gap-3 mb-4 px-4 py-3 rounded-[12px] text-sm font-medium"
+          style={{ background: 'var(--color-gold-soft, #FEF3C7)', color: 'var(--color-gold, #92400E)', border: '1px solid #FDE68A' }}
+        >
+          <span>{notice}</span>
+          <button onClick={() => setNotice('')} className="font-bold flex-shrink-0" aria-label="Dismiss">
+            ×
+          </button>
+        </div>
+      )}
+
       {/* Page header */}
       <div className="flex items-start justify-between gap-3 mb-5">
         <div>

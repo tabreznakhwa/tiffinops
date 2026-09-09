@@ -489,6 +489,7 @@ export function OutstandingModule({ rows, plans, totalCustomers, currency, userR
   const [editingDate, setEditingDate] = useState<DateEdit | null>(null)
   const [savingDate,  setSavingDate]  = useState(false)
   const [dateError,   setDateError]   = useState<string | null>(null)
+  const [dateNotice,  setDateNotice]  = useState<{ customerId: string; message: string } | null>(null)
   const [isFiltering, startFiltering] = useTransition()
 
   // Date range lives in the URL so the server can aggregate only that window.
@@ -507,6 +508,15 @@ export function OutstandingModule({ rows, plans, totalCustomers, currency, userR
       : await updateSubscriptionPauseDate(editingDate.subId, editingDate.value || null)
     setSavingDate(false)
     if (res.error) { setDateError(res.error); return }
+    if (res.pendingApproval) {
+      setDateNotice({
+        customerId: editingDate.customerId,
+        message: 'Backdated — sent for owner approval. It will apply once reviewed.',
+      })
+      setEditingDate(null)
+      router.refresh()
+      return
+    }
     setEditingDate(null)
     router.refresh()
   }
@@ -928,6 +938,9 @@ export function OutstandingModule({ rows, plans, totalCustomers, currency, userR
                             {/* Inline error */}
                             {dateError && editingDate?.customerId === row.id && (
                               <p className="text-[10px]" style={{ color: 'var(--color-red)' }}>{dateError}</p>
+                            )}
+                            {dateNotice && dateNotice.customerId === row.id && (
+                              <p className="text-[10px] font-semibold" style={{ color: 'var(--color-gold)' }}>{dateNotice.message}</p>
                             )}
 
                             {canCancelSub && (
