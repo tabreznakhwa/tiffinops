@@ -82,9 +82,12 @@ export function RecordPaymentModal({
   const [warning, setWarning]       = useState('')
   const [done, setDone]             = useState(false)
 
-  const [openInvoices, setOpenInvoices]           = useState<OpenInvoice[]>([])
-  const [invoicesLoading, setInvoicesLoading]     = useState(false)
-  const [selectedInvoiceId, setSelectedInvoiceId] = useState<string>('')
+  const [openInvoices, setOpenInvoices]         = useState<OpenInvoice[]>([])
+  const [invoicesLoading, setInvoicesLoading]   = useState(false)
+  // Which invoices this one payment is applied to, and how much of the
+  // payment goes to each — lets one card/cash payment cover several
+  // invoices at once (e.g. customer settles two months together).
+  const [allocations, setAllocations]           = useState<Record<string, string>>({})
 
   const requiresRef = MODES.find(m => m.value === mode)?.requiresRef ?? false
 
@@ -92,8 +95,8 @@ export function RecordPaymentModal({
   useEffect(() => { if (!requiresRef) setReference('') }, [requiresRef])
 
   // Load the customer's open invoices for the "Apply to Invoice" picker.
-  // No customer → nothing to load; openInvoices/selectedInvoiceId are reset
-  // where the customer is cleared (the "Change" button below) instead of here.
+  // No customer → nothing to load; openInvoices/allocations are reset where
+  // the customer is cleared (the "Change" button below) instead of here.
   useEffect(() => {
     if (!customer) return
     let cancelled = false
@@ -106,8 +109,10 @@ export function RecordPaymentModal({
           // Lock onto the requested invoice (month-wise "Pay" buttons). The
           // caller's initialAmount already holds that month's remaining, so
           // only the selection needs setting here.
-          if (initialInvoiceId && invs.some(inv => inv.id === initialInvoiceId)) {
-            setSelectedInvoiceId(initialInvoiceId)
+          const inv = initialInvoiceId && invs.find(i => i.id === initialInvoiceId)
+          if (inv) {
+            const outstanding = Math.max(0, parseFloat(inv.total_amount) - inv.paid_so_far)
+            setAllocations({ [inv.id]: outstanding.toFixed(2) })
           }
         }
       } finally {
@@ -118,13 +123,41 @@ export function RecordPaymentModal({
     return () => { cancelled = true }
   }, [customer, initialInvoiceId])
 
-  const selectedInvoice = openInvoices.find(inv => inv.id === selectedInvoiceId) ?? null
+  const selectedIds = Object.keys(allocations)
+  const allocatedTotal = selectedIds.reduce((sum, id) => sum + (parseFloat(allocations[id]) || 0), 0)
+  const enteredAmount = parseFloat(amount) || 0
+  // How much of the entered amount isn't tied to any invoice yet — shown so
+  // the person recording the payment can see it doesn't silently vanish.
+  const unallocated = Math.max(0, enteredAmount - allocatedTotal)
 
-  function selectInvoice(inv: OpenInvoice | null) {
-    if (!inv) { setSelectedInvoiceId(''); return }
-    setSelectedInvoiceId(inv.id)
-    const outstanding = Math.max(0, parseFloat(inv.total_amount) - inv.paid_so_far)
-    setAmount(outstanding.toFixed(2))
+  function toggleInvoice(inv: OpenInvoice) {
+    setAllocations(prev => {
+      if (prev[inv.id] !== undefined) {
+        const next = { ...prev }
+        delete next[inv.id]
+        return next
+      }
+      const outstanding = Math.max(0, parseFloat(inv.total_amount) - inv.paid_so_far)
+      const alreadyAllocated = Object.values(prev).reduce((s, v) => s + (parseFloat(v) || 0), 0)
+      const remainingEntered = Math.max(0, (parseFloat(amount) || 0) - alreadyAllocated)
+      // Default this invoice's share to whichever is smaller — its own
+      // outstanding balance, or whatever's left of the amount already
+      // typed in — so allocations don't overshoot the payment by default.
+      const amountToUse = amount !== '' ? Math.min(outstanding, remainingEntered || outstanding) : outstanding
+      const next = { ...prev, [inv.id]: amountToUse.toFixed(2) }
+      // First invoice picked with no amount typed yet — seed the Amount
+      // field so a single-invoice pick behaves like it used to.
+      if (amount === '' && Object.keys(prev).length === 0) setAmount(amountToUse.toFixed(2))
+      return next
+    })
+  }
+
+  function clearInvoices() {
+    setAllocations({})
+  }
+
+  function setAllocationAmount(id: string, value: string) {
+    setAllocations(prev => ({ ...prev, [id]: value }))
   }
 
   const filtered = customers.filter(c => {
@@ -150,7 +183,9 @@ export function RecordPaymentModal({
       payment_date: date,
       notes: notes.trim() || undefined,
       is_advance: isAdvance,
-      apply_to_invoice_id: selectedInvoiceId || undefined,
+      allocations: selectedIds.length > 0
+        ? selectedIds.map(id => ({ invoice_id: id, amount: parseFloat(allocations[id]) || 0 }))
+        : undefined,
     })
 
     setLoading(false)
@@ -159,8 +194,11 @@ export function RecordPaymentModal({
     onClose()
   }
 
+  const allocationsValid = selectedIds.every(id => (parseFloat(allocations[id]) || 0) > 0) &&
+    allocatedTotal - enteredAmount <= 0.01
+
   const canSubmit = !!customer && amount !== '' && parseFloat(amount) > 0 &&
-    date !== '' && (!requiresRef || reference.trim().length > 0) && !loading
+    date !== '' && (!requiresRef || reference.trim().length > 0) && allocationsValid && !loading
 
   return (
     <div
@@ -212,7 +250,7 @@ export function RecordPaymentModal({
                       setCustomer(null)
                       setQuery('')
                       setOpenInvoices([])
-                      setSelectedInvoiceId('')
+                      setAllocations({})
                     }}
                     className="text-xs font-bold"
                     style={{ color: 'var(--color-ember)' }}
@@ -256,62 +294,104 @@ export function RecordPaymentModal({
             )}
           </div>
 
-          {/* Apply to Invoice (optional) */}
+          {/* Apply to Invoice(s) (optional) — multi-select so one payment can cover several invoices */}
           {customer && (
             <div>
-              <label className="block text-xs font-semibold mb-1.5" style={{ color: 'var(--color-muted)' }}>
-                Apply to Invoice
-              </label>
+              <div className="flex items-center justify-between mb-1.5">
+                <label className="block text-xs font-semibold" style={{ color: 'var(--color-muted)' }}>
+                  Apply to Invoice(s)
+                </label>
+                {selectedIds.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={clearInvoices}
+                    className="text-xs font-bold"
+                    style={{ color: 'var(--color-ember)' }}
+                  >
+                    Clear
+                  </button>
+                )}
+              </div>
               {invoicesLoading ? (
                 <p className="text-xs" style={{ color: 'var(--color-muted)' }}>Loading invoices…</p>
               ) : openInvoices.length === 0 ? (
                 <p className="text-xs" style={{ color: 'var(--color-muted)' }}>No open invoices for this customer</p>
               ) : (
                 <div className="rounded-[10px] overflow-hidden" style={{ border: '1px solid var(--color-border)' }}>
-                  <button
-                    type="button"
-                    onClick={() => selectInvoice(null)}
-                    className="w-full flex items-center justify-between px-3 py-2 text-left text-xs font-semibold"
-                    style={{
-                      background: !selectedInvoiceId ? 'var(--color-saffron-soft)' : 'var(--color-cream)',
-                      color: !selectedInvoiceId ? 'var(--color-saffron)' : 'var(--color-muted)',
-                    }}
-                  >
-                    Don&apos;t link to an invoice
-                  </button>
-                  {openInvoices.map(inv => {
-                    const on = selectedInvoiceId === inv.id
+                  {openInvoices.map((inv, i) => {
+                    const on = allocations[inv.id] !== undefined
                     const due = Math.max(0, parseFloat(inv.total_amount) - inv.paid_so_far)
                     return (
-                      <button
+                      <div
                         key={inv.id}
-                        type="button"
-                        onClick={() => selectInvoice(inv)}
-                        className="w-full flex items-center justify-between px-3 py-2 text-left"
                         style={{
-                          borderTop: '1px solid var(--color-border)',
+                          borderTop: i > 0 ? '1px solid var(--color-border)' : undefined,
                           background: on ? 'var(--color-saffron-soft)' : 'var(--color-surface)',
                         }}
                       >
-                        <span className="text-xs" style={{ color: on ? 'var(--color-saffron)' : 'var(--color-ink)' }}>
-                          <span className="font-semibold">{inv.invoice_number}</span>
-                          {' · '}{INVOICE_TYPE_LABEL[inv.invoice_type]}
-                          {' · '}{INVOICE_STATUS_LABEL[inv.status] ?? inv.status}
-                        </span>
-                        <span className="text-xs font-semibold num" style={{ color: on ? 'var(--color-saffron)' : 'var(--color-ink)' }}>
-                          {due.toFixed(2)} due
-                        </span>
-                      </button>
+                        <button
+                          type="button"
+                          onClick={() => toggleInvoice(inv)}
+                          className="w-full flex items-center gap-2.5 px-3 py-2 text-left"
+                        >
+                          <span
+                            className="flex-shrink-0 w-[15px] h-[15px] rounded-[4px] flex items-center justify-center"
+                            style={{ background: on ? 'var(--color-saffron)' : 'var(--color-cream)', border: `1.3px solid ${on ? 'var(--color-saffron)' : 'var(--color-border)'}` }}
+                          >
+                            {on && (
+                              <svg viewBox="0 0 12 12" fill="none" className="w-2.5 h-2.5">
+                                <path d="M2 6l3 3 5-5" stroke="#fff" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
+                              </svg>
+                            )}
+                          </span>
+                          <span className="flex-1 text-xs" style={{ color: on ? 'var(--color-saffron)' : 'var(--color-ink)' }}>
+                            <span className="font-semibold">{inv.invoice_number}</span>
+                            {' · '}{INVOICE_TYPE_LABEL[inv.invoice_type]}
+                            {' · '}{INVOICE_STATUS_LABEL[inv.status] ?? inv.status}
+                          </span>
+                          <span className="text-xs font-semibold num" style={{ color: on ? 'var(--color-saffron)' : 'var(--color-ink)' }}>
+                            {due.toFixed(2)} due
+                          </span>
+                        </button>
+                        {on && (
+                          <div className="flex items-center gap-2 px-3 pb-2 pl-[34px]">
+                            <span className="text-xs" style={{ color: 'var(--color-muted)' }}>Allocate</span>
+                            <div className="relative">
+                              <span className="absolute left-2 top-1/2 -translate-y-1/2 text-xs font-semibold pointer-events-none" style={{ color: 'var(--color-muted)' }}>
+                                AED
+                              </span>
+                              <input
+                                type="number"
+                                value={allocations[inv.id]}
+                                onChange={e => setAllocationAmount(inv.id, e.target.value)}
+                                min="0.01"
+                                step="0.01"
+                                className="rounded-[8px] pl-9 pr-2 py-1 text-xs w-28 focus:outline-none focus:ring-1 focus:ring-saffron num"
+                                style={{ background: 'var(--color-surface)', border: '1px solid var(--color-border)', color: 'var(--color-ink)' }}
+                              />
+                            </div>
+                          </div>
+                        )}
+                      </div>
                     )
                   })}
                 </div>
               )}
-              {selectedInvoice && (
-                <p className="text-xs mt-1.5" style={{ color: 'var(--color-muted)' }}>
-                  {selectedInvoice.status === 'draft'
-                    ? 'This will issue the invoice and mark it Paid/Partial automatically.'
-                    : 'This will mark the invoice as Paid/Partial automatically.'}
-                </p>
+              {selectedIds.length > 0 && (
+                <div className="mt-1.5 space-y-0.5">
+                  <p className="text-xs" style={{ color: 'var(--color-muted)' }}>
+                    {selectedIds.length > 1
+                      ? `This one payment will be split across ${selectedIds.length} invoices — draft invoices among them will be issued, and each will be marked Paid/Partial automatically.`
+                      : (openInvoices.find(inv => inv.id === selectedIds[0])?.status === 'draft'
+                        ? 'This will issue the invoice and mark it Paid/Partial automatically.'
+                        : 'This will mark the invoice as Paid/Partial automatically.')}
+                  </p>
+                  {unallocated > 0.004 && (
+                    <p className="text-xs font-semibold" style={{ color: 'var(--color-saffron)' }}>
+                      AED {unallocated.toFixed(2)} of the amount below won&apos;t be linked to an invoice.
+                    </p>
+                  )}
+                </div>
               )}
             </div>
           )}

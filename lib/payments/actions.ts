@@ -23,6 +23,13 @@ const RecordPaymentSchema = z.object({
   notes: z.string().optional().transform(v => v?.trim() || null),
   is_advance: z.boolean().optional().default(false),
   apply_to_invoice_id: z.string().uuid().optional(),
+  // Split one payment across several invoices (e.g. the customer hands over
+  // one cash/card payment that covers two invoices at once). Takes
+  // precedence over apply_to_invoice_id when both are present.
+  allocations: z.array(z.object({
+    invoice_id: z.string().uuid(),
+    amount: z.coerce.number().positive('Allocation amount must be greater than 0'),
+  })).optional(),
 })
 
 export async function recordPayment(input: {
@@ -34,6 +41,7 @@ export async function recordPayment(input: {
   notes?: string
   is_advance?: boolean
   apply_to_invoice_id?: string
+  allocations?: { invoice_id: string; amount: number }[]
 }): Promise<PaymentActionResult> {
   const user = await requireAuth()
 
@@ -52,66 +60,115 @@ export async function recordPayment(input: {
     return { error: `Reference number is required for ${parsed.data.mode.replace('_', ' ')} payments` }
   }
 
+  // Normalize both call shapes into one: a list of (invoice, amount)
+  // allocations. A plain apply_to_invoice_id becomes a single allocation for
+  // the full amount — exactly what it did before this whole payment was
+  // linked to that one invoice, so existing callers (the Outstanding page's
+  // "Pay" buttons, etc.) behave identically.
+  const allocations = parsed.data.allocations && parsed.data.allocations.length > 0
+    ? parsed.data.allocations
+    : parsed.data.apply_to_invoice_id
+      ? [{ invoice_id: parsed.data.apply_to_invoice_id, amount: parsed.data.amount }]
+      : []
+
+  if (allocations.length > 0) {
+    const ids = new Set(allocations.map(a => a.invoice_id))
+    if (ids.size !== allocations.length) return { error: 'Each invoice can only be allocated once' }
+
+    const allocatedTotal = allocations.reduce((sum, a) => sum + a.amount, 0)
+    if (allocatedTotal - parsed.data.amount > 0.01) {
+      return { error: 'The invoice allocations add up to more than the payment amount' }
+    }
+  }
+
   const admin = createAdminClient()
 
-  const invoiceId = parsed.data.apply_to_invoice_id
-  let invoiceWasDraft = false
-
-  if (invoiceId) {
-    const { data: invoice, error: invErr } = await admin
+  let draftInvoiceIds = new Set<string>()
+  if (allocations.length > 0) {
+    const { data: invoices, error: invErr } = await admin
       .from('invoices')
       .select('id, customer_id, status')
-      .eq('id', invoiceId)
-      .single()
+      .in('id', allocations.map(a => a.invoice_id))
 
-    if (invErr || !invoice) return { error: 'Invoice not found' }
-    if (invoice.customer_id !== parsed.data.customer_id) {
-      return { error: 'That invoice belongs to a different customer' }
+    if (invErr || !invoices || invoices.length !== allocations.length) {
+      return { error: 'One or more invoices could not be found' }
     }
-    if (invoice.status === 'cancelled' || invoice.status === 'written_off') {
-      return { error: `Cannot apply a payment to a ${invoice.status.replace('_', ' ')} invoice` }
+    for (const invoice of invoices) {
+      if (invoice.customer_id !== parsed.data.customer_id) {
+        return { error: 'One of the selected invoices belongs to a different customer' }
+      }
+      if (invoice.status === 'cancelled' || invoice.status === 'written_off') {
+        return { error: `Cannot apply a payment to a ${invoice.status.replace('_', ' ')} invoice` }
+      }
+      if (invoice.status === 'draft' && !['owner', 'manager'].includes(user.role)) {
+        return { error: 'Only an owner or manager can link a payment to a draft invoice — ask them to issue it first, or record this payment without linking it.' }
+      }
     }
-    if (invoice.status === 'draft' && !['owner', 'manager'].includes(user.role)) {
-      return { error: 'Only an owner or manager can link a payment to a draft invoice — ask them to issue it first, or record this payment without linking it.' }
-    }
-    invoiceWasDraft = invoice.status === 'draft'
+    draftInvoiceIds = new Set(invoices.filter(i => i.status === 'draft').map(i => i.id))
   }
 
-  // Generate payment number via DB sequence
-  const { data: payNumber, error: numErr } = await admin.rpc('next_payment_number')
-  if (numErr || !payNumber) {
-    return { error: 'Could not generate payment number — run 04_payment_enhancements.sql first.' }
+  // One payments row per allocation (payments.invoice_id is 1:1, so a
+  // multi-invoice split becomes multiple rows sharing the same
+  // date/mode/reference — the same underlying money), plus one extra
+  // unlinked row for anything left over if the invoices selected don't add
+  // up to the full amount paid (e.g. the customer overpaid — the rest sits
+  // unlinked, same as a normal payment recorded with no invoice at all).
+  const linkedTotal = allocations.reduce((sum, a) => sum + a.amount, 0)
+  const leftover = Math.max(0, parsed.data.amount - linkedTotal)
+  const rows: { invoice_id: string | null; amount: number }[] = allocations.map(a => ({ invoice_id: a.invoice_id, amount: a.amount }))
+  if (leftover > 0.004) rows.push({ invoice_id: null, amount: leftover })
+
+  for (const row of rows) {
+    // Generate payment number via DB sequence
+    const { data: payNumber, error: numErr } = await admin.rpc('next_payment_number')
+    if (numErr || !payNumber) {
+      return { error: 'Could not generate payment number — run 04_payment_enhancements.sql first.' }
+    }
+
+    const splitNote = rows.length > 1
+      ? `Part of a split payment of AED ${parsed.data.amount.toFixed(2)} across ${allocations.length} invoice${allocations.length === 1 ? '' : 's'}`
+      : null
+    const notes = [parsed.data.notes, splitNote].filter(Boolean).join(' — ') || null
+
+    const { error } = await admin.from('payments').insert({
+      payment_number: payNumber as string,
+      customer_id: parsed.data.customer_id,
+      amount: row.amount.toFixed(2),
+      mode: parsed.data.mode,
+      reference_number: parsed.data.reference_number,
+      payment_date: parsed.data.payment_date,
+      notes,
+      is_advance: parsed.data.is_advance ?? false,
+      invoice_id: row.invoice_id,
+      received_by: user.id,
+    })
+
+    if (error) return { error: error.message }
   }
-
-  const { error } = await admin.from('payments').insert({
-    payment_number: payNumber as string,
-    customer_id: parsed.data.customer_id,
-    amount: parsed.data.amount.toFixed(2),
-    mode: parsed.data.mode,
-    reference_number: parsed.data.reference_number,
-    payment_date: parsed.data.payment_date,
-    notes: parsed.data.notes,
-    is_advance: parsed.data.is_advance ?? false,
-    invoice_id: invoiceId ?? null,
-    received_by: user.id,
-  })
-
-  if (error) return { error: error.message }
 
   revalidatePath('/payments')
 
-  if (invoiceId) {
-    // The payment itself already succeeded above — never roll it back over
-    // a downstream status-update failure, just tell the user to finish it by hand.
-    try {
-      if (invoiceWasDraft) {
-        const issueResult = await issueInvoice(invoiceId)
-        if (issueResult.error) throw new Error(issueResult.error)
+  if (allocations.length > 0) {
+    // The payment(s) themselves already succeeded above — never roll them
+    // back over a downstream status-update failure, just tell the user to
+    // finish it by hand.
+    let anyFailed = false
+    for (const a of allocations) {
+      try {
+        if (draftInvoiceIds.has(a.invoice_id)) {
+          const issueResult = await issueInvoice(a.invoice_id)
+          if (issueResult.error) throw new Error(issueResult.error)
+        }
+        await reconcileInvoicePaymentStatus(admin, a.invoice_id)
+      } catch {
+        anyFailed = true
       }
-      await reconcileInvoicePaymentStatus(admin, invoiceId)
-      revalidatePath('/invoices')
-    } catch {
-      return { warning: 'Payment recorded, but the invoice status could not be updated automatically — please update it manually.' }
+    }
+    revalidatePath('/invoices')
+    if (anyFailed) {
+      return { warning: allocations.length > 1
+        ? 'Payment recorded, but one or more invoice statuses could not be updated automatically — please update them manually.'
+        : 'Payment recorded, but the invoice status could not be updated automatically — please update it manually.' }
     }
   }
 
