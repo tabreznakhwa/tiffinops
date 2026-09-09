@@ -1,0 +1,303 @@
+CONFIRM MODE — writing for real
+Period 2026-07-26 → 2026-08-25: invoices=61 (drafts=60), live orders=3626, unlinked=2836, voided-but-linked lines=6
+Actions: 113 invoices to finalize+issue (53 newly created), 0 manual-review cases, 3 skipped (not Mai Dubai)
+
+┌─────────┬────────────────┬──────────────────────────────────────┬─────────────┬──────────────┬────────────┬───────────┬────────────┬──────────┬────────────────┬──────────┬──────────┬─────────────┬────────────────┐
+│ (index) │ invoice        │ customer                             │ area        │ type         │ add_orders │ rm_voided │ orders_AED │ plan_AED │ plan_src       │ discount │ topup    │ final_total │ cancel_fixed   │
+├─────────┼────────────────┼──────────────────────────────────────┼─────────────┼──────────────┼────────────┼───────────┼────────────┼──────────┼────────────────┼──────────┼──────────┼─────────────┼────────────────┤
+│ 0       │ '(NEW)'        │ 'IRFAN 3294 (AC-CUST-00121)'         │ 'Mai Dubai' │ 'fixed_menu' │ 91         │ 0         │ '515.75'   │ '90.00'  │ 'fixed_draft'  │ '425.75' │ '0.00'   │ '90.00'     │ 'AC-INV-01339' │
+│ 1       │ '(NEW)'        │ 'ALI SAQLAIN  (AC-CUST-00124)'       │ 'Mai Dubai' │ 'fixed_menu' │ 93         │ 0         │ '531.00'   │ '130.00' │ 'fixed_draft'  │ '401.00' │ '0.00'   │ '130.00'    │ 'AC-INV-01326' │
+│ 2       │ '(NEW)'        │ 'ARSHAD 2217 (AC-CUST-00045)'        │ 'Mai Dubai' │ 'fixed_menu' │ 55         │ 0         │ '590.00'   │ '200.00' │ 'fixed_draft'  │ '390.00' │ '0.00'   │ '200.00'    │ 'AC-INV-01317' │
+│ 3       │ '(NEW)'        │ 'USMAN 2861 (AC-CUST-00118)'         │ 'Mai Dubai' │ 'fixed_menu' │ 78         │ 0         │ '453.50'   │ '90.00'  │ 'fixed_draft'  │ '363.50' │ '0.00'   │ '90.00'     │ 'AC-INV-01337' │
+│ 4       │ 'AC-INV-01365' │ 'WAQAR 2258 (AC-CUST-00053)'         │ 'Mai Dubai' │ 'hybrid'     │ 34         │ 0         │ '494.50'   │ '160.00' │ 'fixed_draft'  │ '334.50' │ '0.00'   │ '160.00'    │ 'AC-INV-01305' │
+│ 5       │ '(NEW)'        │ 'MEARG 3190  (AC-CUST-00116)'        │ 'Mai Dubai' │ 'fixed_menu' │ 62         │ 0         │ '532.50'   │ '200.00' │ 'fixed_draft'  │ '332.50' │ '0.00'   │ '200.00'    │ 'AC-INV-01320' │
+│ 6       │ '(NEW)'        │ 'SUNIL 2827 (AC-CUST-00011)'         │ 'Mai Dubai' │ 'fixed_menu' │ 57         │ 0         │ '450.75'   │ '150.00' │ 'fixed_draft'  │ '300.75' │ '0.00'   │ '150.00'    │ 'AC-INV-01350' │
+│ 7       │ '(NEW)'        │ 'SALMAN 2797 (AC-CUST-00148)'        │ 'Mai Dubai' │ 'fixed_menu' │ 66         │ 0         │ '439.25'   │ '150.00' │ 'fixed_draft'  │ '289.25' │ '0.00'   │ '150.00'    │ 'AC-INV-01329' │
+│ 8       │ '(NEW)'        │ 'JARNAIL SINGH 3248 (AC-CUST-00080)' │ 'Mai Dubai' │ 'fixed_menu' │ 64         │ 0         │ '407.00'   │ '130.00' │ 'fixed_draft'  │ '277.00' │ '0.00'   │ '130.00'    │ 'AC-INV-01333' │
+│ 9       │ '(NEW)'        │ 'FAISAL 552 (AC-CUST-00017)'         │ 'Mai Dubai' │ 'fixed_menu' │ 64         │ 0         │ '524.25'   │ '260.00' │ 'fixed_draft'  │ '264.25' │ '0.00'   │ '260.00'    │ 'AC-INV-01322' │
+│ 10      │ '(NEW)'        │ 'IFTIAZ 2964 (AC-CUST-00122)'        │ 'Mai Dubai' │ 'fixed_menu' │ 62         │ 0         │ '353.75'   │ '100.00' │ 'fixed_draft'  │ '253.75' │ '0.00'   │ '100.00'    │ 'AC-INV-01354' │
+│ 11      │ 'AC-INV-01375' │ 'HARUN (AC-CUST-00091)'              │ 'Mai Dubai' │ 'a_la_carte' │ 35         │ 0         │ '412.00'   │ '180.00' │ 'fixed_draft'  │ '232.00' │ '0.00'   │ '180.00'    │ 'AC-INV-01335' │
+│ 12      │ '(NEW)'        │ 'GEOFERY (AC-CUST-00115)'            │ 'Mai Dubai' │ 'fixed_menu' │ 63         │ 0         │ '411.00'   │ '180.00' │ 'fixed_draft'  │ '231.00' │ '0.00'   │ '180.00'    │ 'AC-INV-01336' │
+│ 13      │ '(NEW)'        │ 'IBRAHIM 975 (AC-CUST-00007)'        │ 'Mai Dubai' │ 'fixed_menu' │ 61         │ 0         │ '443.50'   │ '220.00' │ 'fixed_draft'  │ '223.50' │ '0.00'   │ '220.00'    │ 'AC-INV-01300' │
+│ 14      │ '(NEW)'        │ 'BABAR 1387 (AC-CUST-00058)'         │ 'Mai Dubai' │ 'fixed_menu' │ 62         │ 0         │ '363.25'   │ '140.00' │ 'fixed_draft'  │ '223.25' │ '0.00'   │ '140.00'    │ 'AC-INV-01344' │
+│ 15      │ '(NEW)'        │ 'INNOCENT (AC-CUST-00028)'           │ 'Mai Dubai' │ 'fixed_menu' │ 59         │ 0         │ '387.00'   │ '180.00' │ 'subscription' │ '207.00' │ '0.00'   │ '180.00'    │ ''             │
+│ 16      │ '(NEW)'        │ 'SYLVESTA (AC-CUST-00042)'           │ 'Mai Dubai' │ 'fixed_menu' │ 31         │ 0         │ '341.00'   │ '170.00' │ 'fixed_draft'  │ '171.00' │ '0.00'   │ '170.00'    │ 'AC-INV-01349' │
+│ 17      │ 'AC-INV-01383' │ 'ANWAR 733 (AC-CUST-00129)'          │ 'Mai Dubai' │ 'a_la_carte' │ 33         │ 0         │ '387.00'   │ '220.00' │ 'fixed_draft'  │ '167.00' │ '0.00'   │ '220.00'    │ 'AC-INV-01343' │
+│ 18      │ '(NEW)'        │ 'MAMOOR KHAN (AC-CUST-00079)'        │ 'Mai Dubai' │ 'fixed_menu' │ 50         │ 0         │ '294.00'   │ '135.00' │ 'fixed_draft'  │ '159.00' │ '0.00'   │ '135.00'    │ 'AC-INV-01342' │
+│ 19      │ '(NEW)'        │ 'TOMARSAB 3329 (AC-CUST-00201)'      │ 'Mai Dubai' │ 'fixed_menu' │ 66         │ 0         │ '460.25'   │ '320.00' │ 'fixed_draft'  │ '140.25' │ '0.00'   │ '320.00'    │ 'AC-INV-01360' │
+│ 20      │ '(NEW)'        │ 'MAKATA (AC-CUST-00041)'             │ 'Mai Dubai' │ 'fixed_menu' │ 31         │ 0         │ '353.00'   │ '220.00' │ 'fixed_draft'  │ '133.00' │ '0.00'   │ '220.00'    │ 'AC-INV-01348' │
+│ 21      │ '(NEW)'        │ 'Michael 3284 (AC-CUST-00141)'       │ 'Mai Dubai' │ 'fixed_menu' │ 31         │ 0         │ '319.00'   │ '200.00' │ 'fixed_draft'  │ '119.00' │ '0.00'   │ '200.00'    │ 'AC-INV-01323' │
+│ 22      │ '(NEW)'        │ 'NAZIR 3247 (AC-CUST-00085)'         │ 'Mai Dubai' │ 'fixed_menu' │ 30         │ 0         │ '234.00'   │ '130.00' │ 'fixed_draft'  │ '104.00' │ '0.00'   │ '130.00'    │ 'AC-INV-01315' │
+│ 23      │ '(NEW)'        │ 'AKIL (AC-CUST-00059)'               │ 'Mai Dubai' │ 'fixed_menu' │ 35         │ 0         │ '253.50'   │ '160.00' │ 'fixed_draft'  │ '93.50'  │ '0.00'   │ '160.00'    │ 'AC-INV-01353' │
+│ 24      │ '(NEW)'        │ 'Nasrun 3215 (AC-CUST-00206)'        │ 'Mai Dubai' │ 'fixed_menu' │ 37         │ 0         │ '221.00'   │ '130.00' │ 'fixed_draft'  │ '91.00'  │ '0.00'   │ '130.00'    │ 'AC-INV-01359' │
+│ 25      │ '(NEW)'        │ 'ADNAN 2075 (AC-CUST-00051)'         │ 'Mai Dubai' │ 'fixed_menu' │ 31         │ 0         │ '191.75'   │ '120.00' │ 'fixed_draft'  │ '71.75'  │ '0.00'   │ '120.00'    │ 'AC-INV-01325' │
+│ 26      │ '(NEW)'        │ 'NABEEL 3138 (AC-CUST-00029)'        │ 'Mai Dubai' │ 'fixed_menu' │ 60         │ 0         │ '345.75'   │ '280.00' │ 'fixed_draft'  │ '65.75'  │ '0.00'   │ '280.00'    │ 'AC-INV-01321' │
+│ 27      │ '(NEW)'        │ 'ASAD 79 (AC-CUST-00050)'            │ 'Mai Dubai' │ 'fixed_menu' │ 32         │ 0         │ '223.75'   │ '160.00' │ 'fixed_draft'  │ '63.75'  │ '0.00'   │ '160.00'    │ 'AC-INV-01356' │
+│ 28      │ '(NEW)'        │ 'SHAHZAD 1788 (AC-CUST-00057)'       │ 'Mai Dubai' │ 'fixed_menu' │ 31         │ 0         │ '181.75'   │ '130.00' │ 'fixed_draft'  │ '51.75'  │ '0.00'   │ '130.00'    │ 'AC-INV-01352' │
+│ 29      │ '(NEW)'        │ 'HASSAN SECURITY (AC-CUST-00012)'    │ 'Mai Dubai' │ 'fixed_menu' │ 26         │ 0         │ '267.00'   │ '220.00' │ 'fixed_draft'  │ '47.00'  │ '0.00'   │ '220.00'    │ 'AC-INV-01314' │
+│ 30      │ '(NEW)'        │ 'NOUSHAD 220 (AC-CUST-00044)'        │ 'Mai Dubai' │ 'a_la_carte' │ 1          │ 0         │ '225.00'   │ '180.00' │ 'fixed_draft'  │ '45.00'  │ '0.00'   │ '180.00'    │ 'AC-INV-01306' │
+│ 31      │ '(NEW)'        │ 'RASHID ALI (AC-CUST-00040)'         │ 'Mai Dubai' │ 'fixed_menu' │ 22         │ 0         │ '251.00'   │ '220.00' │ 'fixed_draft'  │ '31.00'  │ '0.00'   │ '220.00'    │ 'AC-INV-01347' │
+│ 32      │ '(NEW)'        │ 'BACHAN 2702 (AC-CUST-00025)'        │ 'Mai Dubai' │ 'fixed_menu' │ 31         │ 0         │ '150.25'   │ '120.00' │ 'fixed_draft'  │ '30.25'  │ '0.00'   │ '120.00'    │ 'AC-INV-01332' │
+│ 33      │ '(NEW)'        │ 'SIMON 2043 (AC-CUST-00112)'         │ 'Mai Dubai' │ 'fixed_menu' │ 31         │ 0         │ '139.00'   │ '120.00' │ 'fixed_draft'  │ '19.00'  │ '0.00'   │ '120.00'    │ 'AC-INV-01331' │
+│ 34      │ '(NEW)'        │ 'ATHIQUE 2801 (AC-CUST-00132)'       │ 'Mai Dubai' │ 'fixed_menu' │ 30         │ 0         │ '100.00'   │ '90.00'  │ 'fixed_draft'  │ '10.00'  │ '0.00'   │ '90.00'     │ 'AC-INV-01334' │
+│ 35      │ '(NEW)'        │ 'Medeva (AC-CUST-00221)'             │ 'Mai Dubai' │ 'fixed_menu' │ 21         │ 0         │ '217.00'   │ '210.00' │ 'subscription' │ '7.00'   │ '0.00'   │ '210.00'    │ ''             │
+│ 36      │ '(NEW)'        │ 'Surya 2869 (AC-CUST-00203)'         │ 'Mai Dubai' │ 'fixed_menu' │ 26         │ 0         │ '125.00'   │ '120.00' │ 'subscription' │ '5.00'   │ '0.00'   │ '120.00'    │ ''             │
+│ 37      │ 'AC-INV-01410' │ 'AKBAR (AC-CUST-00094)'              │ 'Mai Dubai' │ 'a_la_carte' │ 0          │ 0         │ '1762.00'  │ ''       │ ''             │ '0.00'   │ '0.00'   │ '1762.00'   │ ''             │
+│ 38      │ 'AC-INV-01381' │ 'UMAIR 1428 (AC-CUST-00038)'         │ 'Mai Dubai' │ 'a_la_carte' │ 20         │ 0         │ '1085.25'  │ ''       │ ''             │ '0.00'   │ '0.00'   │ '1085.25'   │ ''             │
+│ 39      │ 'AC-INV-01396' │ 'DERICK SECURITY (AC-CUST-00072)'    │ 'Mai Dubai' │ 'a_la_carte' │ 40         │ 0         │ '561.50'   │ ''       │ ''             │ '0.00'   │ '0.00'   │ '561.50'    │ ''             │
+│ 40      │ '(NEW)'        │ 'HASSAN 2453 (AC-CUST-00119)'        │ 'Mai Dubai' │ 'fixed_menu' │ 72         │ 0         │ '560.25'   │ ''       │ ''             │ '0.00'   │ '0.00'   │ '560.25'    │ ''             │
+│ 41      │ 'AC-INV-01366' │ 'SUKHWINDER SINGH (AC-CUST-00066)'   │ null        │ 'a_la_carte' │ 33         │ 0         │ '483.50'   │ ''       │ ''             │ '0.00'   │ '0.00'   │ '483.50'    │ ''             │
+│ 42      │ 'AC-INV-01388' │ 'ARIF 2399 (AC-CUST-00016)'          │ 'Mai Dubai' │ 'a_la_carte' │ 33         │ 2         │ '457.75'   │ ''       │ ''             │ '0.00'   │ '0.00'   │ '457.75'    │ ''             │
+│ 43      │ 'AC-INV-01402' │ 'HASEEB 3148 (AC-CUST-00032)'        │ 'Mai Dubai' │ 'a_la_carte' │ 28         │ 0         │ '449.25'   │ ''       │ ''             │ '0.00'   │ '0.00'   │ '449.25'    │ ''             │
+│ 44      │ 'AC-INV-01403' │ 'AYAZ 1306 (AC-CUST-00037)'          │ 'Mai Dubai' │ 'a_la_carte' │ 16         │ 0         │ '443.00'   │ ''       │ ''             │ '0.00'   │ '0.00'   │ '443.00'    │ ''             │
+│ 45      │ 'AC-INV-01408' │ 'SHOAIB 27 (AC-CUST-00013)'          │ 'Mai Dubai' │ 'a_la_carte' │ 34         │ 0         │ '419.00'   │ ''       │ ''             │ '0.00'   │ '0.00'   │ '419.00'    │ ''             │
+│ 46      │ 'AC-INV-01364' │ 'SURVE 2382 (AC-CUST-00006)'         │ 'Mai Dubai' │ 'a_la_carte' │ 34         │ 0         │ '408.75'   │ ''       │ ''             │ '0.00'   │ '0.00'   │ '408.75'    │ ''             │
+│ 47      │ '(NEW)'        │ 'Dauad 2611 (AC-CUST-00134)'         │ 'Mai Dubai' │ 'fixed_menu' │ 59         │ 0         │ '376.00'   │ ''       │ ''             │ '0.00'   │ '0.00'   │ '376.00'    │ ''             │
+│ 48      │ 'AC-INV-01419' │ 'RAZAK (AC-CUST-00034)'              │ 'Mai Dubai' │ 'a_la_carte' │ 3          │ 0         │ '194.00'   │ '370.00' │ 'fixed_draft'  │ '0.00'   │ '176.00' │ '370.00'    │ 'AC-INV-01301' │
+│ 49      │ '(NEW)'        │ 'Naeem 3111 (AC-CUST-00219)'         │ 'Mai Dubai' │ 'fixed_menu' │ 35         │ 0         │ '301.00'   │ '350.00' │ 'fixed_draft'  │ '0.00'   │ '49.00'  │ '350.00'    │ 'AC-INV-01361' │
+│ 50      │ 'AC-INV-01400' │ 'NAEEM 1363 (AC-CUST-00018)'         │ 'Mai Dubai' │ 'a_la_carte' │ 26         │ 0         │ '342.75'   │ ''       │ ''             │ '0.00'   │ '0.00'   │ '342.75'    │ ''             │
+│ 51      │ '(NEW)'        │ 'Benard 3252 (AC-CUST-00222)'        │ 'Mai Dubai' │ 'fixed_menu' │ 37         │ 0         │ '331.75'   │ '430.00' │ 'subscription' │ '0.00'   │ '0.00'   │ '331.75'    │ ''             │
+│ 52      │ 'AC-INV-01404' │ 'USMAN RAFI  (AC-CUST-00123)'        │ 'Mai Dubai' │ 'a_la_carte' │ 20         │ 0         │ '313.75'   │ ''       │ ''             │ '0.00'   │ '0.00'   │ '313.75'    │ ''             │
+│ 53      │ 'AC-INV-01405' │ 'DANISH 2594 (AC-CUST-00071)'        │ 'Mai Dubai' │ 'a_la_carte' │ 16         │ 0         │ '297.00'   │ ''       │ ''             │ '0.00'   │ '0.00'   │ '297.00'    │ ''             │
+│ 54      │ 'AC-INV-01409' │ 'Z Haider (AC-CUST-00223)'           │ 'Mai Dubai' │ 'a_la_carte' │ 15         │ 0         │ '290.75'   │ ''       │ ''             │ '0.00'   │ '0.00'   │ '290.75'    │ ''             │
+│ 55      │ 'AC-INV-01411' │ 'LAKHBIR SINGH (AC-CUST-00063)'      │ 'Mai Dubai' │ 'a_la_carte' │ 16         │ 0         │ '285.50'   │ ''       │ ''             │ '0.00'   │ '0.00'   │ '285.50'    │ ''             │
+│ 56      │ 'AC-INV-01389' │ 'MAQBOOL (AC-CUST-00098)'            │ 'Mai Dubai' │ 'a_la_carte' │ 17         │ 0         │ '283.75'   │ ''       │ ''             │ '0.00'   │ '0.00'   │ '283.75'    │ ''             │
+│ 57      │ 'AC-INV-01393' │ 'AFZAL 87 (AC-CUST-00099)'           │ 'Mai Dubai' │ 'a_la_carte' │ 24         │ 0         │ '279.00'   │ ''       │ ''             │ '0.00'   │ '0.00'   │ '279.00'    │ ''             │
+│ 58      │ 'AC-INV-01412' │ 'Sabir 444 (AC-CUST-00224)'          │ 'Mai Dubai' │ 'a_la_carte' │ 13         │ 0         │ '273.50'   │ ''       │ ''             │ '0.00'   │ '0.00'   │ '273.50'    │ ''             │
+│ 59      │ 'AC-INV-01399' │ 'AKASH E2955 (AC-CUST-00074)'        │ 'Mai Dubai' │ 'a_la_carte' │ 18         │ 0         │ '272.00'   │ ''       │ ''             │ '0.00'   │ '0.00'   │ '272.00'    │ ''             │
+│ 60      │ 'AC-INV-01413' │ 'MUZAMMIL 2120 (AC-CUST-00060)'      │ 'Mai Dubai' │ 'a_la_carte' │ 18         │ 0         │ '261.75'   │ ''       │ ''             │ '0.00'   │ '0.00'   │ '261.75'    │ ''             │
+│ 61      │ 'AC-INV-01397' │ 'SAMEER 1012 (AC-CUST-00090)'        │ 'Mai Dubai' │ 'a_la_carte' │ 16         │ 2         │ '236.50'   │ ''       │ ''             │ '0.00'   │ '0.00'   │ '236.50'    │ ''             │
+│ 62      │ 'AC-INV-01415' │ 'Anas 3293 (AC-CUST-00228)'          │ 'Mai Dubai' │ 'a_la_carte' │ 5          │ 0         │ '234.25'   │ ''       │ ''             │ '0.00'   │ '0.00'   │ '234.25'    │ ''             │
+│ 63      │ 'AC-INV-01390' │ 'ZAHID 1277 (AC-CUST-00093)'         │ 'Mai Dubai' │ 'a_la_carte' │ 31         │ 0         │ '209.50'   │ ''       │ ''             │ '0.00'   │ '0.00'   │ '209.50'    │ ''             │
+│ 64      │ 'AC-INV-01395' │ 'RIZWAN 1250 (AC-CUST-00146)'        │ 'Mai Dubai' │ 'a_la_carte' │ 18         │ 0         │ '207.50'   │ ''       │ ''             │ '0.00'   │ '0.00'   │ '207.50'    │ ''             │
+│ 65      │ 'AC-INV-01374' │ 'MOIZ (AC-CUST-00062)'               │ null        │ 'a_la_carte' │ 12         │ 0         │ '197.50'   │ ''       │ ''             │ '0.00'   │ '0.00'   │ '197.50'    │ ''             │
+│ 66      │ 'AC-INV-01394' │ 'FAZAL (AC-CUST-00048)'              │ 'Mai Dubai' │ 'a_la_carte' │ 15         │ 0         │ '190.25'   │ ''       │ ''             │ '0.00'   │ '0.00'   │ '190.25'    │ ''             │
+│ 67      │ 'AC-INV-01373' │ 'ABDUL SHARIF (AC-CUST-00127)'       │ 'Mai Dubai' │ 'a_la_carte' │ 15         │ 0         │ '179.00'   │ ''       │ ''             │ '0.00'   │ '0.00'   │ '179.00'    │ ''             │
+│ 68      │ 'AC-INV-01377' │ 'NADISH 3310 (AC-CUST-00142)'        │ 'Mai Dubai' │ 'a_la_carte' │ 18         │ 0         │ '178.50'   │ ''       │ ''             │ '0.00'   │ '0.00'   │ '178.50'    │ ''             │
+│ 69      │ 'AC-INV-01372' │ 'ASHIK 2809 (AC-CUST-00036)'         │ 'Mai Dubai' │ 'a_la_carte' │ 11         │ 0         │ '170.75'   │ ''       │ ''             │ '0.00'   │ '0.00'   │ '170.75'    │ ''             │
+│ 70      │ 'AC-INV-01406' │ 'KIRAN 1800 (AC-CUST-00035)'         │ 'Mai Dubai' │ 'a_la_carte' │ 15         │ 2         │ '156.75'   │ ''       │ ''             │ '0.00'   │ '0.00'   │ '156.75'    │ ''             │
+│ 71      │ 'AC-INV-01370' │ 'ESA KHAN (AC-CUST-00027)'           │ 'Mai Dubai' │ 'a_la_carte' │ 17         │ 0         │ '146.50'   │ ''       │ ''             │ '0.00'   │ '0.00'   │ '146.50'    │ ''             │
+│ 72      │ 'AC-INV-01398' │ 'MERAJ KHAN (AC-CUST-00065)'         │ 'Mai Dubai' │ 'a_la_carte' │ 5          │ 0         │ '146.00'   │ ''       │ ''             │ '0.00'   │ '0.00'   │ '146.00'    │ ''             │
+│ 73      │ 'AC-INV-01371' │ 'RAJA UMAIR (AC-CUST-00056)'         │ 'Mai Dubai' │ 'a_la_carte' │ 2          │ 0         │ '17.25'    │ '130.00' │ 'fixed_draft'  │ '0.00'   │ '112.75' │ '130.00'    │ 'AC-INV-01302' │
+│ 74      │ '(NEW)'        │ 'RAFAQAT (AC-CUST-00049)'            │ 'Mai Dubai' │ 'fixed_menu' │ 10         │ 0         │ '57.50'    │ '130.00' │ 'fixed_draft'  │ '0.00'   │ '72.50'  │ '130.00'    │ 'AC-INV-01324' │
+│ 75      │ '(NEW)'        │ 'Imross 2828 (AC-CUST-00204)'        │ 'Mai Dubai' │ 'fixed_menu' │ 26         │ 0         │ '127.50'   │ ''       │ ''             │ '0.00'   │ '0.00'   │ '127.50'    │ ''             │
+│ 76      │ '(NEW)'        │ 'TWALIBU 1832 (AC-CUST-00152)'       │ 'Mai Dubai' │ 'fixed_menu' │ 37         │ 0         │ '123.00'   │ ''       │ ''             │ '0.00'   │ '0.00'   │ '123.00'    │ ''             │
+│ 77      │ 'AC-INV-01387' │ 'RIYAZ 3154 (AC-CUST-00145)'         │ 'Mai Dubai' │ 'a_la_carte' │ 13         │ 0         │ '119.75'   │ ''       │ ''             │ '0.00'   │ '0.00'   │ '119.75'    │ ''             │
+│ 78      │ '(NEW)'        │ 'ASHIK 2168 (AC-CUST-00130)'         │ 'Mai Dubai' │ 'fixed_menu' │ 12         │ 0         │ '111.00'   │ '150.00' │ 'subscription' │ '0.00'   │ '0.00'   │ '111.00'    │ ''             │
+│ 79      │ 'AC-INV-01363' │ 'MAZHAR 1925 (AC-CUST-00077)'        │ 'Mai Dubai' │ 'a_la_carte' │ 14         │ 0         │ '108.75'   │ ''       │ ''             │ '0.00'   │ '0.00'   │ '108.75'    │ ''             │
+│ 80      │ 'AC-INV-01376' │ 'SALMAN 2578 (AC-CUST-00126)'        │ 'Mai Dubai' │ 'a_la_carte' │ 6          │ 0         │ '75.25'    │ ''       │ ''             │ '0.00'   │ '0.00'   │ '75.25'     │ ''             │
+│ 81      │ '(NEW)'        │ 'HABIBULLAH (AC-CUST-00054)'         │ 'Mai Dubai' │ 'fixed_menu' │ 11         │ 0         │ '75.00'    │ '160.00' │ 'subscription' │ '0.00'   │ '0.00'   │ '75.00'     │ ''             │
+│ 82      │ '(NEW)'        │ 'HAMMAD 2862 (AC-CUST-00082)'        │ 'Mai Dubai' │ 'a_la_carte' │ 10         │ 0         │ '68.00'    │ ''       │ ''             │ '0.00'   │ '0.00'   │ '68.00'     │ ''             │
+│ 83      │ 'AC-INV-01379' │ 'ANKIT KUMAR (AC-CUST-00128)'        │ 'Mai Dubai' │ 'a_la_carte' │ 3          │ 0         │ '66.75'    │ ''       │ ''             │ '0.00'   │ '0.00'   │ '66.75'     │ ''             │
+│ 84      │ 'AC-INV-01384' │ 'IBRAHIM 2701 (AC-CUST-00008)'       │ 'Mai Dubai' │ 'a_la_carte' │ 18         │ 0         │ '63.00'    │ ''       │ ''             │ '0.00'   │ '0.00'   │ '63.00'     │ ''             │
+│ 85      │ 'AC-INV-01385' │ 'DAVID (AC-CUST-00133)'              │ null        │ 'a_la_carte' │ 18         │ 0         │ '63.00'    │ ''       │ ''             │ '0.00'   │ '0.00'   │ '63.00'     │ ''             │
+│ 86      │ 'AC-INV-01367' │ 'KELVIN 524 (AC-CUST-00088)'         │ 'Mai Dubai' │ 'a_la_carte' │ 17         │ 0         │ '61.00'    │ ''       │ ''             │ '0.00'   │ '0.00'   │ '61.00'     │ ''             │
+│ 87      │ 'AC-INV-01418' │ 'MEHMOOD 993 (AC-CUST-00140)'        │ 'Mai Dubai' │ 'a_la_carte' │ 7          │ 0         │ '54.00'    │ ''       │ ''             │ '0.00'   │ '0.00'   │ '54.00'     │ ''             │
+│ 88      │ 'AC-INV-01391' │ 'AZHAR MEHAMOOD (AC-CUST-00010)'     │ 'Mai Dubai' │ 'a_la_carte' │ 5          │ 0         │ '53.00'    │ ''       │ ''             │ '0.00'   │ '0.00'   │ '53.00'     │ ''             │
+│ 89      │ 'AC-INV-01368' │ 'RICHARD 3065 (AC-CUST-00026)'       │ 'Mai Dubai' │ 'a_la_carte' │ 8          │ 0         │ '43.50'    │ ''       │ ''             │ '0.00'   │ '0.00'   │ '43.50'     │ ''             │
+│ 90      │ 'AC-INV-01407' │ 'IMRAN NOOR (AC-CUST-00084)'         │ 'Mai Dubai' │ 'a_la_carte' │ 9          │ 0         │ '43.25'    │ ''       │ ''             │ '0.00'   │ '0.00'   │ '43.25'     │ ''             │
+│ 91      │ '(NEW)'        │ 'SHADUL 1578 (AC-CUST-00150)'        │ 'Mai Dubai' │ 'fixed_menu' │ 8          │ 0         │ '40.75'    │ ''       │ ''             │ '0.00'   │ '0.00'   │ '40.75'     │ ''             │
+│ 92      │ 'AC-INV-01417' │ 'HARI KRISHNA (AC-CUST-00064)'       │ 'Mai Dubai' │ 'a_la_carte' │ 5          │ 0         │ '39.25'    │ ''       │ ''             │ '0.00'   │ '0.00'   │ '39.25'     │ ''             │
+│ 93      │ 'AC-INV-01378' │ 'CHIPPA (AC-CUST-00019)'             │ 'Mai Dubai' │ 'a_la_carte' │ 16         │ 0         │ '39.00'    │ ''       │ ''             │ '0.00'   │ '0.00'   │ '39.00'     │ ''             │
+│ 94      │ 'AC-INV-01369' │ 'SIYAL BADSHA (AC-CUST-00046)'       │ 'Mai Dubai' │ 'a_la_carte' │ 13         │ 0         │ '33.75'    │ ''       │ ''             │ '0.00'   │ '0.00'   │ '33.75'     │ ''             │
+│ 95      │ 'AC-INV-01401' │ 'IMRAN KHAN (AC-CUST-00021)'         │ 'Mai Dubai' │ 'a_la_carte' │ 18         │ 0         │ '31.50'    │ ''       │ ''             │ '0.00'   │ '0.00'   │ '31.50'     │ ''             │
+│ 96      │ 'AC-INV-01380' │ 'AFTAB (AC-CUST-00033)'              │ 'Mai Dubai' │ 'a_la_carte' │ 2          │ 0         │ '29.00'    │ ''       │ ''             │ '0.00'   │ '0.00'   │ '29.00'     │ ''             │
+│ 97      │ '(NEW)'        │ 'Shoaib 27 (AC-CUST-00009)'          │ null        │ 'a_la_carte' │ 5          │ 0         │ '28.00'    │ ''       │ ''             │ '0.00'   │ '0.00'   │ '28.00'     │ ''             │
+│ 98      │ 'AC-INV-01386' │ 'AWAIS 972 (AC-CUST-00089)'          │ 'Mai Dubai' │ 'a_la_carte' │ 2          │ 0         │ '25.00'    │ ''       │ ''             │ '0.00'   │ '0.00'   │ '25.00'     │ ''             │
+│ 99      │ 'AC-INV-01392' │ 'Mehboob (AC-CUST-00155)'            │ 'Mai Dubai' │ 'a_la_carte' │ 2          │ 0         │ '24.00'    │ ''       │ ''             │ '0.00'   │ '0.00'   │ '24.00'     │ ''             │
+│ 100     │ 'AC-INV-01416' │ 'ASIF 2813 (AC-CUST-00015)'          │ 'Mai Dubai' │ 'a_la_carte' │ 0          │ 0         │ '22.50'    │ ''       │ ''             │ '0.00'   │ '0.00'   │ '22.50'     │ ''             │
+│ 101     │ 'AC-INV-01382' │ 'DAWUD (AC-CUST-00022)'              │ 'Mai Dubai' │ 'a_la_carte' │ 0          │ 0         │ '18.00'    │ ''       │ ''             │ '0.00'   │ '0.00'   │ '18.00'     │ ''             │
+│ 102     │ '(NEW)'        │ 'Fahad (AC-CUST-00002)'              │ 'Mai Dubai' │ 'a_la_carte' │ 3          │ 0         │ '16.50'    │ ''       │ ''             │ '0.00'   │ '0.00'   │ '16.50'     │ ''             │
+│ 103     │ 'AC-INV-01362' │ 'NUSRUN 3215 (AC-CUST-00030)'        │ 'Mai Dubai' │ 'a_la_carte' │ 0          │ 0         │ '15.50'    │ ''       │ ''             │ '0.00'   │ '0.00'   │ '15.50'     │ ''             │
+│ 104     │ 'AC-INV-01420' │ 'DEEPAK (AC-CUST-00086)'             │ 'Mai Dubai' │ 'a_la_carte' │ 0          │ 0         │ '12.50'    │ ''       │ ''             │ '0.00'   │ '0.00'   │ '12.50'     │ ''             │
+│ 105     │ '(NEW)'        │ 'SHAFI 1723 (AC-CUST-00151)'         │ 'Mai Dubai' │ 'a_la_carte' │ 1          │ 0         │ '12.00'    │ ''       │ ''             │ '0.00'   │ '0.00'   │ '12.00'     │ ''             │
+│ 106     │ '(NEW)'        │ 'Gopal 3145 (AC-CUST-00205)'         │ 'Mai Dubai' │ 'fixed_menu' │ 2          │ 0         │ '10.00'    │ ''       │ ''             │ '0.00'   │ '0.00'   │ '10.00'     │ ''             │
+│ 107     │ '(NEW)'        │ 'SURVE 998 (AC-CUST-00087)'          │ 'Mai Dubai' │ 'a_la_carte' │ 1          │ 0         │ '6.00'     │ ''       │ ''             │ '0.00'   │ '0.00'   │ '6.00'      │ ''             │
+│ 108     │ '(NEW)'        │ 'ASHOK 2809 (AC-CUST-00131)'         │ 'Mai Dubai' │ 'a_la_carte' │ 1          │ 0         │ '5.50'     │ ''       │ ''             │ '0.00'   │ '0.00'   │ '5.50'      │ ''             │
+│ 109     │ 'AC-INV-01422' │ 'SUBIN (AC-CUST-00081)'              │ null        │ 'a_la_carte' │ 0          │ 0         │ '4.00'     │ ''       │ ''             │ '0.00'   │ '0.00'   │ '4.00'      │ ''             │
+│ 110     │ '(NEW)'        │ 'Subain 2919 (AC-CUST-00237)'        │ 'Mai Dubai' │ 'a_la_carte' │ 1          │ 0         │ '4.00'     │ ''       │ ''             │ '0.00'   │ '0.00'   │ '4.00'      │ ''             │
+│ 111     │ 'AC-INV-01414' │ 'Shakir 1991 (AC-CUST-00225)'        │ 'Mai Dubai' │ 'a_la_carte' │ 0          │ 0         │ '3.00'     │ ''       │ ''             │ '0.00'   │ '0.00'   │ '3.00'      │ ''             │
+│ 112     │ '(NEW)'        │ 'FAVAS (AC-CUST-00068)'              │ 'Mai Dubai' │ 'a_la_carte' │ 1          │ 0         │ '2.00'     │ ''       │ ''             │ '0.00'   │ '0.00'   │ '2.00'      │ ''             │
+└─────────┴────────────────┴──────────────────────────────────────┴─────────────┴──────────────┴────────────┴───────────┴────────────┴──────────┴────────────────┴──────────┴──────────┴─────────────┴────────────────┘
+
+Totals: orders added AED 19777.75 | voided lines removed AED 18.75
+Fixed-plan: discounts AED 6374.00 (37 invoices) | top-ups AED 410.25 (4 invoices)
+Total to issue AED 21363.25 | fixed_monthly Aug drafts to CANCEL: 38 (AED 6685.00)
+
+FIXED AUG DRAFTS WITH NO CYCLE INVOICE (left untouched — owner to decide):
+┌─────────┬────────────────┬──────────────────────────────┬────────┐
+│ (index) │ invoice        │ customer                     │ amount │
+├─────────┼────────────────┼──────────────────────────────┼────────┤
+│ 0       │ 'AC-INV-01304' │ 'GANIU 2743 (AC-CUST-00043)' │ 200    │
+│ 1       │ 'AC-INV-01309' │ 'Nazir (AC-CUST-00156)'      │ 200    │
+│ 2       │ 'AC-INV-01310' │ 'Hammad (AC-CUST-00158)'     │ 200    │
+│ 3       │ 'AC-INV-01311' │ 'Awaiz (AC-CUST-00161)'      │ 440    │
+│ 4       │ 'AC-INV-01307' │ 'AREEB (AC-CUST-00069)'      │ 160    │
+│ 5       │ 'AC-INV-01312' │ 'Shwetha (AC-CUST-00159)'    │ 260    │
+│ 6       │ 'AC-INV-01308' │ 'SALMAN (AC-CUST-00020)'     │ 300    │
+│ 7       │ 'AC-INV-01313' │ 'Ahmed (AC-CUST-00157)'      │ 200    │
+└─────────┴────────────────┴──────────────────────────────┴────────┘
+
+NOT MAI DUBAI — skipped, left as-is (3 customers):
+┌─────────┬──────────────────────────────────┬───────────────────────────────────────┬─────────────────┬────────────┐
+│ (index) │ invoice                          │ customer                              │ area            │ orders_AED │
+├─────────┼──────────────────────────────────┼───────────────────────────────────────┼─────────────────┼────────────┤
+│ 0       │ '(no invoice — unbilled orders)' │ 'Nazir (AC-CUST-00156)'               │ 'Clock Tower'   │ '221.25'   │
+│ 1       │ '(no invoice — unbilled orders)' │ 'Ehsan Al Nahda 1 (AC-CUST-00226)'    │ 'Al Nahda 1'    │ '12.50'    │
+│ 2       │ '(no invoice — unbilled orders)' │ 'IFTAR BUSSINESS BAY (AC-CUST-00214)' │ 'Bussiness Bay' │ '6.25'     │
+└─────────┴──────────────────────────────────┴───────────────────────────────────────┴─────────────────┴────────────┘
+OK AC-INV-01425 IRFAN 3294 → issued AED 90.00 (discount 425.75) (+91 orders)
+OK AC-INV-01426 ALI SAQLAIN  → issued AED 130.00 (discount 401.00) (+93 orders)
+OK AC-INV-01427 ARSHAD 2217 → issued AED 200.00 (discount 390.00) (+55 orders)
+OK AC-INV-01428 USMAN 2861 → issued AED 90.00 (discount 363.50) (+78 orders)
+OK AC-INV-01365 WAQAR 2258 → issued AED 160.00 (discount 334.50) (+34 orders)
+OK AC-INV-01429 MEARG 3190  → issued AED 200.00 (discount 332.50) (+62 orders)
+OK AC-INV-01430 SUNIL 2827 → issued AED 150.00 (discount 300.75) (+57 orders)
+OK AC-INV-01431 SALMAN 2797 → issued AED 150.00 (discount 289.25) (+66 orders)
+OK AC-INV-01432 JARNAIL SINGH 3248 → issued AED 130.00 (discount 277.00) (+64 orders)
+OK AC-INV-01433 FAISAL 552 → issued AED 260.00 (discount 264.25) (+64 orders)
+OK AC-INV-01434 IFTIAZ 2964 → issued AED 100.00 (discount 253.75) (+62 orders)
+OK AC-INV-01375 HARUN → issued AED 180.00 (discount 232.00) (+35 orders)
+OK AC-INV-01435 GEOFERY → issued AED 180.00 (discount 231.00) (+63 orders)
+OK AC-INV-01436 IBRAHIM 975 → issued AED 220.00 (discount 223.50) (+61 orders)
+OK AC-INV-01437 BABAR 1387 → issued AED 140.00 (discount 223.25) (+62 orders)
+OK AC-INV-01438 INNOCENT → issued AED 180.00 (discount 207.00) (+59 orders)
+OK AC-INV-01439 SYLVESTA → issued AED 170.00 (discount 171.00) (+31 orders)
+OK AC-INV-01383 ANWAR 733 → issued AED 220.00 (discount 167.00) (+33 orders)
+OK AC-INV-01440 MAMOOR KHAN → issued AED 135.00 (discount 159.00) (+50 orders)
+OK AC-INV-01441 TOMARSAB 3329 → issued AED 320.00 (discount 140.25) (+66 orders)
+OK AC-INV-01442 MAKATA → issued AED 220.00 (discount 133.00) (+31 orders)
+OK AC-INV-01443 Michael 3284 → issued AED 200.00 (discount 119.00) (+31 orders)
+OK AC-INV-01444 NAZIR 3247 → issued AED 130.00 (discount 104.00) (+30 orders)
+OK AC-INV-01445 AKIL → issued AED 160.00 (discount 93.50) (+35 orders)
+OK AC-INV-01446 Nasrun 3215 → issued AED 130.00 (discount 91.00) (+37 orders)
+OK AC-INV-01447 ADNAN 2075 → issued AED 120.00 (discount 71.75) (+31 orders)
+OK AC-INV-01448 NABEEL 3138 → issued AED 280.00 (discount 65.75) (+60 orders)
+OK AC-INV-01449 ASAD 79 → issued AED 160.00 (discount 63.75) (+32 orders)
+OK AC-INV-01450 SHAHZAD 1788 → issued AED 130.00 (discount 51.75) (+31 orders)
+OK AC-INV-01451 HASSAN SECURITY → issued AED 220.00 (discount 47.00) (+26 orders)
+OK AC-INV-01452 NOUSHAD 220 → issued AED 180.00 (discount 45.00) (+1 orders)
+OK AC-INV-01453 RASHID ALI → issued AED 220.00 (discount 31.00) (+22 orders)
+OK AC-INV-01454 BACHAN 2702 → issued AED 120.00 (discount 30.25) (+31 orders)
+OK AC-INV-01455 SIMON 2043 → issued AED 120.00 (discount 19.00) (+31 orders)
+OK AC-INV-01456 ATHIQUE 2801 → issued AED 90.00 (discount 10.00) (+30 orders)
+OK AC-INV-01457 Medeva → issued AED 210.00 (discount 7.00) (+21 orders)
+OK AC-INV-01458 Surya 2869 → issued AED 120.00 (discount 5.00) (+26 orders)
+OK AC-INV-01410 AKBAR → issued AED 1762.00
+OK AC-INV-01381 UMAIR 1428 → issued AED 1085.25 (+20 orders)
+OK AC-INV-01396 DERICK SECURITY → issued AED 561.50 (+40 orders)
+OK AC-INV-01459 HASSAN 2453 → issued AED 560.25 (+72 orders)
+OK AC-INV-01366 SUKHWINDER SINGH → issued AED 483.50 (+33 orders)
+OK AC-INV-01388 ARIF 2399 → issued AED 457.75 (+33 orders) (−2 voided lines)
+OK AC-INV-01402 HASEEB 3148 → issued AED 449.25 (+28 orders)
+OK AC-INV-01403 AYAZ 1306 → issued AED 443.00 (+16 orders)
+OK AC-INV-01408 SHOAIB 27 → issued AED 419.00 (+34 orders)
+OK AC-INV-01364 SURVE 2382 → issued AED 408.75 (+34 orders)
+OK AC-INV-01460 Dauad 2611 → issued AED 376.00 (+59 orders)
+OK AC-INV-01419 RAZAK → issued AED 370.00 (top-up 176.00) (+3 orders)
+OK AC-INV-01461 Naeem 3111 → issued AED 350.00 (top-up 49.00) (+35 orders)
+OK AC-INV-01400 NAEEM 1363 → issued AED 342.75 (+26 orders)
+OK AC-INV-01462 Benard 3252 → issued AED 331.75 (+37 orders)
+OK AC-INV-01404 USMAN RAFI  → issued AED 313.75 (+20 orders)
+OK AC-INV-01405 DANISH 2594 → issued AED 297.00 (+16 orders)
+OK AC-INV-01409 Z Haider → issued AED 290.75 (+15 orders)
+OK AC-INV-01411 LAKHBIR SINGH → issued AED 285.50 (+16 orders)
+OK AC-INV-01389 MAQBOOL → issued AED 283.75 (+17 orders)
+OK AC-INV-01393 AFZAL 87 → issued AED 279.00 (+24 orders)
+OK AC-INV-01412 Sabir 444 → issued AED 273.50 (+13 orders)
+OK AC-INV-01399 AKASH E2955 → issued AED 272.00 (+18 orders)
+OK AC-INV-01413 MUZAMMIL 2120 → issued AED 261.75 (+18 orders)
+OK AC-INV-01397 SAMEER 1012 → issued AED 236.50 (+16 orders) (−2 voided lines)
+OK AC-INV-01415 Anas 3293 → issued AED 234.25 (+5 orders)
+OK AC-INV-01390 ZAHID 1277 → issued AED 209.50 (+31 orders)
+OK AC-INV-01395 RIZWAN 1250 → issued AED 207.50 (+18 orders)
+OK AC-INV-01374 MOIZ → issued AED 197.50 (+12 orders)
+OK AC-INV-01394 FAZAL → issued AED 190.25 (+15 orders)
+OK AC-INV-01373 ABDUL SHARIF → issued AED 179.00 (+15 orders)
+OK AC-INV-01377 NADISH 3310 → issued AED 178.50 (+18 orders)
+OK AC-INV-01372 ASHIK 2809 → issued AED 170.75 (+11 orders)
+OK AC-INV-01406 KIRAN 1800 → issued AED 156.75 (+15 orders) (−2 voided lines)
+OK AC-INV-01370 ESA KHAN → issued AED 146.50 (+17 orders)
+OK AC-INV-01398 MERAJ KHAN → issued AED 146.00 (+5 orders)
+OK AC-INV-01371 RAJA UMAIR → issued AED 130.00 (top-up 112.75) (+2 orders)
+OK AC-INV-01463 RAFAQAT → issued AED 130.00 (top-up 72.50) (+10 orders)
+OK AC-INV-01464 Imross 2828 → issued AED 127.50 (+26 orders)
+OK AC-INV-01465 TWALIBU 1832 → issued AED 123.00 (+37 orders)
+OK AC-INV-01387 RIYAZ 3154 → issued AED 119.75 (+13 orders)
+OK AC-INV-01466 ASHIK 2168 → issued AED 111.00 (+12 orders)
+OK AC-INV-01363 MAZHAR 1925 → issued AED 108.75 (+14 orders)
+OK AC-INV-01376 SALMAN 2578 → issued AED 75.25 (+6 orders)
+OK AC-INV-01467 HABIBULLAH → issued AED 75.00 (+11 orders)
+OK AC-INV-01468 HAMMAD 2862 → issued AED 68.00 (+10 orders)
+OK AC-INV-01379 ANKIT KUMAR → issued AED 66.75 (+3 orders)
+OK AC-INV-01384 IBRAHIM 2701 → issued AED 63.00 (+18 orders)
+OK AC-INV-01385 DAVID → issued AED 63.00 (+18 orders)
+OK AC-INV-01367 KELVIN 524 → issued AED 61.00 (+17 orders)
+OK AC-INV-01418 MEHMOOD 993 → issued AED 54.00 (+7 orders)
+OK AC-INV-01391 AZHAR MEHAMOOD → issued AED 53.00 (+5 orders)
+OK AC-INV-01368 RICHARD 3065 → issued AED 43.50 (+8 orders)
+OK AC-INV-01407 IMRAN NOOR → issued AED 43.25 (+9 orders)
+OK AC-INV-01469 SHADUL 1578 → issued AED 40.75 (+8 orders)
+OK AC-INV-01417 HARI KRISHNA → issued AED 39.25 (+5 orders)
+OK AC-INV-01378 CHIPPA → issued AED 39.00 (+16 orders)
+OK AC-INV-01369 SIYAL BADSHA → issued AED 33.75 (+13 orders)
+OK AC-INV-01401 IMRAN KHAN → issued AED 31.50 (+18 orders)
+OK AC-INV-01380 AFTAB → issued AED 29.00 (+2 orders)
+OK AC-INV-01470 Shoaib 27 → issued AED 28.00 (+5 orders)
+OK AC-INV-01386 AWAIS 972 → issued AED 25.00 (+2 orders)
+OK AC-INV-01392 Mehboob → issued AED 24.00 (+2 orders)
+OK AC-INV-01416 ASIF 2813 → issued AED 22.50
+OK AC-INV-01382 DAWUD → issued AED 18.00
+OK AC-INV-01471 Fahad → issued AED 16.50 (+3 orders)
+OK AC-INV-01362 NUSRUN 3215 → issued AED 15.50
+OK AC-INV-01420 DEEPAK → issued AED 12.50
+OK AC-INV-01472 SHAFI 1723 → issued AED 12.00 (+1 orders)
+OK AC-INV-01473 Gopal 3145 → issued AED 10.00 (+2 orders)
+OK AC-INV-01474 SURVE 998 → issued AED 6.00 (+1 orders)
+OK AC-INV-01475 ASHOK 2809 → issued AED 5.50 (+1 orders)
+OK AC-INV-01422 SUBIN → issued AED 4.00
+OK AC-INV-01476 Subain 2919 → issued AED 4.00 (+1 orders)
+OK AC-INV-01414 Shakir 1991 → issued AED 3.00
+OK AC-INV-01477 FAVAS → issued AED 2.00 (+1 orders)
+
+Done: 113 issued, 0 failed.
+CANCELLED AC-INV-01300 (AED 220) → superseded by AC-INV-01436
+CANCELLED AC-INV-01301 (AED 370) → superseded by AC-INV-01419
+CANCELLED AC-INV-01302 (AED 130) → superseded by AC-INV-01371
+CANCELLED AC-INV-01305 (AED 160) → superseded by AC-INV-01365
+CANCELLED AC-INV-01306 (AED 180) → superseded by AC-INV-01452
+CANCELLED AC-INV-01314 (AED 220) → superseded by AC-INV-01451
+CANCELLED AC-INV-01315 (AED 130) → superseded by AC-INV-01444
+CANCELLED AC-INV-01317 (AED 200) → superseded by AC-INV-01427
+CANCELLED AC-INV-01320 (AED 200) → superseded by AC-INV-01429
+CANCELLED AC-INV-01321 (AED 280) → superseded by AC-INV-01448
+CANCELLED AC-INV-01322 (AED 260) → superseded by AC-INV-01433
+CANCELLED AC-INV-01325 (AED 120) → superseded by AC-INV-01447
+CANCELLED AC-INV-01326 (AED 130) → superseded by AC-INV-01426
+CANCELLED AC-INV-01329 (AED 150) → superseded by AC-INV-01431
+CANCELLED AC-INV-01331 (AED 120) → superseded by AC-INV-01455
+CANCELLED AC-INV-01332 (AED 120) → superseded by AC-INV-01454
+CANCELLED AC-INV-01333 (AED 130) → superseded by AC-INV-01432
+CANCELLED AC-INV-01336 (AED 180) → superseded by AC-INV-01435
+CANCELLED AC-INV-01337 (AED 90) → superseded by AC-INV-01428
+CANCELLED AC-INV-01339 (AED 90) → superseded by AC-INV-01425
+CANCELLED AC-INV-01342 (AED 135) → superseded by AC-INV-01440
+CANCELLED AC-INV-01343 (AED 220) → superseded by AC-INV-01383
+CANCELLED AC-INV-01344 (AED 140) → superseded by AC-INV-01437
+CANCELLED AC-INV-01347 (AED 220) → superseded by AC-INV-01453
+CANCELLED AC-INV-01348 (AED 220) → superseded by AC-INV-01442
+CANCELLED AC-INV-01353 (AED 160) → superseded by AC-INV-01445
+CANCELLED AC-INV-01359 (AED 130) → superseded by AC-INV-01446
+CANCELLED AC-INV-01360 (AED 320) → superseded by AC-INV-01441
+CANCELLED AC-INV-01323 (AED 200) → superseded by AC-INV-01443
+CANCELLED AC-INV-01334 (AED 90) → superseded by AC-INV-01456
+CANCELLED AC-INV-01349 (AED 170) → superseded by AC-INV-01439
+CANCELLED AC-INV-01361 (AED 350) → superseded by AC-INV-01461
+CANCELLED AC-INV-01324 (AED 130) → superseded by AC-INV-01463
+CANCELLED AC-INV-01335 (AED 180) → superseded by AC-INV-01375
+CANCELLED AC-INV-01350 (AED 150) → superseded by AC-INV-01430
+CANCELLED AC-INV-01352 (AED 130) → superseded by AC-INV-01450
+CANCELLED AC-INV-01354 (AED 100) → superseded by AC-INV-01434
+CANCELLED AC-INV-01356 (AED 160) → superseded by AC-INV-01449
+
+Fixed Aug drafts: 38 cancelled, 0 failed/skipped.
