@@ -6,6 +6,7 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { generateMonthlyInvoices } from '@/lib/invoices/generateMonthlyInvoices'
 import { generateAlaCarteInvoices } from '@/lib/invoices/generateAlaCarteInvoices'
 import { generatePrepaidAnniversaryInvoices } from '@/lib/invoices/generatePrepaidInvoices'
+import { generateFixedAnniversaryInvoices } from '@/lib/invoices/generateFixedAnniversaryInvoices'
 import { formatInTimeZone } from 'date-fns-tz'
 import { applySurplusReconciliation as applySurplusReconciliationCore } from '@/lib/invoices/reconcileSurplus'
 import { reconcileInvoicePaymentStatus } from '@/lib/invoices/reconcile'
@@ -40,6 +41,23 @@ export async function triggerPrepaidInvoices(
   const today = targetDate ?? formatInTimeZone(new Date(), 'Asia/Dubai', 'yyyy-MM-dd')
 
   const result = await generatePrepaidAnniversaryInvoices(today, user.id)
+  revalidatePath('/invoices')
+  return result
+}
+
+// Postpaid fixed_menu customers are billed in arrears on their own
+// subscription-start anniversary — see generateFixedAnniversaryInvoices.ts.
+// Lets the owner force a check as of a given day (catch-up after a missed
+// cron run, or testing) instead of waiting for the daily cron.
+export async function triggerFixedAnniversaryInvoices(
+  targetDate?: string
+): Promise<{ error?: string } & Partial<GenerateResult>> {
+  const user = await requireAuth()
+  if (user.role !== 'owner') return { error: 'Only the owner can generate fixed-plan invoices' }
+
+  const today = targetDate ?? formatInTimeZone(new Date(), 'Asia/Dubai', 'yyyy-MM-dd')
+
+  const result = await generateFixedAnniversaryInvoices(today, user.id)
   revalidatePath('/invoices')
   return result
 }

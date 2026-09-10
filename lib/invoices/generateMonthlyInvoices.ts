@@ -105,9 +105,14 @@ export async function generateMonthlyInvoices(
   if (subsErr) return { generated: 0, skipped: 0, referralRewardsGenerated: 0, errors: [subsErr.message], month: targetMonth }
 
   // Postpaid only — prepaid is billed on each customer's own anniversary date.
-  const postpaidSubs = (subs ?? []).filter(s =>
-    (s.customers as unknown as { payment_terms?: string } | null)?.payment_terms === 'postpaid'
-  )
+  // fixed_menu customers moved to generateFixedAnniversaryInvoices (each
+  // billed on their own subscription-start anniversary, in arrears) — this
+  // generator now only covers the remaining "hybrid" postpaid customers
+  // (customer_type a_la_carte with a flat-price subscription row), unchanged.
+  const postpaidSubs = (subs ?? []).filter(s => {
+    const c = s.customers as unknown as { payment_terms?: string; customer_type?: string } | null
+    return c?.payment_terms === 'postpaid' && c?.customer_type !== 'fixed_menu'
+  })
 
   // Two candidate cycles — see MAI_DUBAI_AREA comment above. Every
   // per-customer amount below is computed against whichever one applies.

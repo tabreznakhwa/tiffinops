@@ -15,6 +15,7 @@ import {
   triggerMonthlyInvoices,
   triggerAlaCarteInvoices,
   triggerPrepaidInvoices,
+  triggerFixedAnniversaryInvoices,
   getInvoiceItems,
   bulkDeleteDraftInvoices,
   bulkIssueDraftInvoices,
@@ -1130,6 +1131,171 @@ function BulkPrepaidModal({ defaultDate, onClose }: { defaultDate: string; onClo
   )
 }
 
+// ── Fixed-Plan Anniversary Bulk Generate Modal ────────────────────────────────
+// Postpaid fixed_menu customers are billed in arrears on their own
+// subscription-start anniversary (see generateFixedAnniversaryInvoices.ts),
+// not a shared calendar-month cycle. This runs that daily check on demand,
+// as of a chosen date — useful to catch up a missed cron day or verify a
+// specific customer's billing date. Unlike prepaid, a customer can be more
+// than one cycle behind (e.g. never billed since joining) — each elapsed,
+// uninvoiced cycle gets its own invoice in one run.
+
+function BulkFixedAnniversaryModal({ defaultDate, onClose }: { defaultDate: string; onClose: () => void }) {
+  const [date, setDate] = useState(defaultDate)
+  const [isPending, startTransition] = useTransition()
+  const [result, setResult] = useState<GenerateResult | null>(null)
+  const [error, setError] = useState('')
+
+  function fmtDate(d: string) {
+    return new Date(d + 'T00:00:00Z').toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
+  }
+
+  function handleGenerate() {
+    setError('')
+    setResult(null)
+    startTransition(async () => {
+      const res = await triggerFixedAnniversaryInvoices(date)
+      if (res.error) { setError(res.error); return }
+      setResult(res as GenerateResult)
+    })
+  }
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center px-4"
+      style={{ background: 'rgba(34,26,19,0.5)' }}
+      onClick={(e) => { if (e.target === e.currentTarget && !isPending) onClose() }}
+    >
+      <div
+        className="w-full max-w-[420px] rounded-[18px] p-6"
+        style={{ background: 'var(--color-surface)', border: '1px solid var(--color-border)' }}
+      >
+        <div className="flex items-start justify-between mb-4">
+          <div>
+            <p className="text-[10px] font-bold uppercase tracking-widest mb-0.5" style={{ color: 'var(--color-green)' }}>
+              Bulk Action
+            </p>
+            <h3 className="font-display font-bold text-[18px]" style={{ color: 'var(--color-ink)' }}>
+              Generate Fixed-Plan Invoices
+            </h3>
+          </div>
+          <button
+            onClick={onClose}
+            disabled={isPending}
+            className="w-8 h-8 flex items-center justify-center rounded-full transition-colors hover:bg-cream"
+            style={{ color: 'var(--color-muted)' }}
+          >
+            <X size={16} />
+          </button>
+        </div>
+
+        {!result ? (
+          <>
+            <div
+              className="rounded-[10px] px-4 py-3 mb-5 text-sm"
+              style={{ background: 'var(--color-cream)', border: '1px solid var(--color-border)' }}
+            >
+              <p style={{ color: 'var(--color-ink)' }}>
+                Creates a <strong>draft fixed_monthly invoice</strong> for every postpaid fixed_menu
+                subscriber with a monthly cycle that has fully elapsed as of the selected date —
+                each measured from their own subscription-start anniversary, in arrears.
+              </p>
+              <p className="mt-1.5 text-xs" style={{ color: 'var(--color-muted)' }}>
+                A customer behind by more than one cycle gets one invoice per elapsed cycle ·
+                Customers not yet due are skipped, not double-billed · Safe to re-run.
+              </p>
+            </div>
+
+            <div className="mb-5">
+              <label className="block text-xs font-bold mb-1.5" style={{ color: 'var(--color-ink)' }}>
+                As of date
+              </label>
+              <input
+                type="date"
+                value={date}
+                onChange={(e) => setDate(e.target.value)}
+                className="w-full rounded-[10px] px-3 py-2.5 text-sm focus:outline-none focus:ring-1 focus:ring-saffron"
+                style={{
+                  background: 'var(--color-cream)',
+                  border: '1px solid var(--color-border)',
+                  color: 'var(--color-ink)',
+                }}
+              />
+              {date && (
+                <p className="text-[11px] mt-1" style={{ color: 'var(--color-muted)' }}>
+                  Checks every active fixed_menu subscriber for cycles fully elapsed by {fmtDate(date)}
+                </p>
+              )}
+            </div>
+
+            {error && (
+              <p className="text-xs mb-4 font-semibold" style={{ color: 'var(--color-red)' }}>
+                {error}
+              </p>
+            )}
+
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={onClose}
+                className="flex-1 py-2.5 rounded-[10px] text-sm font-bold"
+                style={{ background: 'var(--color-border)', color: 'var(--color-muted)' }}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleGenerate}
+                disabled={isPending || !date}
+                className="flex-1 py-2.5 rounded-[10px] text-sm font-bold transition-opacity"
+                style={{
+                  background: 'var(--color-green)',
+                  color: '#fff',
+                  opacity: isPending || !date ? 0.6 : 1,
+                }}
+              >
+                {isPending ? 'Generating…' : `Generate as of ${fmtDate(date)}`}
+              </button>
+            </div>
+          </>
+        ) : (
+          /* Result screen */
+          <div>
+            <div className="space-y-3 mb-5">
+              <div className="flex justify-between items-center py-2.5 px-4 rounded-[10px]" style={{ background: 'var(--color-green-soft)' }}>
+                <span className="text-sm font-semibold" style={{ color: 'var(--color-green)' }}>Invoices Generated</span>
+                <span className="font-display font-bold text-[22px] num" style={{ color: 'var(--color-green)' }}>{result.generated}</span>
+              </div>
+              <div className="flex justify-between items-center py-2.5 px-4 rounded-[10px]" style={{ background: 'var(--color-cream)' }}>
+                <span className="text-sm font-semibold" style={{ color: 'var(--color-muted)' }}>Skipped (not due yet / duplicate / no price)</span>
+                <span className="font-display font-bold text-[22px] num" style={{ color: 'var(--color-muted)' }}>{result.skipped}</span>
+              </div>
+              {result.errors.length > 0 && (
+                <div className="rounded-[10px] px-4 py-3" style={{ background: 'var(--color-red-soft)', border: '1px solid var(--color-red)' }}>
+                  <p className="text-xs font-bold mb-1" style={{ color: 'var(--color-red)' }}>
+                    {result.errors.length} error{result.errors.length !== 1 ? 's' : ''}:
+                  </p>
+                  {result.errors.map((e, i) => (
+                    <p key={i} className="text-xs" style={{ color: 'var(--color-red)' }}>{e}</p>
+                  ))}
+                </div>
+              )}
+            </div>
+            <button
+              type="button"
+              onClick={onClose}
+              className="w-full py-2.5 rounded-[10px] text-sm font-bold"
+              style={{ background: 'var(--color-saffron)', color: '#fff' }}
+            >
+              Done — View Invoices
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
 // ── A La Carte Bulk Generate Modal ────────────────────────────────────────────
 
 function BulkAlaCarteModal({ onClose }: { onClose: () => void }) {
@@ -1700,6 +1866,7 @@ export function InvoicesModule({
   const [showBulkModal, setShowBulkModal] = useState(false)
   const [showAlaCarteModal, setShowAlaCarteModal] = useState(false)
   const [showPrepaidModal, setShowPrepaidModal] = useState(false)
+  const [showFixedAnniversaryModal, setShowFixedAnniversaryModal] = useState(false)
   const [selectedDraftIds, setSelectedDraftIds] = useState<Set<string>>(new Set())
   const [showBulkDeleteConfirm, setShowBulkDeleteConfirm] = useState(false)
   const [bulkDeleteError, setBulkDeleteError] = useState('')
@@ -1907,6 +2074,19 @@ export function InvoicesModule({
                 <path d="m9 16 2 2 4-4"/>
               </svg>
               Generate Prepaid
+            </button>
+          )}
+          {isOwner && (
+            <button
+              onClick={() => setShowFixedAnniversaryModal(true)}
+              className="flex items-center gap-1.5 px-4 py-2.5 rounded-[10px] text-sm font-bold transition-opacity"
+              style={{ background: '#8B5E3C', color: '#fff' }}
+            >
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-4 h-4" aria-hidden="true">
+                <circle cx="12" cy="12" r="10"/>
+                <path d="M12 6v6l4 2"/>
+              </svg>
+              Generate Fixed (Anniversary)
             </button>
           )}
           {isOwner && (
@@ -2238,6 +2418,14 @@ export function InvoicesModule({
         <BulkPrepaidModal
           defaultDate={defaultPrepaidDate}
           onClose={() => setShowPrepaidModal(false)}
+        />
+      )}
+
+      {/* Bulk Fixed-Plan Anniversary Invoice Modal */}
+      {showFixedAnniversaryModal && (
+        <BulkFixedAnniversaryModal
+          defaultDate={defaultPrepaidDate}
+          onClose={() => setShowFixedAnniversaryModal(false)}
         />
       )}
 
