@@ -158,11 +158,16 @@ export function chargeForCustomer(
 /**
  * The meal periods covered on `date` by whichever of this customer's
  * subscriptions was in force then — the most recent one with
- * start_date <= date, same resolution rule the invoice generators and the
- * fixed-plan audit use. Returns null when no subscription had started yet by
- * that date, or the resolved one has no plan info (treat as "not covered" —
- * conservative, since an order can't have been a genuine in-plan freebie if
- * we can't tell what the plan was).
+ * start_date <= date <= end_date (or no end_date) and a real (>0) monthly
+ * price, same resolution rule the invoice generators and the fixed-plan
+ * audit use. A row past its end_date, or zeroed out (agreed_monthly_price 0
+ * — the marker used to retire a superseded/incorrect subscription without
+ * deleting it) never counts as "in force", however recent its start_date —
+ * otherwise a corrected row with an earlier start_date can be shadowed by
+ * the very row it replaced. Returns null when no subscription had started
+ * yet by that date, or the resolved one has no plan info (treat as "not
+ * covered" — conservative, since an order can't have been a genuine in-plan
+ * freebie if we can't tell what the plan was).
  */
 export function mealPeriodsCoveredOn(
   subs: ChargeableSubscription[],
@@ -171,6 +176,8 @@ export function mealPeriodsCoveredOn(
   let best: ChargeableSubscription | null = null
   for (const s of subs) {
     if (s.start_date > date) continue
+    if (s.end_date != null && s.end_date < date) continue
+    if (!(parseFloat(String(s.agreed_monthly_price)) > 0)) continue
     if (!best || s.start_date > best.start_date) best = s
   }
   if (!best?.meal_periods?.length) return null

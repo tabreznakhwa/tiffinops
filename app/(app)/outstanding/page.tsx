@@ -147,16 +147,16 @@ export default async function OutstandingPage({
       .not('invoice_id', 'is', null)
       .is('voided_at', null)
       .range(f, t)),
-    // Fixed-menu customers' credit orders, WITH meal_period — so their
-    // "fixed-plan discount" below can be limited to orders their plan
+    // Fixed-menu AND hybrid customers' credit orders, WITH meal_period — so
+    // their "fixed-plan discount" below can be limited to orders their plan
     // actually covers, instead of blanket-discounting everything they order
-    // (the same bug already fixed in the invoice generators). Scoped to
-    // customer_type = 'fixed_menu' via the embedded-resource filter so this
-    // doesn't scan every customer's orders.
+    // (the same bug already fixed in the invoice generators). Scoped via the
+    // embedded-resource filter so this doesn't scan every customer's orders
+    // (a_la_carte customers never carry a subscription, so they're excluded).
     fetchPaged<{ customer_id: string | null; order_date: string; meal_period: string; total_amount: string }>((f, t) => admin
       .from('orders')
       .select('customer_id, order_date, meal_period, total_amount, customers!inner(customer_type)')
-      .eq('customers.customer_type', 'fixed_menu')
+      .in('customers.customer_type', ['fixed_menu', 'hybrid'])
       .eq('is_credit', true)
       .not('order_status', 'in', '(cancelled,voided,draft)')
       .gte('order_date', effectiveFrom)
@@ -257,12 +257,17 @@ export default async function OutstandingPage({
 
       const lastPayment = lastPaymentMap.get(c.id)
 
-      // Fixed-menu customers pay a flat plan rate: orders from a meal period
-      // their plan covers are discounted away (the plan already paid for
-      // them); orders from a meal period the plan does NOT cover (e.g. a
-      // lunch-only plan customer also ordering breakfast) are genuine extras
-      // and must stay in totalBilled, billed in full — never netted to zero.
-      const isFixed = c.customer_type === 'fixed_menu'
+      // Fixed-menu AND hybrid customers pay a flat plan rate for the meals
+      // their plan covers: orders from a meal period the plan covers are
+      // discounted away (the plan already paid for them); orders from a
+      // meal period the plan does NOT cover (e.g. a lunch-only plan customer
+      // also ordering breakfast, or a hybrid customer's non-plan orders) are
+      // genuine extras and must stay in totalBilled, billed in full — never
+      // netted to zero. Hybrid customers bill via a_la_carte_cycle invoices
+      // that already cap in-plan orders down to the plan price; without this
+      // netting here the plan charge (subCharge) and the full raw order
+      // total both land in totalBilled, double-billing every in-plan order.
+      const isFixed = c.customer_type === 'fixed_menu' || c.customer_type === 'hybrid'
       const hasPlan = subCharge > 0
       const inPlanUsage = isFixed && hasPlan
         ? (mealOrdersByCustomer.get(c.id) ?? [])
