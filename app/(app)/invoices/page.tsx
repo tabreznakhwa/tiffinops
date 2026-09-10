@@ -1,7 +1,6 @@
 import { requireAuth } from '@/lib/auth'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { InvoicesModule } from '@/components/invoices/invoices-module'
-import { nextMonth } from '@/lib/invoices/generateMonthlyInvoices'
 import { formatInTimeZone } from 'date-fns-tz'
 import type { Enums } from '@/lib/supabase/types'
 
@@ -49,7 +48,7 @@ export default async function InvoicesPage({
   const admin = createAdminClient()
 
   const currentDubaiMonth = formatInTimeZone(new Date(), 'Asia/Dubai', 'yyyy-MM')
-  const defaultGenerateMonth = nextMonth(currentDubaiMonth)
+  const defaultGenerateMonth = currentDubaiMonth
   const defaultPrepaidDate = formatInTimeZone(new Date(), 'Asia/Dubai', 'yyyy-MM-dd')
 
   // Supabase caps a select at 1,000 rows. Without paging the list silently

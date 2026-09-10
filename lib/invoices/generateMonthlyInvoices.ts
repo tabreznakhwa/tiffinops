@@ -49,18 +49,29 @@ export function prevMonth(yyyyMM: string): string {
   return formatInTimeZone(d, 'Asia/Dubai', 'yyyy-MM')
 }
 
+// Mai Dubai customers' bills must be ready by the 26th (their salaries land
+// on the 27th), so their cycle is 26th-of-prev-month → 25th-of-targetMonth —
+// the same cycle generateAlaCarteInvoices() uses — which is always fully
+// elapsed by the time the 26th cron runs. Every other area keeps the plain
+// calendar-month cycle it has always used; nothing about their billing was
+// reported broken, so this only changes Mai Dubai's behavior.
+const MAI_DUBAI_AREA = 'Mai Dubai'
+
 /**
  * Generate draft fixed_monthly invoices for active POSTPAID subscribers only.
- * Designed to run on the 26th, when `targetMonth` is the upcoming calendar
- * month — postpaid customers are billed for the month that's about to
- * complete (the month before `targetMonth`), due on the 1st of `targetMonth`,
- * i.e. right after that billing month finishes.
+ *
+ * `targetMonth` is the month being closed (matches generateAlaCarteInvoices'
+ * `forMonth`) — e.g. targetMonth='2026-08':
+ *   - Mai Dubai customers (area === 'Mai Dubai'): billed 2026-07-26..2026-08-25,
+ *     due 2026-08-25 — complete and ready before the 27th salary date.
+ *   - Everyone else: billed the calendar month 2026-08-01..2026-08-31,
+ *     due 2026-09-01, unchanged from before.
  *
  * Prepaid subscribers are billed on their own anniversary date instead — see
- * generatePrepaidInvoices.ts — since a shared calendar-month cycle leaves the
- * days between a mid-month start and the next 1st unbilled.
+ * generatePrepaidInvoices.ts — since a shared cycle leaves the days between
+ * a mid-cycle start and the next cycle boundary unbilled.
  *
- * @param targetMonth  'YYYY-MM' of the upcoming month (defaults to next Dubai month)
+ * @param targetMonth  'YYYY-MM' of the month being closed (defaults to current Dubai month)
  * @param createdBy    auth user ID to stamp on each invoice
  */
 export async function generateMonthlyInvoices(
@@ -87,7 +98,7 @@ export async function generateMonthlyInvoices(
       status,
       fixed_plan_id,
       fixed_plans(plan_name, meal_periods),
-      customers(full_name, customer_code, payment_terms, customer_type)
+      customers(full_name, customer_code, payment_terms, customer_type, area)
     `)
     .eq('status', 'active')
 
@@ -98,10 +109,33 @@ export async function generateMonthlyInvoices(
     (s.customers as unknown as { payment_terms?: string } | null)?.payment_terms === 'postpaid'
   )
 
-  const billingMonth = prevMonth(targetMonth)
-  const { start: periodStart, end: periodEnd } = monthBounds(billingMonth)
-  const dueDate   = monthBounds(targetMonth).start // 1st of targetMonth
-  const monthLabel = monthLabelFor(billingMonth)
+  // Two candidate cycles — see MAI_DUBAI_AREA comment above. Every
+  // per-customer amount below is computed against whichever one applies.
+  const [ty, tm] = targetMonth.split('-').map(Number)
+  const prevYear   = tm === 1 ? ty - 1 : ty
+  const prevMon    = tm === 1 ? 12 : tm - 1
+  const prevMonStr = prevMon < 10 ? `0${prevMon}` : `${prevMon}`
+  const maiDubaiPeriodStart = `${prevYear}-${prevMonStr}-26`
+  const maiDubaiPeriodEnd   = `${targetMonth}-25`
+  const maiDubaiDueDate     = maiDubaiPeriodEnd
+  const maiDubaiMonthLabel  = monthLabelFor(targetMonth)
+
+  const calendar = monthBounds(targetMonth)
+  const otherPeriodStart = calendar.start
+  const otherPeriodEnd   = calendar.end
+  const otherDueDate     = monthBounds(nextMonth(targetMonth)).start
+  const otherMonthLabel  = monthLabelFor(targetMonth)
+
+  function cycleFor(area: string | null | undefined) {
+    return area === MAI_DUBAI_AREA
+      ? { periodStart: maiDubaiPeriodStart, periodEnd: maiDubaiPeriodEnd, dueDate: maiDubaiDueDate, monthLabel: maiDubaiMonthLabel }
+      : { periodStart: otherPeriodStart, periodEnd: otherPeriodEnd, dueDate: otherDueDate, monthLabel: otherMonthLabel }
+  }
+
+  // Widest span across both cycles — used to fetch orders/pauses once; each
+  // customer is then filtered down to their own cycle's bounds below.
+  const spanStart = maiDubaiPeriodStart < otherPeriodStart ? maiDubaiPeriodStart : otherPeriodStart
+  const spanEnd    = maiDubaiPeriodEnd > otherPeriodEnd ? maiDubaiPeriodEnd : otherPeriodEnd
 
   // Fixed-menu customers pay a flat plan rate regardless of what they order, so
   // their invoice shows the order usage + a matching "fixed-plan discount" line
@@ -122,8 +156,8 @@ export async function generateMonthlyInvoices(
         .in('customer_id', fixedCustomerIds)
         .eq('is_credit', true)
         .not('order_status', 'in', '(cancelled,voided,draft)')
-        .gte('order_date', periodStart)
-        .lte('order_date', periodEnd)
+        .gte('order_date', spanStart)
+        .lte('order_date', spanEnd)
         .range(offset, offset + PAGE - 1)
       const batch = (data ?? []) as unknown as FixedOrderRow[]
       fixedOrders.push(...batch)
@@ -141,8 +175,8 @@ export async function generateMonthlyInvoices(
       .from('subscription_meal_pauses')
       .select('subscription_id, meal_period, pause_start, pause_end')
       .in('subscription_id', postpaidSubIds)
-      .lte('pause_start', periodEnd)
-      .or(`pause_end.is.null,pause_end.gte.${periodStart}`)
+      .lte('pause_start', spanEnd)
+      .or(`pause_end.is.null,pause_end.gte.${spanStart}`)
     for (const p of pauseRows ?? []) {
       const list = pausesBySub.get(p.subscription_id) ?? []
       list.push({ meal_period: p.meal_period, pause_start: p.pause_start, pause_end: p.pause_end })
@@ -150,14 +184,18 @@ export async function generateMonthlyInvoices(
     }
   }
 
-  // Fetch existing invoices for this billing period to skip duplicates
+  // Fetch existing invoices for either cycle's period start to skip
+  // duplicates — keyed by customer+period since the two areas use different
+  // period starts for the same targetMonth.
   const { data: existingInvoices } = await admin
     .from('invoices')
-    .select('customer_id')
+    .select('customer_id, billing_period_start')
     .eq('invoice_type', 'fixed_monthly')
-    .eq('billing_period_start', periodStart)
+    .in('billing_period_start', [maiDubaiPeriodStart, otherPeriodStart])
 
-  const alreadyInvoiced = new Set((existingInvoices ?? []).map((i) => i.customer_id))
+  const alreadyInvoiced = new Set(
+    (existingInvoices ?? []).map((i) => `${i.customer_id}|${i.billing_period_start}`)
+  )
 
   let generated = 0
   let skipped = 0
@@ -175,9 +213,10 @@ export async function generateMonthlyInvoices(
   }
 
   for (const sub of postpaidSubs) {
-    const customer = sub.customers as unknown as { full_name: string; customer_code: string; customer_type: string } | null
+    const customer = sub.customers as unknown as { full_name: string; customer_code: string; customer_type: string; area: string | null } | null
+    const { periodStart, periodEnd, dueDate, monthLabel } = cycleFor(customer?.area)
 
-    if (alreadyInvoiced.has(sub.customer_id)) {
+    if (alreadyInvoiced.has(`${sub.customer_id}|${periodStart}`)) {
       skipped++
       continue
     }

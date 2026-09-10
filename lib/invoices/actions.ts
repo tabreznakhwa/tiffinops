@@ -3,7 +3,7 @@
 import { revalidatePath } from 'next/cache'
 import { requireAuth } from '@/lib/auth'
 import { createAdminClient } from '@/lib/supabase/admin'
-import { generateMonthlyInvoices, nextMonth } from '@/lib/invoices/generateMonthlyInvoices'
+import { generateMonthlyInvoices } from '@/lib/invoices/generateMonthlyInvoices'
 import { generateAlaCarteInvoices } from '@/lib/invoices/generateAlaCarteInvoices'
 import { generatePrepaidAnniversaryInvoices } from '@/lib/invoices/generatePrepaidInvoices'
 import { formatInTimeZone } from 'date-fns-tz'
@@ -20,7 +20,7 @@ export async function triggerMonthlyInvoices(
   if (user.role !== 'owner') return { error: 'Only the owner can generate monthly invoices' }
 
   const currentDubaiMonth = formatInTimeZone(new Date(), 'Asia/Dubai', 'yyyy-MM')
-  const month = targetMonth ?? nextMonth(currentDubaiMonth)
+  const month = targetMonth ?? currentDubaiMonth
 
   const result = await generateMonthlyInvoices(month, user.id)
   revalidatePath('/invoices')
