@@ -52,6 +52,29 @@ function nthAnniversary(startDate: string, n: number): string {
   return `${String(year).padStart(4, '0')}-${String(month).padStart(2, '0')}-${String(Math.min(startDay, dim)).padStart(2, '0')}`
 }
 
+// Return 'YYYY-MM' of the calendar month that contains more days of the
+// [start, end] inclusive range. If exactly half (possible only with even
+// total days), choose the earlier month for determinism.
+function majorityMonth(start: string, end: string): string {
+  const s = new Date(start + 'T00:00:00Z')
+  const e = new Date(end + 'T00:00:00Z')
+  const totalDays = Math.round((e.getTime() - s.getTime()) / 86_400_000) + 1
+  if (totalDays <= 0) return start.slice(0, 7) // fallback
+
+  // Days in start month
+  const startMonthEnd = new Date(s.getFullYear(), s.getMonth() + 1, 0)
+  const daysInStartMonth = Math.max(0, Math.min(e, startMonthEnd).getTime() - s.getTime()) / 86_400_000 + 1
+  const daysInEndMonth = totalDays - daysInStartMonth
+
+  if (daysInEndMonth > daysInStartMonth) {
+    // end month wins
+    return `${String(e.getFullYear()).padStart(4, '0')}-${String(e.getMonth() + 1).padStart(2, '0')}`
+  } else {
+    // start month wins (or tie -> earlier month)
+    return `${String(s.getFullYear()).padStart(4, '0')}-${String(s.getMonth() + 1).padStart(2, '0')}`
+  }
+}
+
 export default async function OutstandingPage({
   searchParams,
 }: {
@@ -216,9 +239,9 @@ export default async function OutstandingPage({
   const monthBillsByCustomer = new Map<string, MonthBill[]>()
   for (const inv of billedInvoices) {
     if (!inv.customer_id) continue
-    const anchor = inv.billing_period_end || inv.invoice_date
-    const y = Number(anchor.slice(0, 4))
-    const m = Number(anchor.slice(5, 7))
+    const anchorStart = inv.billing_period_start ?? inv.invoice_date
+    const anchorEnd   = inv.billing_period_end   || inv.invoice_date
+    const [y, m] = majorityMonth(anchorStart, anchorEnd).split('-').map(Number)
     const billed = parseFloat(String(inv.total_amount))
     const paid = Math.min(paidByInvoice.get(inv.id) ?? 0, billed)
     const remaining = Math.max(0, billed - paid)
