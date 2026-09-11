@@ -63,7 +63,7 @@ function majorityMonth(start: string, end: string): string {
 
   // Days in start month
   const startMonthEnd = new Date(s.getFullYear(), s.getMonth() + 1, 0)
-  const daysInStartMonth = Math.max(0, Math.min(e, startMonthEnd).getTime() - s.getTime()) / 86_400_000 + 1
+  const daysInStartMonth = Math.max(0, Math.min(e.getTime(), startMonthEnd.getTime()) - s.getTime()) / 86_400_000 + 1
   const daysInEndMonth = totalDays - daysInStartMonth
 
   if (daysInEndMonth > daysInStartMonth) {
@@ -156,11 +156,11 @@ export default async function OutstandingPage({
     // an older unpaid month).
     fetchPaged<{
       id: string; customer_id: string | null; invoice_number: string
-      invoice_date: string; billing_period_end: string | null
+      invoice_date: string; billing_period_start: string | null; billing_period_end: string | null
       total_amount: string; status: string
     }>((f, t) => admin
       .from('invoices')
-      .select('id, customer_id, invoice_number, invoice_date, billing_period_end, total_amount, status')
+      .select('id, customer_id, invoice_number, invoice_date, billing_period_start, billing_period_end, total_amount, status')
       .in('status', ['issued', 'partial', 'paid', 'overdue'])
       .range(f, t)),
     // Payments applied to a specific invoice — the per-month "paid" amounts
