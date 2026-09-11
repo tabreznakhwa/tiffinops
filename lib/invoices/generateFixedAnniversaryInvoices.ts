@@ -251,11 +251,15 @@ export async function generateFixedAnniversaryInvoices(
   }
 
   // Idempotency — skip a (customer, periodStart) already invoiced (handles a
-  // cron re-run the same day).
+  // cron re-run the same day). Excludes cancelled invoices, same as
+  // lastBilledThroughByCustomer above — a cancelled invoice (e.g. a
+  // corrected/replaced one) must free its period up for regeneration, not
+  // block it forever.
   const { data: existingInvoices } = await admin
     .from('invoices')
     .select('customer_id, billing_period_start')
     .eq('invoice_type', 'fixed_monthly')
+    .neq('status', 'cancelled')
     .in('customer_id', due.map(d => d.sub.customer_id))
   const alreadyInvoiced = new Set(
     (existingInvoices ?? []).map(i => `${i.customer_id}|${i.billing_period_start}`)

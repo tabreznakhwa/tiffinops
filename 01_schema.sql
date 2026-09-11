@@ -253,9 +253,11 @@ create table invoices (
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
--- prevent duplicate invoices when the monthly job re-runs
+-- prevent duplicate invoices when the monthly job re-runs — excludes
+-- cancelled invoices (see migrations/049) so a legitimate cancel-and-reissue
+-- for the same period isn't permanently blocked
 create unique index idx_invoices_idempotent on invoices(customer_id, invoice_type, billing_period_start)
-  where billing_period_start is not null;
+  where billing_period_start is not null and status <> 'cancelled';
 create index idx_invoices_customer on invoices(customer_id, invoice_date desc);
 create index idx_invoices_status on invoices(status);
 
