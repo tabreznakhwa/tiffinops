@@ -1,5 +1,5 @@
 import { createAdminClient } from '@/lib/supabase/admin'
-import { computeFixedInvoiceAmounts, type FixedInvoiceLineItem } from './fixedPlanInvoiceLines'
+import { computeFixedInvoiceAmounts, buildMultiPlanLineItems } from './fixedPlanInvoiceLines'
 import type { GenerateResult } from './generateMonthlyInvoices'
 import { calcSubscriptionCharge, isMealPausedOn, type MealPause } from '@/lib/fixed-menu/proration'
 
@@ -8,63 +8,12 @@ import { calcSubscriptionCharge, isMealPausedOn, type MealPause } from '@/lib/fi
 // customer_subscriptions row. The invoices table only supports ONE invoice
 // per (customer, invoice_type, billing_period_start) — idx_invoices_idempotent
 // enforces this at the DB level — so every plan that shares a cycle boundary
-// with another must be billed on the SAME invoice, one line item per plan,
-// rather than one invoice per subscription. Build those combined line items
-// here rather than via the shared buildFixedPlanLineItems (which assumes a
-// single plan) — the in-plan-usage/discount and out-of-plan lines are shared
+// with another must be billed on the SAME invoice, one line item per plan.
+// buildMultiPlanLineItems (in fixedPlanInvoiceLines.ts, shared with
+// generateMonthlyInvoices' own multi-plan grouping) builds those combined
+// line items — the in-plan-usage/discount and out-of-plan lines are shared
 // across all of a customer's plans on the invoice, but each plan still gets
 // its own named line at its own price.
-function buildMultiPlanLineItems(params: {
-  invoiceId: string
-  monthLabel: string
-  plans: { planName: string; amount: number; prorationNote?: string }[]
-  inPlanUsage: number
-  outOfPlanExtras: Partial<Record<'breakfast' | 'lunch' | 'dinner', number>>
-}): FixedInvoiceLineItem[] {
-  const { invoiceId, monthLabel, plans, inPlanUsage, outOfPlanExtras } = params
-  const lineItems: FixedInvoiceLineItem[] = plans.map(p => ({
-    invoice_id:  invoiceId,
-    order_id:    null,
-    description: `Monthly Fixed Plan — ${p.planName} — ${monthLabel}${p.prorationNote ? ` (${p.prorationNote})` : ''}`,
-    quantity:    '1',
-    unit_price:  p.amount.toFixed(2),
-    total_price: p.amount.toFixed(2),
-  }))
-
-  if (inPlanUsage > 0) {
-    lineItems.push({
-      invoice_id:  invoiceId,
-      order_id:    null,
-      description: `Extra items — ${monthLabel}`,
-      quantity:    '1',
-      unit_price:  inPlanUsage.toFixed(2),
-      total_price: inPlanUsage.toFixed(2),
-    })
-    lineItems.push({
-      invoice_id:  invoiceId,
-      order_id:    null,
-      description: 'Fixed-plan discount (extra items included in plan)',
-      quantity:    '1',
-      unit_price:  (-inPlanUsage).toFixed(2),
-      total_price: (-inPlanUsage).toFixed(2),
-    })
-  }
-
-  for (const [mealPeriod, mealAmount] of Object.entries(outOfPlanExtras)) {
-    if (!mealAmount || mealAmount < 0.005) continue
-    const label = mealPeriod.charAt(0).toUpperCase() + mealPeriod.slice(1)
-    lineItems.push({
-      invoice_id:  invoiceId,
-      order_id:    null,
-      description: `${label} orders — outside plan — ${monthLabel} (billed in full)`,
-      quantity:    '1',
-      unit_price:  mealAmount.toFixed(2),
-      total_price: mealAmount.toFixed(2),
-    })
-  }
-
-  return lineItems
-}
 
 // Human-readable note for the invoice line when a meal pause reduced the
 // flat plan rate for this billing period — keeps the bill self-explanatory.
@@ -176,12 +125,19 @@ export function pendingCyclesFor(
 }
 
 /**
- * Generate draft fixed_monthly invoices for POSTPAID fixed_menu subscribers,
- * one per completed monthly cycle measured from their OWN start-date
- * anniversary — not a shared calendar month. A customer who joined on the
- * 16th bills the 16th of every month, in arrears (the invoice for the
- * 16th-to-15th cycle is generated once that cycle is over, i.e. on the next
- * 16th), same rule for every area including Mai Dubai.
+ * Generate draft fixed_monthly invoices for POSTPAID fixed_menu subscribers
+ * OUTSIDE Mai Dubai, one per completed monthly cycle measured from their OWN
+ * start-date anniversary — not a shared calendar month. A customer who
+ * joined on the 16th bills the 16th of every month, in arrears (the invoice
+ * for the 16th-to-15th cycle is generated once that cycle is over, i.e. on
+ * the next 16th).
+ *
+ * Mai Dubai fixed customers do NOT use this generator — every Mai Dubai
+ * customer, regardless of type (fixed/à la carte/hybrid), bills on the
+ * area's shared 26th-of-month cycle instead, in generateMonthlyInvoices, per
+ * explicit direction: a Mai Dubai customer's bill always lands on the 25/26
+ * cycle boundary, prorated for a mid-cycle join, never on their own
+ * individual anniversary day.
  *
  * Meant to run daily. Each customer's next due cycle is derived from the
  * latest billing_period_end across their own non-cancelled invoices (any
@@ -216,19 +172,23 @@ export async function generateFixedAnniversaryInvoices(
       meal_prices,
       fixed_plan_id,
       fixed_plans(plan_name, meal_periods),
-      customers(full_name, customer_code, payment_terms, customer_type, status)
+      customers(full_name, customer_code, payment_terms, customer_type, status, area)
     `)
     .eq('status', 'active')
 
   if (subsErr) return { generated: 0, skipped: 0, referralRewardsGenerated: 0, errors: [subsErr.message], month: today }
 
-  // fixed_menu only — a handful of "hybrid" customers (customer_type
-  // a_la_carte but with a flat-price subscription row) are deliberately left
-  // to the old calendar-cycle generateMonthlyInvoices, unchanged, so this
-  // doesn't touch a population it was never asked to.
+  // fixed_menu only, and only OUTSIDE Mai Dubai — Mai Dubai fixed customers
+  // bill on the area's shared 26th-of-month cycle instead, same as every
+  // other Mai Dubai customer type, via generateMonthlyInvoices (see its
+  // MAI_DUBAI_AREA comment). A handful of "hybrid" customers (customer_type
+  // a_la_carte but with a flat-price subscription row) are also left to
+  // generateMonthlyInvoices, unchanged, so this doesn't touch a population
+  // it was never asked to.
   const postpaidSubs = (subs ?? []).filter(s => {
-    const c = s.customers as unknown as { payment_terms?: string; status?: string; customer_type?: string } | null
-    return c?.payment_terms === 'postpaid' && c?.customer_type === 'fixed_menu' && (c?.status === 'active' || c?.status === 'paused')
+    const c = s.customers as unknown as { payment_terms?: string; status?: string; customer_type?: string; area?: string | null } | null
+    return c?.payment_terms === 'postpaid' && c?.customer_type === 'fixed_menu' && c?.area !== 'Mai Dubai'
+      && (c?.status === 'active' || c?.status === 'paused')
   })
 
   if (postpaidSubs.length === 0) {
