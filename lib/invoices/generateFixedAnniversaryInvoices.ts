@@ -1,7 +1,70 @@
 import { createAdminClient } from '@/lib/supabase/admin'
-import { computeFixedInvoiceAmounts, buildFixedPlanLineItems } from './fixedPlanInvoiceLines'
+import { computeFixedInvoiceAmounts, type FixedInvoiceLineItem } from './fixedPlanInvoiceLines'
 import type { GenerateResult } from './generateMonthlyInvoices'
 import { calcSubscriptionCharge, isMealPausedOn, type MealPause } from '@/lib/fixed-menu/proration'
+
+// A customer can hold more than one concurrent fixed plan at once (e.g. a
+// separate Breakfast plan and a separate Dinner plan) — each is its own
+// customer_subscriptions row. The invoices table only supports ONE invoice
+// per (customer, invoice_type, billing_period_start) — idx_invoices_idempotent
+// enforces this at the DB level — so every plan that shares a cycle boundary
+// with another must be billed on the SAME invoice, one line item per plan,
+// rather than one invoice per subscription. Build those combined line items
+// here rather than via the shared buildFixedPlanLineItems (which assumes a
+// single plan) — the in-plan-usage/discount and out-of-plan lines are shared
+// across all of a customer's plans on the invoice, but each plan still gets
+// its own named line at its own price.
+function buildMultiPlanLineItems(params: {
+  invoiceId: string
+  monthLabel: string
+  plans: { planName: string; amount: number; prorationNote?: string }[]
+  inPlanUsage: number
+  outOfPlanExtras: Partial<Record<'breakfast' | 'lunch' | 'dinner', number>>
+}): FixedInvoiceLineItem[] {
+  const { invoiceId, monthLabel, plans, inPlanUsage, outOfPlanExtras } = params
+  const lineItems: FixedInvoiceLineItem[] = plans.map(p => ({
+    invoice_id:  invoiceId,
+    order_id:    null,
+    description: `Monthly Fixed Plan — ${p.planName} — ${monthLabel}${p.prorationNote ? ` (${p.prorationNote})` : ''}`,
+    quantity:    '1',
+    unit_price:  p.amount.toFixed(2),
+    total_price: p.amount.toFixed(2),
+  }))
+
+  if (inPlanUsage > 0) {
+    lineItems.push({
+      invoice_id:  invoiceId,
+      order_id:    null,
+      description: `Extra items — ${monthLabel}`,
+      quantity:    '1',
+      unit_price:  inPlanUsage.toFixed(2),
+      total_price: inPlanUsage.toFixed(2),
+    })
+    lineItems.push({
+      invoice_id:  invoiceId,
+      order_id:    null,
+      description: 'Fixed-plan discount (extra items included in plan)',
+      quantity:    '1',
+      unit_price:  (-inPlanUsage).toFixed(2),
+      total_price: (-inPlanUsage).toFixed(2),
+    })
+  }
+
+  for (const [mealPeriod, mealAmount] of Object.entries(outOfPlanExtras)) {
+    if (!mealAmount || mealAmount < 0.005) continue
+    const label = mealPeriod.charAt(0).toUpperCase() + mealPeriod.slice(1)
+    lineItems.push({
+      invoice_id:  invoiceId,
+      order_id:    null,
+      description: `${label} orders — outside plan — ${monthLabel} (billed in full)`,
+      quantity:    '1',
+      unit_price:  mealAmount.toFixed(2),
+      total_price: mealAmount.toFixed(2),
+    })
+  }
+
+  return lineItems
+}
 
 // Human-readable note for the invoice line when a meal pause reduced the
 // flat plan rate for this billing period — keeps the bill self-explanatory.
@@ -204,6 +267,25 @@ export async function generateFixedAnniversaryInvoices(
     return { generated: 0, skipped: 0, referralRewardsGenerated: 0, errors: [], month: today }
   }
 
+  // A customer can hold more than one concurrent fixed plan (separate
+  // customer_subscriptions rows — e.g. a Breakfast plan and a Dinner plan).
+  // Group by (customer, periodStart) so every plan whose cycle shares that
+  // start date lands on ONE invoice, matching idx_invoices_idempotent's
+  // one-invoice-per-customer-per-period rule instead of colliding with it.
+  type CycleGroup = { customerId: string; periodStart: string; periodEnd: string; members: Due[] }
+  const groupsByKey = new Map<string, CycleGroup>()
+  for (const d of due) {
+    const key = `${d.sub.customer_id}|${d.periodStart}`
+    const g = groupsByKey.get(key)
+    if (g) {
+      g.members.push(d)
+      if (d.periodEnd > g.periodEnd) g.periodEnd = d.periodEnd
+    } else {
+      groupsByKey.set(key, { customerId: d.sub.customer_id, periodStart: d.periodStart, periodEnd: d.periodEnd, members: [d] })
+    }
+  }
+  const groups = [...groupsByKey.values()]
+
   const spanStart = due.reduce((a, d) => (d.periodStart < a ? d.periodStart : a), due[0].periodStart)
   const spanEnd    = due.reduce((a, d) => (d.periodEnd > a ? d.periodEnd : a), due[0].periodEnd)
 
@@ -269,46 +351,57 @@ export async function generateFixedAnniversaryInvoices(
   let skipped = 0
   const errors: string[] = []
 
-  for (const { sub, periodStart, periodEnd } of due) {
-    const customer = sub.customers as unknown as { full_name: string; customer_code: string; customer_type: string } | null
+  for (const group of groups) {
+    const customer = group.members[0].sub.customers as unknown as { full_name: string; customer_code: string; customer_type: string } | null
 
-    if (alreadyInvoiced.has(`${sub.customer_id}|${periodStart}`)) {
+    if (alreadyInvoiced.has(`${group.customerId}|${group.periodStart}`)) {
       skipped++
       continue
     }
 
-    const plan = sub.fixed_plans as unknown as { plan_name: string; meal_periods: string[] | null } | null
-    const rawAmount = parseFloat(String(sub.agreed_monthly_price))
-    if (!rawAmount || rawAmount <= 0) {
-      skipped++
-      continue
+    // Compute each member plan's own charge independently — preserves
+    // per-plan pricing, proration and pause handling exactly as if each were
+    // billed alone — then combine. A member with no positive charge (bad
+    // data) is dropped rather than sinking the whole group's invoice.
+    const planCharges: { sub: typeof group.members[number]['sub']; plan: { plan_name: string; meal_periods: string[] | null } | null; amount: number; prorationNote?: string; subPauses: MealPause[] }[] = []
+    for (const { sub, periodStart, periodEnd } of group.members) {
+      const plan = sub.fixed_plans as unknown as { plan_name: string; meal_periods: string[] | null } | null
+      const rawAmount = parseFloat(String(sub.agreed_monthly_price))
+      if (!rawAmount || rawAmount <= 0) continue
+
+      const subPauses = pausesBySub.get(sub.id) ?? []
+      const amount = calcSubscriptionCharge({
+        mealPeriods:        plan?.meal_periods ?? [],
+        agreedMonthlyPrice: rawAmount,
+        mealPrices:         sub.meal_prices,
+        subStart:           sub.start_date,
+        subEnd:             sub.end_date,
+        subStatus:          sub.status,
+        pauses:             subPauses,
+        rangeFrom:          periodStart,
+        rangeTo:            periodEnd,
+        cycleDays:          daySpan(periodStart, periodEnd),
+      })
+      planCharges.push({ sub, plan, amount, prorationNote: prorationNoteFor(subPauses), subPauses })
     }
 
-    const subPauses = pausesBySub.get(sub.id) ?? []
-    const amount = calcSubscriptionCharge({
-      mealPeriods:        plan?.meal_periods ?? [],
-      agreedMonthlyPrice: rawAmount,
-      mealPrices:         sub.meal_prices,
-      subStart:           sub.start_date,
-      subEnd:             sub.end_date,
-      subStatus:          sub.status,
-      pauses:             subPauses,
-      rangeFrom:          periodStart,
-      rangeTo:            periodEnd,
-      cycleDays:          daySpan(periodStart, periodEnd),
-    })
-    const prorationNote = prorationNoteFor(subPauses)
-    const monthLabel = monthLabelFor(periodStart)
+    const monthLabel = monthLabelFor(group.periodStart)
+    const totalAmount = planCharges.reduce((s, p) => s + p.amount, 0)
 
-    const coveredMeals = new Set(plan?.meal_periods ?? [])
+    // Orders classify against the UNION of every plan's covered meals (a
+    // dinner order is in-plan if ANY of the customer's plans covers dinner,
+    // regardless of which plan happens to be listed first) and against the
+    // union of every plan's own pauses.
+    const coveredMeals = new Set(planCharges.flatMap(p => p.plan?.meal_periods ?? []))
+    const allPauses = planCharges.flatMap(p => p.subPauses)
     let inPlanUsage = 0
     const outOfPlanExtras: Partial<Record<'breakfast' | 'lunch' | 'dinner', number>> = {}
     if (customer?.customer_type === 'fixed_menu') {
       for (const o of fixedOrders) {
-        if (o.customer_id !== sub.customer_id) continue
-        if (o.order_date < periodStart || o.order_date > periodEnd) continue
+        if (o.customer_id !== group.customerId) continue
+        if (o.order_date < group.periodStart || o.order_date > group.periodEnd) continue
         const amt = parseFloat(o.total_amount)
-        if (coveredMeals.has(o.meal_period) && !isMealPausedOn(subPauses, o.meal_period, o.order_date)) {
+        if (coveredMeals.has(o.meal_period) && !isMealPausedOn(allPauses, o.meal_period, o.order_date)) {
           inPlanUsage += amt
         } else {
           const key = o.meal_period as 'breakfast' | 'lunch' | 'dinner'
@@ -318,14 +411,14 @@ export async function generateFixedAnniversaryInvoices(
     }
     const outOfPlanTotal = Object.values(outOfPlanExtras).reduce((s, v) => s + (v ?? 0), 0)
 
-    if (amount <= 0 && outOfPlanTotal <= 0) {
+    if (totalAmount <= 0 && outOfPlanTotal <= 0) {
       skipped++
       continue
     }
 
     const { data: invoiceNumber, error: numErr } = await admin.rpc('next_invoice_number')
     if (numErr || !invoiceNumber) {
-      errors.push(`${customer?.full_name ?? sub.customer_id}: could not generate invoice number`)
+      errors.push(`${customer?.full_name ?? group.customerId}: could not generate invoice number`)
       continue
     }
 
@@ -333,13 +426,13 @@ export async function generateFixedAnniversaryInvoices(
       .from('invoices')
       .insert({
         invoice_number:        invoiceNumber as string,
-        customer_id:           sub.customer_id,
+        customer_id:           group.customerId,
         invoice_date:          today,
         due_date:              today, // postpaid, billed in arrears — due on generation, same as the old cycles
         invoice_type:          'fixed_monthly',
-        billing_period_start:  periodStart,
-        billing_period_end:    periodEnd,
-        ...computeFixedInvoiceAmounts(amount, inPlanUsage, outOfPlanTotal, vatRate),
+        billing_period_start:  group.periodStart,
+        billing_period_end:    group.periodEnd,
+        ...computeFixedInvoiceAmounts(totalAmount, inPlanUsage, outOfPlanTotal, vatRate),
         status:                'draft',
         notes:                 null,
         created_by:            createdBy === 'system-cron' ? null : createdBy,
@@ -348,25 +441,23 @@ export async function generateFixedAnniversaryInvoices(
       .single()
 
     if (insertErr || !invoice) {
-      errors.push(`${customer?.full_name ?? sub.customer_id}: ${insertErr?.message ?? 'insert failed'}`)
+      errors.push(`${customer?.full_name ?? group.customerId}: ${insertErr?.message ?? 'insert failed'}`)
       continue
     }
 
-    const lineItems = buildFixedPlanLineItems({
+    const lineItems = buildMultiPlanLineItems({
       invoiceId: invoice.id,
-      planName:  plan?.plan_name ?? 'Fixed Plan',
       monthLabel,
-      amount,
+      plans: planCharges.map(p => ({ planName: p.plan?.plan_name ?? 'Fixed Plan', amount: p.amount, prorationNote: p.prorationNote })),
       inPlanUsage,
       outOfPlanExtras,
-      prorationNote,
     })
 
     const { error: itemErr } = await admin.from('invoice_items').insert(lineItems)
 
     if (itemErr) {
       await admin.from('invoices').delete().eq('id', invoice.id)
-      errors.push(`${customer?.full_name ?? sub.customer_id}: ${itemErr.message}`)
+      errors.push(`${customer?.full_name ?? group.customerId}: ${itemErr.message}`)
       continue
     }
 
