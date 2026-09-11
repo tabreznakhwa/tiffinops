@@ -1,6 +1,29 @@
 import { createAdminClient } from '@/lib/supabase/admin'
 import { formatInTimeZone } from 'date-fns-tz'
 
+// An order counts as "covered by a fixed plan" on its date when the customer
+// had ANY subscription in force then (start_date <= date, end_date null or
+// >= date, agreed_monthly_price > 0) — regardless of which meal periods that
+// plan covers. Every such order is already billed by whichever flat-plan
+// generator applies to that customer (generateMonthlyInvoices for Mai Dubai
+// or postpaid hybrid, generateFixedAnniversaryInvoices for local postpaid
+// fixed_menu, generatePrepaidInvoices for prepaid): a meal the plan covers is
+// netted to zero there, and a meal it does NOT cover is billed there too, in
+// full, as an "outside plan" extra. Billing it again here would double-charge
+// the customer. Same in-force resolution rule as mealPeriodsCoveredOn in
+// lib/billing/subscription-charge.ts (a row past its end_date, or zeroed out
+// to retire a superseded row, never counts, however recent its start_date).
+type CoveringSub = { customer_id: string; start_date: string; end_date: string | null; agreed_monthly_price: string | number }
+function hasActivePlanOn(subs: CoveringSub[], date: string): boolean {
+  for (const s of subs) {
+    if (s.start_date > date) continue
+    if (s.end_date != null && s.end_date < date) continue
+    if (!(parseFloat(String(s.agreed_monthly_price)) > 0)) continue
+    return true
+  }
+  return false
+}
+
 export type AlaCarteGenerateResult = {
   generated:      number
   skipped:        number
@@ -13,7 +36,16 @@ export type AlaCarteGenerateResult = {
 
 /**
  * Generate draft a_la_carte_cycle invoices for all active A La Carte / Hybrid
- * customers who have uninvoiced credit orders in the given period.
+ * customers who have uninvoiced credit orders in the given period — EXCEPT
+ * any order placed on a date the customer had a fixed plan in force (see
+ * hasActivePlanOn above). Those orders are already billed by whichever
+ * flat-plan generator applies to that customer: netted to zero if the plan
+ * covers that meal, or billed in full as an "outside plan" extra if it
+ * doesn't. Billing them again here would double-charge the customer — this
+ * is what makes a hybrid customer's invoicing correct: the flat-plan
+ * invoice covers their plan + all its extras, and this a_la_carte_cycle
+ * invoice covers only genuinely plan-free periods (e.g. before they joined a
+ * plan, or after they left one).
  *
  * Safe to call multiple times — uses billing_period_start/end as idempotency key.
  *
@@ -65,6 +97,21 @@ export async function generateAlaCarteInvoices(
   const customerIds = customers.map(c => c.id)
   const customerMap = new Map(customers.map(c => [c.id, c]))
 
+  // Every subscription row (any status) for these customers — used only to
+  // tell whether a given order date already had a fixed plan in force, so
+  // that order can be excluded here and left to the flat-plan generator that
+  // actually bills it. See hasActivePlanOn above.
+  const { data: coveringSubsRaw } = await admin
+    .from('customer_subscriptions')
+    .select('customer_id, start_date, end_date, agreed_monthly_price')
+    .in('customer_id', customerIds)
+  const coveringSubsByCustomer = new Map<string, CoveringSub[]>()
+  for (const s of (coveringSubsRaw ?? []) as CoveringSub[]) {
+    const list = coveringSubsByCustomer.get(s.customer_id)
+    if (list) list.push(s)
+    else coveringSubsByCustomer.set(s.customer_id, [s])
+  }
+
   // Already-invoiced order IDs (in non-cancelled invoices)
   const alreadyInvoicedOrderIds = new Set<string>()
   {
@@ -114,10 +161,14 @@ export async function generateAlaCarteInvoices(
     }
   }
 
-  // Group uninvoiced orders by customer
+  // Group uninvoiced orders by customer — excluding any order already
+  // covered by an active fixed plan on its date (see hasActivePlanOn above);
+  // those are billed by the matching flat-plan generator instead, never here.
   const byCustomer = new Map<string, OrderRow[]>()
   for (const order of allOrders) {
     if (alreadyInvoicedOrderIds.has(order.id)) continue
+    const covering = coveringSubsByCustomer.get(order.customer_id)
+    if (covering && hasActivePlanOn(covering, order.order_date)) continue
     if (!byCustomer.has(order.customer_id)) byCustomer.set(order.customer_id, [])
     byCustomer.get(order.customer_id)!.push(order)
   }
