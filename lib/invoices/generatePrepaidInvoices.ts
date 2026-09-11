@@ -1,7 +1,19 @@
 import { createAdminClient } from '@/lib/supabase/admin'
-import { computeFixedInvoiceAmounts, buildFixedPlanLineItems } from './fixedPlanInvoiceLines'
+import { computeFixedInvoiceAmounts, buildMultiPlanLineItems } from './fixedPlanInvoiceLines'
 import type { GenerateResult } from './generateMonthlyInvoices'
 import { calcSubscriptionCharge, isMealPausedOn, type MealPause } from '@/lib/fixed-menu/proration'
+
+// A customer can hold more than one concurrent fixed plan at once (e.g. a
+// separate Breakfast plan and a separate Dinner plan) — each is its own
+// customer_subscriptions row, each with its own start_date and therefore its
+// own anniversary day. The invoices table only supports ONE invoice per
+// (customer, invoice_type, billing_period_start) — idx_invoices_idempotent
+// enforces this at the DB level — so every plan whose cycle happens to start
+// on the same day as another must be billed on the SAME invoice, one line
+// item per plan. buildMultiPlanLineItems (in fixedPlanInvoiceLines.ts,
+// shared with generateMonthlyInvoices' and
+// generateFixedAnniversaryInvoices.ts's own multi-plan grouping) builds
+// those combined line items.
 
 // Human-readable note for the invoice line when a meal pause reduced the
 // flat plan rate for this billing period — keeps the bill self-explanatory.
@@ -171,46 +183,59 @@ export async function generatePrepaidAnniversaryInvoices(
     return { generated: 0, skipped: 0, referralRewardsGenerated: 0, errors: [], month: today }
   }
 
-  // Each due subscriber's own current cycle start — today for a normal
+  // Each due subscription's own current cycle start — today for a normal
   // on-time run, or (catch-up) the most recent anniversary already passed.
-  // Never assume it's `today`: that's only true in the normal case.
-  const periodStartByCustomer = new Map<string, string>()
+  // Keyed by SUBSCRIPTION id, not customer id: a customer can hold more than
+  // one concurrent plan (e.g. separate Breakfast and Dinner subscriptions)
+  // started on different dates, so their anniversary cycles don't
+  // necessarily align. Keying by customer alone used to silently let one
+  // plan's period clobber another's in this map — same bug class already
+  // found and fixed in generateFixedAnniversaryInvoices.ts (see
+  // idx_invoices_idempotent multi-plan grouping there).
+  const periodStartBySub = new Map<string, string>()
   for (const s of dueToday) {
-    periodStartByCustomer.set(s.customer_id, mostRecentAnniversaryOnOrBefore(s.start_date, today))
+    periodStartBySub.set(s.id, mostRecentAnniversaryOnOrBefore(s.start_date, today))
   }
 
-  // Fixed-menu customers pay a flat plan rate regardless of what they order —
-  // fetch their credit orders across today's batch (each customer's own
-  // period, but they all start today) so each invoice can show usage.
-  const fixedCustomerIds = dueToday
-    .map(s => (s.customers as unknown as { customer_type?: string } | null)?.customer_type === 'fixed_menu' ? s.customer_id : null)
-    .filter((x): x is string => !!x)
-
-  // periodEnd differs per customer (depends on their own start day) — and for
-  // a catch-up subscriber it's anchored to THEIR period start, not today, so
-  // a stale cycle resolves to its own real end date instead of jumping
-  // straight to next month's (which would silently swallow the gap).
-  const periodEndByCustomer = new Map<string, string>()
+  // periodEnd differs per subscription (depends on its own start day) — and
+  // for a catch-up subscriber it's anchored to ITS OWN period start, not
+  // today, so a stale cycle resolves to its own real end date instead of
+  // jumping straight to next month's (which would silently swallow the gap).
+  const periodEndBySub = new Map<string, string>()
   for (const s of dueToday) {
-    const periodStart = periodStartByCustomer.get(s.customer_id)!
-    periodEndByCustomer.set(s.customer_id, addDays(nextAnniversaryAfter(s.start_date, periodStart), -1))
+    const periodStart = periodStartBySub.get(s.id)!
+    periodEndBySub.set(s.id, addDays(nextAnniversaryAfter(s.start_date, periodStart), -1))
   }
-  const furthestPeriodEnd = [...periodEndByCustomer.values()].reduce((a, b) => (a > b ? a : b), today)
+  const furthestPeriodEnd = [...periodEndBySub.values()].reduce((a, b) => (a > b ? a : b), today)
   // Earliest period start in this batch — a catch-up subscriber's cycle can
   // start well before today, so orders/pauses fetched below must reach back
   // that far too, not just from today.
-  const earliestPeriodStart = [...periodStartByCustomer.values()].reduce((a, b) => (a < b ? a : b), today)
+  const earliestPeriodStart = [...periodStartBySub.values()].reduce((a, b) => (a < b ? a : b), today)
+
+  // fixed_menu AND hybrid customers pay a flat plan rate regardless of what
+  // they order (from a meal period their plan covers) — fetch their credit
+  // orders across today's batch so each invoice can show usage and net it
+  // against the flat price. A plain a_la_carte customer who merely holds a
+  // legacy subscription row gets no netting, same as before.
+  const nettingCustomerIds = [...new Set(
+    dueToday
+      .map(s => {
+        const c = s.customers as unknown as { customer_type?: string } | null
+        return (c?.customer_type === 'fixed_menu' || c?.customer_type === 'hybrid') ? s.customer_id : null
+      })
+      .filter((x): x is string => !!x)
+  )]
 
   type FixedOrderRow = { customer_id: string; order_date: string; meal_period: string; total_amount: string }
   const fixedOrders: FixedOrderRow[] = []
-  if (fixedCustomerIds.length) {
+  if (nettingCustomerIds.length) {
     const PAGE = 1000
     let offset = 0
     while (true) {
       const { data } = await admin
         .from('orders')
         .select('customer_id, order_date, meal_period, total_amount')
-        .in('customer_id', fixedCustomerIds)
+        .in('customer_id', nettingCustomerIds)
         .eq('is_credit', true)
         .not('order_status', 'in', '(cancelled,voided,draft)')
         .gte('order_date', earliestPeriodStart)
@@ -223,9 +248,9 @@ export async function generatePrepaidAnniversaryInvoices(
     }
   }
 
-  // Meal pauses overlapping any customer's period in this batch — used to
-  // prorate the flat plan rate for any meal a customer stopped mid-cycle.
-  // Filtered per-subscription against that customer's own periodEnd below.
+  // Meal pauses overlapping any subscription's period in this batch — used
+  // to prorate the flat plan rate for any meal a customer stopped mid-cycle.
+  // Filtered per-subscription against that subscription's own periodEnd below.
   const pausesBySub = new Map<string, MealPause[]>()
   const dueTodaySubIds = dueToday.map(s => s.id)
   if (dueTodaySubIds.length) {
@@ -242,10 +267,11 @@ export async function generatePrepaidAnniversaryInvoices(
     }
   }
 
-  // Idempotency — skip anyone who already has a fixed_monthly invoice for
-  // their own period start (handles a cron re-run on the same day; period
-  // start varies per customer now, so this can't just check `today`).
-  const distinctPeriodStarts = [...new Set(periodStartByCustomer.values())]
+  // Idempotency — skip a (customer, periodStart) already invoiced (handles a
+  // cron re-run on the same day). Keyed on the pair, not just customer id, so
+  // one plan being already-invoiced never masks another plan of the same
+  // customer whose own period start hasn't been billed yet.
+  const distinctPeriodStarts = [...new Set(periodStartBySub.values())]
   const { data: existingInvoices } = await admin
     .from('invoices')
     .select('customer_id, billing_period_start')
@@ -254,70 +280,93 @@ export async function generatePrepaidAnniversaryInvoices(
     .in('customer_id', dueToday.map(s => s.customer_id))
 
   const alreadyInvoiced = new Set(
-    (existingInvoices ?? [])
-      .filter(i => periodStartByCustomer.get(i.customer_id) === i.billing_period_start)
-      .map(i => i.customer_id)
+    (existingInvoices ?? []).map(i => `${i.customer_id}|${i.billing_period_start}`)
   )
+
+  // A customer can hold more than one concurrent fixed plan. Group by
+  // (customer, periodStart) so every plan whose cycle happens to start on
+  // the same day lands on ONE invoice, matching idx_invoices_idempotent's
+  // one-invoice-per-customer-per-period rule instead of colliding with it.
+  type Group = { customerId: string; periodStart: string; periodEnd: string; members: typeof dueToday }
+  const groupsByKey = new Map<string, Group>()
+  for (const sub of dueToday) {
+    const periodStart = periodStartBySub.get(sub.id)!
+    const periodEnd   = periodEndBySub.get(sub.id)!
+    const key = `${sub.customer_id}|${periodStart}`
+    const g = groupsByKey.get(key)
+    if (g) {
+      g.members.push(sub)
+      if (periodEnd > g.periodEnd) g.periodEnd = periodEnd
+    } else {
+      groupsByKey.set(key, { customerId: sub.customer_id, periodStart, periodEnd, members: [sub] })
+    }
+  }
+  const groups = [...groupsByKey.values()]
 
   let generated = 0
   let skipped = 0
   const errors: string[] = []
 
-  for (const sub of dueToday) {
-    const customer = sub.customers as unknown as { full_name: string; customer_code: string; customer_type: string } | null
+  for (const group of groups) {
+    const customer = group.members[0].customers as unknown as { full_name: string; customer_code: string; customer_type: string } | null
 
-    if (alreadyInvoiced.has(sub.customer_id)) {
+    if (alreadyInvoiced.has(`${group.customerId}|${group.periodStart}`)) {
       skipped++
       continue
     }
 
-    const plan = sub.fixed_plans as unknown as { plan_name: string; meal_periods: string[] | null } | null
+    // Compute each member plan's own charge independently — preserves
+    // per-plan pricing, proration and pause handling exactly as if each were
+    // billed alone — then combine. A member with no positive charge (bad
+    // data) is dropped rather than sinking the whole group's invoice.
+    const planCharges: { plan: { plan_name: string; meal_periods: string[] | null } | null; amount: number; prorationNote?: string; subPauses: MealPause[] }[] = []
+    for (const sub of group.members) {
+      const plan = sub.fixed_plans as unknown as { plan_name: string; meal_periods: string[] | null } | null
+      const rawAmount = parseFloat(String(sub.agreed_monthly_price))
+      if (!rawAmount || rawAmount <= 0) continue
 
-    const rawAmount = parseFloat(String(sub.agreed_monthly_price))
-    if (!rawAmount || rawAmount <= 0) {
-      skipped++
-      continue
+      const subPeriodStart = periodStartBySub.get(sub.id)!
+      const subPeriodEnd   = periodEndBySub.get(sub.id)!
+
+      // Prorate the flat plan rate for any meal the customer stopped
+      // mid-cycle (subscription_meal_pauses) — see lib/fixed-menu/proration.ts.
+      // cycleDays is THIS plan's own anniversary cycle length — it's charged
+      // in full at that fixed denominator regardless of which/how many
+      // calendar months the cycle happens to cross, and only reduced when
+      // the cycle itself is genuinely cut short (a pause, or subEnd
+      // mid-cycle).
+      const subPauses = pausesBySub.get(sub.id) ?? []
+      const amount = calcSubscriptionCharge({
+        mealPeriods:        plan?.meal_periods ?? [],
+        agreedMonthlyPrice: rawAmount,
+        mealPrices:         sub.meal_prices,
+        subStart:           sub.start_date,
+        subEnd:             sub.end_date,
+        subStatus:          sub.status,
+        pauses:             subPauses,
+        rangeFrom:          subPeriodStart,
+        rangeTo:            subPeriodEnd,
+        cycleDays:          daySpan(subPeriodStart, subPeriodEnd),
+      })
+      planCharges.push({ plan, amount, prorationNote: prorationNoteFor(subPauses), subPauses })
     }
 
-    const periodEnd = periodEndByCustomer.get(sub.customer_id)!
-    const periodStart = periodStartByCustomer.get(sub.customer_id)!
+    const monthLabel = monthLabelFor(group.periodStart)
+    const totalAmount = planCharges.reduce((s, p) => s + p.amount, 0)
 
-    // Prorate the flat plan rate for any meal the customer stopped mid-cycle
-    // (subscription_meal_pauses) — see lib/fixed-menu/proration.ts. cycleDays
-    // is this customer's own anniversary cycle length (periodStart →
-    // periodEnd) — it's charged in full at that fixed denominator regardless
-    // of which/how many calendar months the cycle happens to cross, and only
-    // reduced when the cycle itself is genuinely cut short (a pause, or
-    // subEnd mid-cycle). periodStart is today for a normal on-time run, or
-    // (catch-up) the real anniversary that already passed.
-    const subPauses = pausesBySub.get(sub.id) ?? []
-    const amount = calcSubscriptionCharge({
-      mealPeriods:        plan?.meal_periods ?? [],
-      agreedMonthlyPrice: rawAmount,
-      mealPrices:         sub.meal_prices,
-      subStart:           sub.start_date,
-      subEnd:             sub.end_date,
-      subStatus:          sub.status,
-      pauses:             subPauses,
-      rangeFrom:          periodStart,
-      rangeTo:            periodEnd,
-      cycleDays:          daySpan(periodStart, periodEnd),
-    })
-    const prorationNote = prorationNoteFor(subPauses)
-    const monthLabel = monthLabelFor(periodStart)
-
-    // Orders from a meal period the plan covers are "usage" absorbed by a
-    // matching discount; orders from a meal period the plan does NOT cover
-    // are genuine extras and are billed in full.
-    const coveredMeals = new Set(plan?.meal_periods ?? [])
+    // Orders classify against the UNION of every plan's covered meals (a
+    // dinner order is in-plan if ANY of the customer's plans covers dinner)
+    // and against the union of every plan's own pauses.
+    const coveredMeals = new Set(planCharges.flatMap(p => p.plan?.meal_periods ?? []))
+    const allPauses = planCharges.flatMap(p => p.subPauses)
     let inPlanUsage = 0
     const outOfPlanExtras: Partial<Record<'breakfast' | 'lunch' | 'dinner', number>> = {}
-    if (customer?.customer_type === 'fixed_menu') {
+    if (customer?.customer_type === 'fixed_menu' || customer?.customer_type === 'hybrid') {
       for (const o of fixedOrders) {
-        if (o.customer_id !== sub.customer_id) continue
-        if (o.order_date < periodStart || o.order_date > periodEnd) continue
+        if (o.customer_id !== group.customerId) continue
+        if (o.order_date < group.periodStart || o.order_date > group.periodEnd) continue
         const amt = parseFloat(o.total_amount)
-        if (coveredMeals.has(o.meal_period) && !isMealPausedOn(subPauses, o.meal_period, o.order_date)) {
+        if (coveredMeals.has(o.meal_period) && !isMealPausedOn(allPauses, o.meal_period, o.order_date)) {
           inPlanUsage += amt
         } else {
           const key = o.meal_period as 'breakfast' | 'lunch' | 'dinner'
@@ -329,14 +378,14 @@ export async function generatePrepaidAnniversaryInvoices(
 
     // A meal pause covering the whole period can bring the prorated plan
     // charge to zero — skip only if there's truly nothing to bill.
-    if (amount <= 0 && outOfPlanTotal <= 0) {
+    if (totalAmount <= 0 && outOfPlanTotal <= 0) {
       skipped++
       continue
     }
 
     const { data: invoiceNumber, error: numErr } = await admin.rpc('next_invoice_number')
     if (numErr || !invoiceNumber) {
-      errors.push(`${customer?.full_name ?? sub.customer_id}: could not generate invoice number`)
+      errors.push(`${customer?.full_name ?? group.customerId}: could not generate invoice number`)
       continue
     }
 
@@ -344,7 +393,7 @@ export async function generatePrepaidAnniversaryInvoices(
       .from('invoices')
       .insert({
         invoice_number:        invoiceNumber as string,
-        customer_id:           sub.customer_id,
+        customer_id:           group.customerId,
         invoice_date:          today,
         // prepaid — due on the cycle's own start date, no lead time. For a
         // normal on-time run periodStart === today; for a catch-up run
@@ -352,11 +401,11 @@ export async function generatePrepaidAnniversaryInvoices(
         // passed, so the invoice correctly shows overdue immediately
         // instead of getting a fresh grace period just because today is
         // when it happened to be generated.
-        due_date:              periodStart,
+        due_date:              group.periodStart,
         invoice_type:          'fixed_monthly',
-        billing_period_start:  periodStart,
-        billing_period_end:    periodEnd,
-        ...computeFixedInvoiceAmounts(amount, inPlanUsage, outOfPlanTotal, vatRate),
+        billing_period_start:  group.periodStart,
+        billing_period_end:    group.periodEnd,
+        ...computeFixedInvoiceAmounts(totalAmount, inPlanUsage, outOfPlanTotal, vatRate),
         status:                'draft',
         notes:                 null,
         created_by:            createdBy === 'system-cron' ? null : createdBy,
@@ -365,25 +414,23 @@ export async function generatePrepaidAnniversaryInvoices(
       .single()
 
     if (insertErr || !invoice) {
-      errors.push(`${customer?.full_name ?? sub.customer_id}: ${insertErr?.message ?? 'insert failed'}`)
+      errors.push(`${customer?.full_name ?? group.customerId}: ${insertErr?.message ?? 'insert failed'}`)
       continue
     }
 
-    const lineItems = buildFixedPlanLineItems({
-      invoiceId: invoice.id,
-      planName:  plan?.plan_name ?? 'Fixed Plan',
+    const lineItems = buildMultiPlanLineItems({
+      invoiceId:  invoice.id,
       monthLabel,
-      amount,
+      plans:      planCharges.map(p => ({ planName: p.plan?.plan_name ?? 'Fixed Plan', amount: p.amount, prorationNote: p.prorationNote })),
       inPlanUsage,
       outOfPlanExtras,
-      prorationNote,
     })
 
     const { error: itemErr } = await admin.from('invoice_items').insert(lineItems)
 
     if (itemErr) {
       await admin.from('invoices').delete().eq('id', invoice.id)
-      errors.push(`${customer?.full_name ?? sub.customer_id}: ${itemErr.message}`)
+      errors.push(`${customer?.full_name ?? group.customerId}: ${itemErr.message}`)
       continue
     }
 
