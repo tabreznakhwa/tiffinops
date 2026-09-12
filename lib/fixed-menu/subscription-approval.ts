@@ -25,6 +25,7 @@ export type SubscriptionApprovalKind =
   | 'status_change'
   | 'pause_date'
   | 'start_date'
+  | 'plan_change'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export type SubscriptionApprovalPayload = Record<string, any>
@@ -125,6 +126,20 @@ async function staleOrderWindow(
     const plan = sub?.fixed_plans as unknown as { meal_periods: string[] } | null
     if (!plan?.meal_periods?.length) return null
     return { mealPeriods: plan.meal_periods, from: addDaysStr(newEnd, 1), to: null }
+  }
+  if (kind === 'plan_change') {
+    // subscriptionId here is the OLD (now-closed) row — its fixed_plan_id is
+    // untouched by the plan-change apply step, so this still reads the OLD
+    // plan's meal coverage. Anything logged under those meals on/after the
+    // effective date is a staff error (they should have switched meals).
+    const { data: sub } = await admin
+      .from('customer_subscriptions')
+      .select('fixed_plans(meal_periods)')
+      .eq('id', subscriptionId)
+      .single()
+    const plan = sub?.fixed_plans as unknown as { meal_periods: string[] } | null
+    if (!plan?.meal_periods?.length || !payload.effective_date) return null
+    return { mealPeriods: plan.meal_periods, from: payload.effective_date, to: null }
   }
   return null
 }
@@ -267,6 +282,44 @@ export async function applySubscriptionApproval(
       if (changes.notes !== undefined) update.notes = changes.notes
       const { error } = await admin.from('customer_subscriptions').update(update).eq('id', subscriptionId)
       if (error) return { error: error.message }
+      break
+    }
+    case 'plan_change': {
+      // Two-row switch: close the old plan the day before the effective
+      // date, then open a new row on the new plan from the effective date —
+      // the same shape createSubscription's auto-supersede already produces,
+      // which is what chargeForCustomer/the invoice cron expect for a
+      // mid-cycle plan change (see changeSubscriptionPlan in actions.ts).
+      const { error: closeErr } = await admin
+        .from('customer_subscriptions')
+        .update({ status: 'completed', end_date: changes.day_before })
+        .eq('id', subscriptionId)
+      if (closeErr) return { error: closeErr.message }
+
+      const { data: newSub, error: insertErr } = await admin
+        .from('customer_subscriptions')
+        .insert({
+          customer_id: changes.customer_id,
+          fixed_plan_id: changes.new_plan_id,
+          start_date: changes.effective_date,
+          agreed_monthly_price: changes.new_agreed_price,
+          meal_prices: changes.new_meal_prices ?? null,
+          notes: changes.new_notes ?? null,
+          status: 'active',
+          created_by: actorId,
+        })
+        .select('id')
+        .single()
+      if (insertErr) return { error: insertErr.message }
+
+      // The generic tail below only reconciles `subscriptionId` (the old
+      // row) — the new row can just as easily land inside an
+      // already-invoiced period (e.g. switching mid-month), so reconcile it
+      // here too.
+      if (newSub) {
+        const extra = await reconcileInvoicesForSubscription(admin, newSub.id, actorId, req.reason)
+        if (extra.error) return { error: extra.error }
+      }
       break
     }
     default:

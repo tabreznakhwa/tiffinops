@@ -10,6 +10,7 @@ import { SubscribeModal } from './subscribe-modal'
 import type { EditableSubscription } from './subscribe-modal'
 import { MealPauseModal } from './meal-pause-modal'
 import { EndSubscriptionModal } from './end-subscription-modal'
+import { ChangePlanModal } from './change-plan-modal'
 import { useAppSettings } from '@/components/settings/settings-context'
 import type { Tables } from '@/lib/supabase/types'
 
@@ -95,6 +96,7 @@ export function FixedMenuModule({
   const [editSubscription, setEditSubscription]     = useState<EditableSubscription | undefined>()
   const [pauseMealSub, setPauseMealSub] = useState<{ id: string; meals: string[] } | undefined>()
   const [endSubTarget, setEndSubTarget] = useState<{ id: string; name: string } | undefined>()
+  const [changePlanTarget, setChangePlanTarget] = useState<{ id: string; name: string; planName: string; planId: string } | undefined>()
   const [busy, setBusy]                 = useState<string | null>(null)
   // Backdated changes don't apply immediately — they go to the owner for
   // approval instead (see lib/fixed-menu/subscription-approval.ts). This
@@ -496,6 +498,21 @@ export function FixedMenuModule({
                             Edit
                           </button>
                         )}
+                        {(sub.status === 'active' || sub.status === 'paused') && plan && (
+                          <button
+                            onClick={() => setChangePlanTarget({
+                              id: sub.id,
+                              name: sub.customers?.full_name ?? 'this customer',
+                              planName: plan.plan_name,
+                              planId: plan.id,
+                            })}
+                            disabled={loading}
+                            className="px-3 py-1.5 rounded-[8px] text-xs font-semibold disabled:opacity-50"
+                            style={{ color: 'var(--color-ember)', border: '1px solid var(--color-border)', background: 'transparent' }}
+                          >
+                            Switch Plan
+                          </button>
+                        )}
                         {canPauseMeal && plan && (
                           <button
                             onClick={() => setPauseMealSub({
@@ -716,6 +733,17 @@ export function FixedMenuModule({
           customerName={endSubTarget.name}
           onClose={() => setEndSubTarget(undefined)}
           onDone={() => { setEndSubTarget(undefined); router.refresh() }}
+        />
+      )}
+      {changePlanTarget && (
+        <ChangePlanModal
+          subscriptionId={changePlanTarget.id}
+          customerName={changePlanTarget.name}
+          currentPlanName={changePlanTarget.planName}
+          currentPlanId={changePlanTarget.planId}
+          plans={plans}
+          onClose={() => setChangePlanTarget(undefined)}
+          onDone={() => { setChangePlanTarget(undefined); router.refresh() }}
         />
       )}
     </div>

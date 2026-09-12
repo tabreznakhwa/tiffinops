@@ -7,6 +7,7 @@ import { requireAuth } from '@/lib/auth'
 import { createAdminClient } from '@/lib/supabase/admin'
 import type { Enums } from '@/lib/supabase/types'
 import { isBackdatedChange, createSubscriptionApprovalRequest, reconcileInvoicesForSubscription, finalizeBackdatedSubscriptionChange } from '@/lib/fixed-menu/subscription-approval'
+import { addDaysStr } from '@/lib/fixed-menu/proration'
 
 const ADMIN_ROLES:  Enums<'user_role'>[] = ['owner', 'manager']
 const CREATE_ROLES: Enums<'user_role'>[] = ['owner', 'manager', 'data_entry']
@@ -27,11 +28,15 @@ async function gateOrApply(
   subscriptionId: string,
   affectedFrom: string,
   affectedTo: string | null,
-  kind: 'meal_pause' | 'meal_resume' | 'status_change' | 'pause_date' | 'start_date',
+  kind: 'meal_pause' | 'meal_resume' | 'status_change' | 'pause_date' | 'start_date' | 'plan_change',
   reason: string,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   payload: Record<string, any>,
-  apply: () => Promise<{ error?: string }>,
+  // `extraReconcileId` lets a compound change (e.g. plan_change, which
+  // closes one row and opens another) get a second subscription's invoices
+  // reconciled too — the standard finalize call below only ever reconciles
+  // `subscriptionId` itself.
+  apply: () => Promise<{ error?: string; extraReconcileId?: string }>,
 ): Promise<FixedMenuActionResult> {
   const backdated = await isBackdatedChange(admin, customerId, affectedFrom, affectedTo)
   if (backdated && !isOwner) {
@@ -39,11 +44,15 @@ async function gateOrApply(
     if (error) return { error }
     return { pendingApproval: true }
   }
-  const { error } = await apply()
-  if (error) return { error }
+  const applied = await apply()
+  if (applied.error) return { error: applied.error }
   if (backdated) {
     const result = await finalizeBackdatedSubscriptionChange(admin, kind, subscriptionId, customerId, payload, userId, reason)
     if (result.error) return { error: result.error }
+    if (applied.extraReconcileId) {
+      const extra = await reconcileInvoicesForSubscription(admin, applied.extraReconcileId, userId, reason)
+      if (extra.error) return { error: extra.error }
+    }
   }
   return {}
 }
@@ -335,6 +344,124 @@ export async function updateSubscription(
 }
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/
+
+const PlanChangeSchema = z.object({
+  fixed_plan_id: z.string().uuid('Invalid plan'),
+  agreed_monthly_price: z.coerce
+    .number({ message: 'Enter a valid price' })
+    .min(0, 'Price cannot be negative'),
+  effective_date: z.string().regex(DATE_RE, 'Invalid effective date'),
+  notes: z.string().optional().transform(v => v?.trim() || null),
+})
+
+// Switches a subscription onto a different plan mid-cycle (e.g. a customer's
+// duty change moves them from Dinner to Lunch) without corrupting billing
+// history. Unlike updateSubscription's in-place plan edit, this never
+// mutates the existing row's fixed_plan_id — it closes the current row the
+// day before `effective_date` and opens a new row on the new plan from
+// `effective_date`, exactly the two-row shape createSubscription's
+// auto-supersede already produces and chargeForCustomer/the invoice cron
+// already bill correctly (each row keeps its own plan for its own dates).
+export async function changeSubscriptionPlan(
+  id: string,
+  input: { fixed_plan_id: string; agreed_monthly_price: number; meal_prices?: Record<string, string>; effective_date: string; notes?: string },
+): Promise<FixedMenuActionResult> {
+  const user = await requireAuth()
+  if (!CREATE_ROLES.includes(user.role)) return { error: 'Owner, Manager or Data Entry role required' }
+
+  const parsed = PlanChangeSchema.safeParse(input)
+  if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? 'Invalid input' }
+
+  const admin = createAdminClient()
+
+  const { data: existing } = await admin
+    .from('customer_subscriptions')
+    .select('customer_id, start_date, status')
+    .eq('id', id)
+    .single()
+  if (!existing) return { error: 'Subscription not found' }
+  if (existing.status === 'cancelled' || existing.status === 'completed') {
+    return { error: 'This subscription has already ended — start a new subscription instead' }
+  }
+
+  const dayBefore = addDaysStr(parsed.data.effective_date, -1)
+  if (dayBefore < existing.start_date) {
+    return { error: `Effective date must be after this subscription's start date (${existing.start_date})` }
+  }
+
+  const { error: mealPricesError, meal_prices } = await resolveMealPrices(
+    admin, parsed.data.fixed_plan_id, parsed.data.agreed_monthly_price, input.meal_prices
+  )
+  if (mealPricesError) return { error: mealPricesError }
+
+  // Guard against ending up with two live subscriptions covering the same
+  // meal(s) — e.g. the customer already has a separate live plan that also
+  // includes the meal being switched to. Unlike createSubscription, this
+  // doesn't auto-close a third-party row on the caller's behalf (surprising
+  // for a targeted plan switch) — it just asks the user to resolve it first.
+  const { data: newPlan } = await admin
+    .from('fixed_plans')
+    .select('meal_periods')
+    .eq('id', parsed.data.fixed_plan_id)
+    .single()
+  const newMeals = new Set<string>(newPlan?.meal_periods ?? [])
+  const { data: otherSubs } = await admin
+    .from('customer_subscriptions')
+    .select('id, end_date, fixed_plans(plan_name, meal_periods)')
+    .eq('customer_id', existing.customer_id)
+    .in('status', ['active', 'paused'])
+    .neq('id', id)
+  for (const s of otherSubs ?? []) {
+    const plan = s.fixed_plans as unknown as { plan_name: string; meal_periods: string[] } | null
+    if (!(plan?.meal_periods ?? []).some(m => newMeals.has(m))) continue
+    if (!s.end_date || s.end_date >= parsed.data.effective_date) {
+      return { error: `This customer already has a live "${plan?.plan_name ?? 'plan'}" subscription covering the same meal(s) — end that one first, then try again.` }
+    }
+  }
+
+  const result = await gateOrApply(
+    admin, user.role === 'owner', user.id, existing.customer_id, id,
+    parsed.data.effective_date, null, 'plan_change',
+    `Switch plan effective ${parsed.data.effective_date}`,
+    {
+      customer_id: existing.customer_id,
+      day_before: dayBefore,
+      effective_date: parsed.data.effective_date,
+      new_plan_id: parsed.data.fixed_plan_id,
+      new_agreed_price: parsed.data.agreed_monthly_price.toFixed(2),
+      new_meal_prices: meal_prices,
+      new_notes: parsed.data.notes,
+    },
+    async () => {
+      const { error: closeErr } = await admin
+        .from('customer_subscriptions')
+        .update({ status: 'completed', end_date: dayBefore })
+        .eq('id', id)
+      if (closeErr) return { error: closeErr.message }
+
+      const { data: newSub, error: insertErr } = await admin
+        .from('customer_subscriptions')
+        .insert({
+          customer_id: existing.customer_id,
+          fixed_plan_id: parsed.data.fixed_plan_id,
+          start_date: parsed.data.effective_date,
+          agreed_monthly_price: parsed.data.agreed_monthly_price.toFixed(2),
+          meal_prices,
+          notes: parsed.data.notes,
+          status: 'active',
+          created_by: user.id,
+        })
+        .select('id')
+        .single()
+      if (insertErr) return { error: insertErr.message }
+      return { extraReconcileId: newSub?.id }
+    },
+  )
+  if (result.error) return result
+  revalidatePath('/fixed-menu')
+  revalidatePath('/outstanding')
+  return result
+}
 
 export async function updateSubscriptionStatus(
   id: string,

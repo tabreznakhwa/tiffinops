@@ -60,6 +60,7 @@ const SUBSCRIPTION_KIND_LABELS: Record<string, string> = {
   status_change: 'Pause/cancel subscription',
   pause_date:   'Change pause/end date',
   start_date:   'Change start date',
+  plan_change:  'Switch plan',
 }
 
 // ── Page ───────────────────────────────────────────────────────────────────────
@@ -90,6 +91,15 @@ export default async function ApprovalsPage() {
       .map(r => (r.proposed_changes as any)?.customer_id)
       .filter((id): id is string => !!id)
   )]
+  const planChangeNewPlanIds = [...new Set(
+    requests
+      .filter(r => r.target_table === 'subscription')
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      .map(r => (r.proposed_changes as any))
+      .filter(c => c?.kind === 'plan_change')
+      .map(c => c.new_plan_id)
+      .filter((id): id is string => !!id)
+  )]
 
   // 3. Collect unique user IDs (requestors + resolvers)
   const userIds = [...new Set([
@@ -103,6 +113,7 @@ export default async function ApprovalsPage() {
     { data: rawOrders },
     { data: rawUsers },
     { data: rawCustomers },
+    { data: rawPlans },
   ] = await Promise.all([
     paymentIds.length > 0
       ? admin
@@ -131,18 +142,27 @@ export default async function ApprovalsPage() {
           .select('id, full_name, customer_code')
           .in('id', subscriptionCustomerIds)
       : { data: [] },
+
+    planChangeNewPlanIds.length > 0
+      ? admin
+          .from('fixed_plans')
+          .select('id, plan_name')
+          .in('id', planChangeNewPlanIds)
+      : { data: [] },
   ])
 
   const payments  = (rawPayments  ?? []) as unknown as RawPayment[]
   const orders    = (rawOrders    ?? []) as unknown as RawOrder[]
   const users     = (rawUsers     ?? []) as unknown as RawUser[]
   const customers = (rawCustomers ?? []) as unknown as RawCustomer[]
+  const plansById = (rawPlans     ?? []) as unknown as { id: string; plan_name: string }[]
 
   // 5. Build lookup maps
   const paymentMap  = new Map(payments.map(p => [p.id, p]))
   const orderMap    = new Map(orders.map(o => [o.id, o]))
   const userMap     = new Map(users.map(u => [u.id, u]))
   const customerMap = new Map(customers.map(c => [c.id, c]))
+  const planMap     = new Map(plansById.map(p => [p.id, p]))
 
   // Fetch currency for display
   const { data: settingsRow } = await admin.from('app_settings').select('currency').eq('id', 1).single()
@@ -210,6 +230,12 @@ export default async function ApprovalsPage() {
           target_label = `${kindLabel} to ${changes.start_date}`
           target_date  = changes.start_date
           break
+        case 'plan_change': {
+          const newPlanName = planMap.get(changes.new_plan_id)?.plan_name ?? 'new plan'
+          target_label = `${kindLabel} to "${newPlanName}" — effective ${changes.effective_date}`
+          target_date  = changes.effective_date
+          break
+        }
         default:
           target_label = kindLabel
       }
