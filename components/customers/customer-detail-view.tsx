@@ -21,6 +21,13 @@ export type BalanceSummary = {
   monthOrdersTotal: number
   allTimePaid: number
   currentMonth: string
+  // Prepaid customers pay ahead, so a calendar-month payment filter falsely
+  // shows "Balance Due" the month after an on-time payment. For these, the
+  // balance card uses allTimeCharged/allTimeDue instead — the same all-time
+  // reconciliation the Outstanding report uses — so the two always agree.
+  isPrepaid: boolean
+  allTimeCharged: number
+  allTimeDue: number
   recentPayments: {
     id: string
     payment_number: string
@@ -444,7 +451,7 @@ export function CustomerDetailView({
         {/* Card header */}
         <div className="flex items-center justify-between mb-4">
           <h2 className="font-display font-bold text-[15px]" style={{ color: 'var(--color-ink)' }}>
-            Balance — {balance.currentMonth}
+            {balance.isPrepaid ? 'Balance — All Time' : `Balance — ${balance.currentMonth}`}
           </h2>
           <button
             onClick={() => setPaymentOpen(true)}
@@ -458,38 +465,55 @@ export function CustomerDetailView({
 
         {/* Charge breakdown */}
         <div className="space-y-2 mb-4">
-          {balance.monthlyCharge > 0 && (
-            <div className="flex items-center justify-between text-sm">
-              <span style={{ color: 'var(--color-muted)' }}>
-                Monthly Plan{balance.subscriptionPlanName ? ` — ${balance.subscriptionPlanName}` : ''}
-              </span>
-              <span className="num font-semibold" style={{ color: 'var(--color-ink)' }}>
-                {currency} {balance.monthlyCharge.toFixed(2)}
-              </span>
-            </div>
-          )}
-          {balance.monthOrdersTotal > 0 && (
-            <div className="flex items-center justify-between text-sm">
-              <span style={{ color: 'var(--color-muted)' }}>A-la-carte orders this month</span>
-              <span className="num font-semibold" style={{ color: 'var(--color-ink)' }}>
-                {currency} {balance.monthOrdersTotal.toFixed(2)}
-              </span>
-            </div>
-          )}
-          {(balance.monthlyCharge > 0 || balance.monthOrdersTotal > 0) && (
-            <div className="flex items-center justify-between text-sm">
-              <span style={{ color: 'var(--color-green)' }}>Paid this month</span>
-              <span className="num font-semibold" style={{ color: 'var(--color-green)' }}>
-                − {currency} {balance.monthPaid.toFixed(2)}
-              </span>
-            </div>
+          {balance.isPrepaid ? (
+            // Prepaid: one combined "charged to date" figure (already nets
+            // in-plan orders against the plan charge) — a month-by-month
+            // split would misrepresent someone who paid ahead.
+            balance.allTimeCharged > 0 && (
+              <div className="flex items-center justify-between text-sm">
+                <span style={{ color: 'var(--color-muted)' }}>
+                  Charged to date{balance.subscriptionPlanName ? ` — ${balance.subscriptionPlanName}` : ''}
+                </span>
+                <span className="num font-semibold" style={{ color: 'var(--color-ink)' }}>
+                  {currency} {balance.allTimeCharged.toFixed(2)}
+                </span>
+              </div>
+            )
+          ) : (
+            <>
+              {balance.monthlyCharge > 0 && (
+                <div className="flex items-center justify-between text-sm">
+                  <span style={{ color: 'var(--color-muted)' }}>
+                    Monthly Plan{balance.subscriptionPlanName ? ` — ${balance.subscriptionPlanName}` : ''}
+                  </span>
+                  <span className="num font-semibold" style={{ color: 'var(--color-ink)' }}>
+                    {currency} {balance.monthlyCharge.toFixed(2)}
+                  </span>
+                </div>
+              )}
+              {balance.monthOrdersTotal > 0 && (
+                <div className="flex items-center justify-between text-sm">
+                  <span style={{ color: 'var(--color-muted)' }}>A-la-carte orders this month</span>
+                  <span className="num font-semibold" style={{ color: 'var(--color-ink)' }}>
+                    {currency} {balance.monthOrdersTotal.toFixed(2)}
+                  </span>
+                </div>
+              )}
+              {(balance.monthlyCharge > 0 || balance.monthOrdersTotal > 0) && (
+                <div className="flex items-center justify-between text-sm">
+                  <span style={{ color: 'var(--color-green)' }}>Paid this month</span>
+                  <span className="num font-semibold" style={{ color: 'var(--color-green)' }}>
+                    − {currency} {balance.monthPaid.toFixed(2)}
+                  </span>
+                </div>
+              )}
+            </>
           )}
         </div>
 
         {/* Balance highlight */}
         {(() => {
-          const total  = balance.monthlyCharge + balance.monthOrdersTotal
-          const due    = total - balance.monthPaid
+          const due    = balance.isPrepaid ? balance.allTimeDue : balance.monthlyCharge + balance.monthOrdersTotal - balance.monthPaid
           const isDue  = due > 0.005
           const isCredit = due < -0.005
           return (
