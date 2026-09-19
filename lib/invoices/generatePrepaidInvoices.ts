@@ -150,50 +150,29 @@ export async function generatePrepaidAnniversaryInvoices(
 
   if (subsErr) return { generated: 0, skipped: 0, referralRewardsGenerated: 0, errors: [subsErr.message], month: today }
 
-  const todayYear  = Number(today.slice(0, 4))
-  const todayMonth = Number(today.slice(5, 7))
-
   const prepaidActive = (subs ?? []).filter(s => {
     const customer = s.customers as unknown as { payment_terms?: string } | null
     return customer?.payment_terms === 'prepaid' && today >= s.start_date
   })
 
-  // Catch-up: a subscriber who has NEVER been invoiced at all, even though
-  // their cycle already started, is due today regardless of whether today
-  // happens to be their exact anniversary day-of-month. Without this, a
-  // subscription created a few days after its stated start_date (late data
-  // entry, or a backdated start) silently misses its entire first cycle —
-  // the exact-day check below wouldn't fire again until next month. See
-  // scripts/audit-prepaid-missing-invoices.ts (found 8 real customers stuck
-  // this way — up to 25 days overdue with zero invoices ever generated).
-  const { data: everInvoicedRows } = prepaidActive.length
-    ? await admin
-        .from('invoices')
-        .select('customer_id')
-        .eq('invoice_type', 'fixed_monthly')
-        .in('customer_id', prepaidActive.map(s => s.customer_id))
-    : { data: [] }
-  const everInvoiced = new Set((everInvoicedRows ?? []).map(r => r.customer_id))
-
-  const dueToday = prepaidActive.filter(s =>
-    anniversaryDateForMonth(s.start_date, todayYear, todayMonth) === today || !everInvoiced.has(s.customer_id)
-  )
-
-  if (dueToday.length === 0) {
+  if (prepaidActive.length === 0) {
     return { generated: 0, skipped: 0, referralRewardsGenerated: 0, errors: [], month: today }
   }
 
-  // Each due subscription's own current cycle start — today for a normal
-  // on-time run, or (catch-up) the most recent anniversary already passed.
-  // Keyed by SUBSCRIPTION id, not customer id: a customer can hold more than
-  // one concurrent plan (e.g. separate Breakfast and Dinner subscriptions)
-  // started on different dates, so their anniversary cycles don't
-  // necessarily align. Keying by customer alone used to silently let one
-  // plan's period clobber another's in this map — same bug class already
-  // found and fixed in generateFixedAnniversaryInvoices.ts (see
+  // Each active prepaid subscription's own current cycle start — today for a
+  // normal on-time run, or the most recent anniversary that already passed.
+  // Computed for EVERY active prepaid sub (not just today's anniversaries) so
+  // a cycle whose exact anniversary day the cron happened to miss still gets
+  // picked up on the next run, instead of being silently skipped until the
+  // following month. Keyed by SUBSCRIPTION id, not customer id: a customer can
+  // hold more than one concurrent plan (e.g. separate Breakfast and Dinner
+  // subscriptions) started on different dates, so their anniversary cycles
+  // don't necessarily align. Keying by customer alone used to silently let one
+  // plan's period clobber another's in this map — same bug class already found
+  // and fixed in generateFixedAnniversaryInvoices.ts (see the
   // idx_invoices_idempotent multi-plan grouping there).
   const periodStartBySub = new Map<string, string>()
-  for (const s of dueToday) {
+  for (const s of prepaidActive) {
     periodStartBySub.set(s.id, mostRecentAnniversaryOnOrBefore(s.start_date, today))
   }
 
@@ -202,15 +181,53 @@ export async function generatePrepaidAnniversaryInvoices(
   // today, so a stale cycle resolves to its own real end date instead of
   // jumping straight to next month's (which would silently swallow the gap).
   const periodEndBySub = new Map<string, string>()
-  for (const s of dueToday) {
+  for (const s of prepaidActive) {
     const periodStart = periodStartBySub.get(s.id)!
     periodEndBySub.set(s.id, addDays(nextAnniversaryAfter(s.start_date, periodStart), -1))
   }
-  const furthestPeriodEnd = [...periodEndBySub.values()].reduce((a, b) => (a > b ? a : b), today)
+
+  // Every non-cancelled fixed_monthly invoice for these customers — used both
+  // to skip a (customer, periodStart) already invoiced (idempotency for a same
+  // day re-run) AND to skip a customer whose legacy calendar-month invoice
+  // already covers the current cycle's start. That second guard stops a
+  // mid-month start_date from re-billing days a calendar-month invoice already
+  // collected — e.g. a customer migrated from the old calendar-month system
+  // whose subscription start_date is the 3rd but whose last invoice ran the
+  // 1st–30th.
+  const { data: existingInvoices } = await admin
+    .from('invoices')
+    .select('customer_id, billing_period_start, billing_period_end')
+    .eq('invoice_type', 'fixed_monthly')
+    .neq('status', 'cancelled')
+    .in('customer_id', prepaidActive.map(s => s.customer_id))
+
+  const alreadyInvoiced = new Set(
+    (existingInvoices ?? []).map(i => `${i.customer_id}|${i.billing_period_start}`)
+  )
+  const coveredThroughByCustomer = new Map<string, string>()
+  for (const inv of existingInvoices ?? []) {
+    if (!inv.customer_id || !inv.billing_period_end) continue
+    const cur = coveredThroughByCustomer.get(inv.customer_id)
+    if (!cur || inv.billing_period_end > cur) coveredThroughByCustomer.set(inv.customer_id, inv.billing_period_end)
+  }
+
+  const dueToday = prepaidActive.filter(s => {
+    const periodStart = periodStartBySub.get(s.id)!
+    if (alreadyInvoiced.has(`${s.customer_id}|${periodStart}`)) return false
+    const coveredThrough = coveredThroughByCustomer.get(s.customer_id)
+    if (coveredThrough && coveredThrough >= periodStart) return false
+    return true
+  })
+
+  if (dueToday.length === 0) {
+    return { generated: 0, skipped: 0, referralRewardsGenerated: 0, errors: [], month: today }
+  }
+
+  const furthestPeriodEnd = [...dueToday.map(s => periodEndBySub.get(s.id)!)].reduce((a, b) => (a > b ? a : b), today)
   // Earliest period start in this batch — a catch-up subscriber's cycle can
   // start well before today, so orders/pauses fetched below must reach back
   // that far too, not just from today.
-  const earliestPeriodStart = [...periodStartBySub.values()].reduce((a, b) => (a < b ? a : b), today)
+  const earliestPeriodStart = [...dueToday.map(s => periodStartBySub.get(s.id)!)].reduce((a, b) => (a < b ? a : b), today)
 
   // fixed_menu AND hybrid customers pay a flat plan rate regardless of what
   // they order (from a meal period their plan covers) — fetch their credit
@@ -266,22 +283,6 @@ export async function generatePrepaidAnniversaryInvoices(
       pausesBySub.set(p.subscription_id, list)
     }
   }
-
-  // Idempotency — skip a (customer, periodStart) already invoiced (handles a
-  // cron re-run on the same day). Keyed on the pair, not just customer id, so
-  // one plan being already-invoiced never masks another plan of the same
-  // customer whose own period start hasn't been billed yet.
-  const distinctPeriodStarts = [...new Set(periodStartBySub.values())]
-  const { data: existingInvoices } = await admin
-    .from('invoices')
-    .select('customer_id, billing_period_start')
-    .eq('invoice_type', 'fixed_monthly')
-    .in('billing_period_start', distinctPeriodStarts)
-    .in('customer_id', dueToday.map(s => s.customer_id))
-
-  const alreadyInvoiced = new Set(
-    (existingInvoices ?? []).map(i => `${i.customer_id}|${i.billing_period_start}`)
-  )
 
   // A customer can hold more than one concurrent fixed plan. Group by
   // (customer, periodStart) so every plan whose cycle happens to start on
@@ -389,6 +390,8 @@ export async function generatePrepaidAnniversaryInvoices(
       continue
     }
 
+    const amounts = computeFixedInvoiceAmounts(totalAmount, inPlanUsage, outOfPlanTotal, vatRate)
+
     const { data: invoice, error: insertErr } = await admin
       .from('invoices')
       .insert({
@@ -405,8 +408,16 @@ export async function generatePrepaidAnniversaryInvoices(
         invoice_type:          'fixed_monthly',
         billing_period_start:  group.periodStart,
         billing_period_end:    group.periodEnd,
-        ...computeFixedInvoiceAmounts(totalAmount, inPlanUsage, outOfPlanTotal, vatRate),
-        status:                'draft',
+        ...amounts,
+        // Prepaid fixed-menu bills are a flat, agreed rate (with automatic
+        // usage netting) and are due the moment their cycle starts — there is
+        // nothing to review before charging. Issue immediately so the customer
+        // sees a real bill (and a ledger debit) on their anniversary, instead
+        // of an invisible draft that only ever gets issued if a manager
+        // remembers to click "Issue" by hand. That manual step is exactly what
+        // let bills pile up as drafts and show customers as "overdue" with no
+        // bill behind them.
+        status:                'issued',
         notes:                 null,
         created_by:            createdBy === 'system-cron' ? null : createdBy,
       })
@@ -431,6 +442,27 @@ export async function generatePrepaidAnniversaryInvoices(
     if (itemErr) {
       await admin.from('invoices').delete().eq('id', invoice.id)
       errors.push(`${customer?.full_name ?? group.customerId}: ${itemErr.message}`)
+      continue
+    }
+
+    // The ledger debit that used to be created only at the manual "Issue"
+    // step — created here so the issued invoice actually lands on the
+    // customer's balance at generation time.
+    const { error: ledgerErr } = await admin.from('ledger_entries').insert({
+      customer_id:     group.customerId,
+      entry_date:      today,
+      entry_type:      'invoice',
+      debit_amount:    amounts.total_amount,
+      credit_amount:   '0.00',
+      description:     `Invoice ${invoiceNumber}`,
+      reference_table: 'invoices',
+      reference_id:    invoice.id,
+      created_by:      createdBy === 'system-cron' ? null : createdBy,
+    })
+
+    if (ledgerErr) {
+      await admin.from('invoices').update({ status: 'draft' }).eq('id', invoice.id)
+      errors.push(`${customer?.full_name ?? group.customerId}: ${ledgerErr.message}`)
       continue
     }
 

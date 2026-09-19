@@ -382,6 +382,8 @@ export async function generateFixedAnniversaryInvoices(
       continue
     }
 
+    const amounts = computeFixedInvoiceAmounts(totalAmount, inPlanUsage, outOfPlanTotal, vatRate)
+
     const { data: invoice, error: insertErr } = await admin
       .from('invoices')
       .insert({
@@ -392,8 +394,14 @@ export async function generateFixedAnniversaryInvoices(
         invoice_type:          'fixed_monthly',
         billing_period_start:  group.periodStart,
         billing_period_end:    group.periodEnd,
-        ...computeFixedInvoiceAmounts(totalAmount, inPlanUsage, outOfPlanTotal, vatRate),
-        status:                'draft',
+        ...amounts,
+        // Postpaid fixed-menu bills are a flat, agreed rate (with automatic
+        // usage netting) for a cycle that has already fully ended — there is
+        // nothing to review before charging. Issue immediately so the customer
+        // sees a real bill (and a ledger debit) on generation, instead of an
+        // invisible draft that only ever gets issued if a manager remembers to
+        // click "Issue" by hand — the step that let bills pile up as drafts.
+        status:                'issued',
         notes:                 null,
         created_by:            createdBy === 'system-cron' ? null : createdBy,
       })
@@ -418,6 +426,27 @@ export async function generateFixedAnniversaryInvoices(
     if (itemErr) {
       await admin.from('invoices').delete().eq('id', invoice.id)
       errors.push(`${customer?.full_name ?? group.customerId}: ${itemErr.message}`)
+      continue
+    }
+
+    // The ledger debit that used to be created only at the manual "Issue"
+    // step — created here so the issued invoice actually lands on the
+    // customer's balance at generation time.
+    const { error: ledgerErr } = await admin.from('ledger_entries').insert({
+      customer_id:     group.customerId,
+      entry_date:      today,
+      entry_type:      'invoice',
+      debit_amount:    amounts.total_amount,
+      credit_amount:   '0.00',
+      description:     `Invoice ${invoiceNumber}`,
+      reference_table: 'invoices',
+      reference_id:    invoice.id,
+      created_by:      createdBy === 'system-cron' ? null : createdBy,
+    })
+
+    if (ledgerErr) {
+      await admin.from('invoices').update({ status: 'draft' }).eq('id', invoice.id)
+      errors.push(`${customer?.full_name ?? group.customerId}: ${ledgerErr.message}`)
       continue
     }
 
