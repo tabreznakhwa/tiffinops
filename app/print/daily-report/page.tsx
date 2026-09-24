@@ -22,6 +22,73 @@ function itemTotalsFor(orders: OrderRow[]) {
     .sort((a, b) => b.quantity - a.quantity || a.name.localeCompare(b.name))
 }
 
+// Item totals across the whole day, with the per-period split kept alongside
+// — mirrors the on-screen "Item Totals — Whole Day" table.
+function combinedItemTotalsFor(orders: OrderRow[]) {
+  const map = new Map<string, { breakfast: number; lunch: number; dinner: number }>()
+  for (const o of orders) {
+    for (const it of o.order_items ?? []) {
+      const qty = parseFloat(String(it.quantity)) || 0
+      const row = map.get(it.item_name_snapshot) ?? { breakfast: 0, lunch: 0, dinner: 0 }
+      row[o.meal_period] += qty
+      map.set(it.item_name_snapshot, row)
+    }
+  }
+  return [...map.entries()]
+    .map(([name, row]) => ({ name, ...row, total: row.breakfast + row.lunch + row.dinner }))
+    .sort((a, b) => b.total - a.total || a.name.localeCompare(b.name))
+}
+
+function fmtQty(n: number) {
+  return Number.isInteger(n) ? String(n) : n.toFixed(2)
+}
+
+function WholeDayItemTotals({ orders }: { orders: OrderRow[] }) {
+  const items = combinedItemTotalsFor(orders)
+  if (items.length === 0) return null
+  const totalPieces = items.reduce((s, i) => s + i.total, 0)
+
+  return (
+    <div style={{ marginBottom: 24, breakInside: 'avoid' }}>
+      <div
+        style={{
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12,
+          paddingBottom: 8, borderBottom: '2.5px solid #221A13', marginBottom: 10,
+        }}
+      >
+        <h2 style={{ fontFamily: 'var(--font-display)', fontSize: 16, fontWeight: 800, color: '#221A13', margin: 0, textTransform: 'uppercase', letterSpacing: '.04em' }}>
+          Item Totals — Whole Day
+        </h2>
+        <span style={{ fontSize: 12, color: '#7C7063', fontWeight: 600 }}>
+          {items.length} item{items.length !== 1 ? 's' : ''} · {fmtQty(totalPieces)} pc combined
+        </span>
+      </div>
+      <table style={{ width: '100%', borderCollapse: 'collapse', border: '1.5px solid #221A13', borderRadius: 6, fontSize: 12 }}>
+        <thead>
+          <tr style={{ background: '#F5EDE0' }}>
+            <th style={{ textAlign: 'left', padding: '5px 10px', fontSize: 10.5, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '.06em', color: '#221A13', borderBottom: '1.5px solid #221A13' }}>Item</th>
+            <th style={{ textAlign: 'right', padding: '5px 10px', fontSize: 10.5, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '.06em', color: '#221A13', borderBottom: '1.5px solid #221A13' }}>Breakfast</th>
+            <th style={{ textAlign: 'right', padding: '5px 10px', fontSize: 10.5, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '.06em', color: '#221A13', borderBottom: '1.5px solid #221A13' }}>Lunch</th>
+            <th style={{ textAlign: 'right', padding: '5px 10px', fontSize: 10.5, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '.06em', color: '#221A13', borderBottom: '1.5px solid #221A13' }}>Dinner</th>
+            <th style={{ textAlign: 'right', padding: '5px 10px', fontSize: 10.5, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '.06em', color: '#221A13', borderBottom: '1.5px solid #221A13' }}>Total</th>
+          </tr>
+        </thead>
+        <tbody>
+          {items.map((it, i) => (
+            <tr key={it.name} style={{ borderTop: i === 0 ? undefined : '1px solid #ECE2D3' }}>
+              <td style={{ padding: '4px 10px', color: '#221A13' }}>{it.name}</td>
+              <td style={{ textAlign: 'right', padding: '4px 10px', color: it.breakfast ? '#221A13' : '#ECE2D3' }}>{it.breakfast ? fmtQty(it.breakfast) : '—'}</td>
+              <td style={{ textAlign: 'right', padding: '4px 10px', color: it.lunch ? '#221A13' : '#ECE2D3' }}>{it.lunch ? fmtQty(it.lunch) : '—'}</td>
+              <td style={{ textAlign: 'right', padding: '4px 10px', color: it.dinner ? '#221A13' : '#ECE2D3' }}>{it.dinner ? fmtQty(it.dinner) : '—'}</td>
+              <td style={{ textAlign: 'right', padding: '4px 10px', fontWeight: 800, color: '#221A13' }}>{fmtQty(it.total)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  )
+}
+
 function PeriodSection({
   period, orders, fixedMenuCount,
 }: {
@@ -141,6 +208,8 @@ export default async function PrintDailyReportPage({
           Fixed-menu counts are a headcount per period, not broken down by dish.
         </p>
       </div>
+
+      <WholeDayItemTotals orders={orders} />
 
       {PERIOD_ORDER.map(period => (
         <PeriodSection key={period} period={period} orders={byPeriod[period]} fixedMenuCount={fixedMenuCounts[period]} />

@@ -1,8 +1,8 @@
 'use client'
 
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { ChevronLeft, ChevronRight, Printer, Sunrise, Sun, Moon } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Printer, Search, Sunrise, Sun, Moon } from 'lucide-react'
 import { useAppSettings } from '@/components/settings/settings-context'
 
 export type OrderItemRow = { id: string; item_name_snapshot: string; quantity: string; total_price: string }
@@ -44,6 +44,99 @@ function itemTotalsFor(orders: OrderRow[]) {
   return [...map.entries()]
     .map(([name, quantity]) => ({ name, quantity }))
     .sort((a, b) => b.quantity - a.quantity || a.name.localeCompare(b.name))
+}
+
+// Item totals across the whole day — same items, summed across all three
+// meal periods, with the per-period split kept alongside so e.g. "how much
+// pulao went into lunch vs dinner" is answered in the same row as the total.
+function combinedItemTotals(orders: OrderRow[]) {
+  const map = new Map<string, { breakfast: number; lunch: number; dinner: number }>()
+  for (const o of orders) {
+    for (const it of o.order_items ?? []) {
+      const qty = parseFloat(String(it.quantity)) || 0
+      const row = map.get(it.item_name_snapshot) ?? { breakfast: 0, lunch: 0, dinner: 0 }
+      row[o.meal_period] += qty
+      map.set(it.item_name_snapshot, row)
+    }
+  }
+  return [...map.entries()]
+    .map(([name, row]) => ({ name, ...row, total: row.breakfast + row.lunch + row.dinner }))
+    .sort((a, b) => b.total - a.total || a.name.localeCompare(b.name))
+}
+
+function fmtQty(n: number) {
+  return Number.isInteger(n) ? String(n) : n.toFixed(2)
+}
+
+function WholeDayItemTotals({ orders }: { orders: OrderRow[] }) {
+  const [query, setQuery] = useState('')
+  const items = useMemo(() => combinedItemTotals(orders), [orders])
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase()
+    if (!q) return items
+    return items.filter(it => it.name.toLowerCase().includes(q))
+  }, [items, query])
+  const totalPieces = items.reduce((s, i) => s + i.total, 0)
+
+  return (
+    <div
+      className="rounded-[14px] overflow-hidden mb-5"
+      style={{ background: 'var(--color-surface)', border: '1px solid var(--color-border)', boxShadow: 'var(--shadow-card)' }}
+    >
+      <div className="px-4 py-3 flex items-center justify-between gap-3 flex-wrap" style={{ borderBottom: '1px solid var(--color-border)' }}>
+        <div>
+          <span className="font-display font-bold text-[16px]" style={{ color: 'var(--color-ink)' }}>Item Totals — Whole Day</span>
+          {items.length > 0 && (
+            <span className="text-[11px] ml-2" style={{ color: 'var(--color-muted)' }}>
+              {items.length} item{items.length !== 1 ? 's' : ''} · {fmtQty(totalPieces)} pc combined
+            </span>
+          )}
+        </div>
+        <div className="relative">
+          <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2" style={{ color: 'var(--color-muted)' }} />
+          <input
+            type="text"
+            value={query}
+            onChange={e => setQuery(e.target.value)}
+            placeholder="Find an item…"
+            className="text-sm pl-7 pr-3 py-1.5 rounded-[10px] outline-none"
+            style={{ border: '1px solid var(--color-border)', color: 'var(--color-ink)', width: 180 }}
+          />
+        </div>
+      </div>
+
+      {items.length === 0 ? (
+        <p className="text-sm py-6 text-center" style={{ color: 'var(--color-muted)' }}>No à la carte items today</p>
+      ) : filtered.length === 0 ? (
+        <p className="text-sm py-6 text-center" style={{ color: 'var(--color-muted)' }}>No item matches &quot;{query}&quot;</p>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr style={{ background: 'var(--color-cream)' }}>
+                <th className="text-left px-4 py-2 text-[10.5px] font-bold uppercase tracking-wide" style={{ color: 'var(--color-muted)' }}>Item</th>
+                <th className="text-right px-3 py-2 text-[10.5px] font-bold uppercase tracking-wide" style={{ color: 'var(--color-muted)' }}>Breakfast</th>
+                <th className="text-right px-3 py-2 text-[10.5px] font-bold uppercase tracking-wide" style={{ color: 'var(--color-muted)' }}>Lunch</th>
+                <th className="text-right px-3 py-2 text-[10.5px] font-bold uppercase tracking-wide" style={{ color: 'var(--color-muted)' }}>Dinner</th>
+                <th className="text-right px-4 py-2 text-[10.5px] font-bold uppercase tracking-wide" style={{ color: 'var(--color-muted)' }}>Total</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filtered.map((it, i) => (
+                <tr key={it.name} style={{ borderTop: i === 0 ? undefined : '1px solid var(--color-border)' }}>
+                  <td className="px-4 py-2" style={{ color: 'var(--color-ink)' }}>{it.name}</td>
+                  <td className="text-right px-3 py-2 num" style={{ color: it.breakfast ? 'var(--color-ink)' : 'var(--color-border)' }}>{it.breakfast ? fmtQty(it.breakfast) : '—'}</td>
+                  <td className="text-right px-3 py-2 num" style={{ color: it.lunch ? 'var(--color-ink)' : 'var(--color-border)' }}>{it.lunch ? fmtQty(it.lunch) : '—'}</td>
+                  <td className="text-right px-3 py-2 num" style={{ color: it.dinner ? 'var(--color-ink)' : 'var(--color-border)' }}>{it.dinner ? fmtQty(it.dinner) : '—'}</td>
+                  <td className="text-right px-4 py-2 num font-bold" style={{ color: 'var(--color-ember)' }}>{fmtQty(it.total)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  )
 }
 
 function PeriodCard({
@@ -217,6 +310,9 @@ export function DailyReportModule({
         Fixed-menu counts are a headcount per period, not broken down by dish — the system doesn&apos;t record which
         dish a fixed-menu subscriber gets on a given day.
       </div>
+
+      {/* Whole-day item totals — same items, summed across all three periods */}
+      <WholeDayItemTotals orders={orders} />
 
       {/* Per-period cards */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
