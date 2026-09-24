@@ -10,21 +10,33 @@ const DATE_RE = /^\d{4}-\d{2}-\d{2}$/
 export default async function DailyReportPage({
   searchParams,
 }: {
-  searchParams: Promise<{ date?: string }>
+  searchParams: Promise<{ date?: string; from?: string; to?: string }>
 }) {
   await requireAuth()
 
-  const { date } = await searchParams
+  const { date, from, to } = await searchParams
   const todayDubai = formatInTimeZone(new Date(), 'Asia/Dubai', 'yyyy-MM-dd')
-  const reportDate = date && DATE_RE.test(date) ? date : todayDubai
 
-  const { orders, fixedMenuCounts } = await loadDailyReportData(reportDate)
+  let rangeFrom: string
+  let rangeTo: string
+  if (from && to && DATE_RE.test(from) && DATE_RE.test(to)) {
+    rangeFrom = from <= to ? from : to
+    rangeTo = from <= to ? to : from
+  } else {
+    const single = date && DATE_RE.test(date) ? date : todayDubai
+    rangeFrom = single
+    rangeTo = single
+  }
+
+  const { orders, fixedMenuCounts, costByItem } = await loadDailyReportData(rangeFrom, rangeTo)
 
   return (
     <DailyReportModule
       orders={orders}
       fixedMenuCounts={fixedMenuCounts}
-      reportDate={reportDate}
+      costByItem={costByItem}
+      from={rangeFrom}
+      to={rangeTo}
       todayDubai={todayDubai}
     />
   )

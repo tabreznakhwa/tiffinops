@@ -8,6 +8,15 @@ import type { Enums } from '@/lib/supabase/types'
 
 const WRITE_ROLES: Enums<'user_role'>[] = ['owner', 'manager', 'data_entry']
 
+const costPriceField = z
+  .string()
+  .optional()
+  .transform(v => (v?.trim() ? v.trim() : null))
+  .refine(
+    v => v === null || (!isNaN(parseFloat(v)) && parseFloat(v) >= 0),
+    'Enter a valid cost price (e.g. 8 or 6.50), or leave it blank'
+  )
+
 const MenuItemSchema = z.object({
   name: z.string().min(1, 'Name is required').transform(v => v.trim()),
   meal_period: z.enum(['breakfast', 'lunch', 'dinner']),
@@ -20,6 +29,7 @@ const MenuItemSchema = z.object({
       v => !isNaN(parseFloat(v)) && parseFloat(v) >= 0,
       'Enter a valid price (e.g. 25 or 12.50)'
     ),
+  cost_price: costPriceField,
   is_available: z.string().optional().transform(v => v === 'true' || v === 'on'),
 })
 
@@ -44,6 +54,7 @@ const MenuItemsMultiSchema = z.object({
   name: z.string().min(1, 'Name is required').transform(v => v.trim()),
   category: z.string().optional().transform(v => v?.trim() || null),
   description: z.string().optional().transform(v => v?.trim() || null),
+  cost_price: costPriceField,
   is_available: z.boolean(),
   periods: z
     .array(
@@ -67,6 +78,7 @@ export async function createMenuItems(input: {
   name: string
   category?: string
   description?: string
+  cost_price?: string
   is_available: boolean
   periods: { meal_period: Enums<'meal_period'>; price: number | string }[]
 }): Promise<MenuActionResult> {
@@ -105,6 +117,7 @@ export async function createMenuItems(input: {
       category:      parsed.data.category,
       description:   parsed.data.description,
       default_price: p.price.toFixed(2),
+      cost_price:    parsed.data.cost_price,
       is_available:  parsed.data.is_available,
       created_by:    user.id,
     }))

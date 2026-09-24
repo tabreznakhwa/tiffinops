@@ -57,6 +57,12 @@ export function MenuItemModal({
   const [editPeriod, setEditPeriod] = useState<MealPeriod>(item?.meal_period ?? defaultMealPeriod)
   const [editPrice, setEditPrice]   = useState(item ? parseFloat(item.default_price).toFixed(2) : '')
 
+  // Cost price — optional, only for items bought ready-made from an outside
+  // vendor (e.g. Moti Roti, Rumali Roti). Applies to all ticked periods in
+  // add mode (same cost regardless of which meal it's served at); one value
+  // per row in edit mode, same as the selling price.
+  const [costPrice, setCostPrice] = useState(item?.cost_price ? parseFloat(item.cost_price).toFixed(2) : '')
+
   // Re-seed the form each time the modal opens (state persists across opens otherwise)
   useEffect(() => {
     if (!open) return
@@ -67,6 +73,7 @@ export function MenuItemModal({
     setIsAvailable(item ? item.is_available : true)
     setEditPeriod(item?.meal_period ?? defaultMealPeriod)
     setEditPrice(item ? parseFloat(item.default_price).toFixed(2) : '')
+    setCostPrice(item?.cost_price ? parseFloat(item.cost_price).toFixed(2) : '')
     setPeriods({
       breakfast: { on: defaultMealPeriod === 'breakfast', price: '' },
       lunch:     { on: defaultMealPeriod === 'lunch',     price: '' },
@@ -90,8 +97,9 @@ export function MenuItemModal({
 
   const selectedPeriods = PERIOD_DEFS.filter(p => periods[p.value].on)
   const validPrice = (v: string) => v.trim() !== '' && !isNaN(parseFloat(v)) && parseFloat(v) >= 0
+  const validCostPrice = costPrice.trim() === '' || (!isNaN(parseFloat(costPrice)) && parseFloat(costPrice) >= 0)
 
-  const canSubmit = !isPending && name.trim().length > 0 && (
+  const canSubmit = !isPending && name.trim().length > 0 && validCostPrice && (
     item
       ? validPrice(editPrice)
       : selectedPeriods.length > 0 && selectedPeriods.every(p => validPrice(periods[p.value].price))
@@ -120,6 +128,7 @@ export function MenuItemModal({
         formData.set('category', category)
         formData.set('description', description)
         formData.set('default_price', editPrice)
+        formData.set('cost_price', costPrice)
         if (isAvailable) formData.set('is_available', 'true')
         result = await updateMenuItem(item.id, formData)
       } else {
@@ -127,6 +136,7 @@ export function MenuItemModal({
           name,
           category: category || undefined,
           description: description || undefined,
+          cost_price: costPrice || undefined,
           is_available: isAvailable,
           periods: selectedPeriods.map(p => ({
             meal_period: p.value,
@@ -326,6 +336,26 @@ export function MenuItemModal({
                   </div>
                 </div>
               )}
+
+              {/* Cost price — optional, for vendor-bought items */}
+              <div>
+                <label className="block text-sm font-semibold" style={{ color: 'var(--color-ink)' }}>
+                  Cost Price ({currency}) <span className="font-normal" style={{ color: 'var(--color-muted)' }}>— optional</span>
+                </label>
+                <p className="text-xs mt-0.5 mb-1.5" style={{ color: 'var(--color-muted)' }}>
+                  Only if bought ready-made from an outside vendor (e.g. Moti Roti, Rumali Roti). Enables a profit column in the Daily Report.
+                </p>
+                <input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={costPrice}
+                  onChange={e => setCostPrice(e.target.value)}
+                  className={`${inputBase} max-w-[160px]`}
+                  style={inputStyle}
+                  placeholder="0.00"
+                />
+              </div>
 
               {/* Availability */}
               <label className="flex items-center gap-2.5 cursor-pointer w-fit">

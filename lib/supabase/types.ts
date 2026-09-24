@@ -156,6 +156,7 @@ export type Database = {
           category: string | null
           description: string | null
           default_price: string
+          cost_price: string | null
           is_available: boolean
           image_url: string | null
           created_by: string | null
@@ -169,6 +170,7 @@ export type Database = {
           category?: string | null
           description?: string | null
           default_price: string
+          cost_price?: string | null
           is_available?: boolean
           image_url?: string | null
           created_by?: string | null
@@ -182,6 +184,7 @@ export type Database = {
           category?: string | null
           description?: string | null
           default_price?: string
+          cost_price?: string | null
           is_available?: boolean
           image_url?: string | null
           created_by?: string | null

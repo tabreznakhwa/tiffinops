@@ -22,15 +22,17 @@ function itemTotalsFor(orders: OrderRow[]) {
     .sort((a, b) => b.quantity - a.quantity || a.name.localeCompare(b.name))
 }
 
-// Item totals across the whole day, with the per-period split kept alongside
-// — mirrors the on-screen "Item Totals — Whole Day" table.
+// Item totals across the whole selected range, with the per-period split and
+// revenue/cost/profit kept alongside — mirrors the on-screen combined table.
 function combinedItemTotalsFor(orders: OrderRow[]) {
-  const map = new Map<string, { breakfast: number; lunch: number; dinner: number }>()
+  const map = new Map<string, { breakfast: number; lunch: number; dinner: number; revenue: number }>()
   for (const o of orders) {
     for (const it of o.order_items ?? []) {
       const qty = parseFloat(String(it.quantity)) || 0
-      const row = map.get(it.item_name_snapshot) ?? { breakfast: 0, lunch: 0, dinner: 0 }
+      const rev = parseFloat(String(it.total_price)) || 0
+      const row = map.get(it.item_name_snapshot) ?? { breakfast: 0, lunch: 0, dinner: 0, revenue: 0 }
       row[o.meal_period] += qty
+      row.revenue += rev
       map.set(it.item_name_snapshot, row)
     }
   }
@@ -43,10 +45,18 @@ function fmtQty(n: number) {
   return Number.isInteger(n) ? String(n) : n.toFixed(2)
 }
 
-function WholeDayItemTotals({ orders }: { orders: OrderRow[] }) {
+function CombinedItemTotals({
+  orders, costByItem, currency, rangeLabel,
+}: {
+  orders: OrderRow[]
+  costByItem: Record<string, number>
+  currency: string
+  rangeLabel: string
+}) {
   const items = combinedItemTotalsFor(orders)
   if (items.length === 0) return null
   const totalPieces = items.reduce((s, i) => s + i.total, 0)
+  const hasAnyCost = items.some(it => costByItem[it.name.trim().toLowerCase()] != null)
 
   return (
     <div style={{ marginBottom: 24, breakInside: 'avoid' }}>
@@ -57,7 +67,7 @@ function WholeDayItemTotals({ orders }: { orders: OrderRow[] }) {
         }}
       >
         <h2 style={{ fontFamily: 'var(--font-display)', fontSize: 16, fontWeight: 800, color: '#221A13', margin: 0, textTransform: 'uppercase', letterSpacing: '.04em' }}>
-          Item Totals — Whole Day
+          Item Totals — {rangeLabel}
         </h2>
         <span style={{ fontSize: 12, color: '#7C7063', fontWeight: 600 }}>
           {items.length} item{items.length !== 1 ? 's' : ''} · {fmtQty(totalPieces)} pc combined
@@ -71,20 +81,46 @@ function WholeDayItemTotals({ orders }: { orders: OrderRow[] }) {
             <th style={{ textAlign: 'right', padding: '5px 10px', fontSize: 10.5, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '.06em', color: '#221A13', borderBottom: '1.5px solid #221A13' }}>Lunch</th>
             <th style={{ textAlign: 'right', padding: '5px 10px', fontSize: 10.5, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '.06em', color: '#221A13', borderBottom: '1.5px solid #221A13' }}>Dinner</th>
             <th style={{ textAlign: 'right', padding: '5px 10px', fontSize: 10.5, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '.06em', color: '#221A13', borderBottom: '1.5px solid #221A13' }}>Total</th>
+            <th style={{ textAlign: 'right', padding: '5px 10px', fontSize: 10.5, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '.06em', color: '#221A13', borderBottom: '1.5px solid #221A13' }}>Revenue</th>
+            {hasAnyCost && (
+              <>
+                <th style={{ textAlign: 'right', padding: '5px 10px', fontSize: 10.5, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '.06em', color: '#221A13', borderBottom: '1.5px solid #221A13' }}>Cost</th>
+                <th style={{ textAlign: 'right', padding: '5px 10px', fontSize: 10.5, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '.06em', color: '#221A13', borderBottom: '1.5px solid #221A13' }}>Profit</th>
+              </>
+            )}
           </tr>
         </thead>
         <tbody>
-          {items.map((it, i) => (
-            <tr key={it.name} style={{ borderTop: i === 0 ? undefined : '1px solid #ECE2D3' }}>
-              <td style={{ padding: '4px 10px', color: '#221A13' }}>{it.name}</td>
-              <td style={{ textAlign: 'right', padding: '4px 10px', color: it.breakfast ? '#221A13' : '#ECE2D3' }}>{it.breakfast ? fmtQty(it.breakfast) : '—'}</td>
-              <td style={{ textAlign: 'right', padding: '4px 10px', color: it.lunch ? '#221A13' : '#ECE2D3' }}>{it.lunch ? fmtQty(it.lunch) : '—'}</td>
-              <td style={{ textAlign: 'right', padding: '4px 10px', color: it.dinner ? '#221A13' : '#ECE2D3' }}>{it.dinner ? fmtQty(it.dinner) : '—'}</td>
-              <td style={{ textAlign: 'right', padding: '4px 10px', fontWeight: 800, color: '#221A13' }}>{fmtQty(it.total)}</td>
-            </tr>
-          ))}
+          {items.map((it, i) => {
+            const unitCost = costByItem[it.name.trim().toLowerCase()]
+            const cost = unitCost != null ? unitCost * it.total : null
+            const profit = cost != null ? it.revenue - cost : null
+            return (
+              <tr key={it.name} style={{ borderTop: i === 0 ? undefined : '1px solid #ECE2D3' }}>
+                <td style={{ padding: '4px 10px', color: '#221A13' }}>{it.name}</td>
+                <td style={{ textAlign: 'right', padding: '4px 10px', color: it.breakfast ? '#221A13' : '#ECE2D3' }}>{it.breakfast ? fmtQty(it.breakfast) : '—'}</td>
+                <td style={{ textAlign: 'right', padding: '4px 10px', color: it.lunch ? '#221A13' : '#ECE2D3' }}>{it.lunch ? fmtQty(it.lunch) : '—'}</td>
+                <td style={{ textAlign: 'right', padding: '4px 10px', color: it.dinner ? '#221A13' : '#ECE2D3' }}>{it.dinner ? fmtQty(it.dinner) : '—'}</td>
+                <td style={{ textAlign: 'right', padding: '4px 10px', fontWeight: 800, color: '#221A13' }}>{fmtQty(it.total)}</td>
+                <td style={{ textAlign: 'right', padding: '4px 10px', color: '#221A13' }}>{currency} {it.revenue.toFixed(2)}</td>
+                {hasAnyCost && (
+                  <>
+                    <td style={{ textAlign: 'right', padding: '4px 10px', color: cost != null ? '#221A13' : '#ECE2D3' }}>{cost != null ? `${currency} ${cost.toFixed(2)}` : '—'}</td>
+                    <td style={{ textAlign: 'right', padding: '4px 10px', fontWeight: 800, color: profit != null ? (profit >= 0 ? '#2E7D4F' : '#C0392B') : '#ECE2D3' }}>
+                      {profit != null ? `${currency} ${profit.toFixed(2)}` : '—'}
+                    </td>
+                  </>
+                )}
+              </tr>
+            )
+          })}
         </tbody>
       </table>
+      {hasAnyCost && (
+        <p style={{ fontSize: 10.5, color: '#7C7063', margin: '6px 2px 0' }}>
+          Cost/Profit only shown for items with a cost price set in Menu.
+        </p>
+      )}
     </div>
   )
 }
@@ -161,18 +197,29 @@ function PeriodSection({
 export default async function PrintDailyReportPage({
   searchParams,
 }: {
-  searchParams: Promise<{ date?: string }>
+  searchParams: Promise<{ date?: string; from?: string; to?: string }>
 }) {
   await requireAuth()
 
-  const { date } = await searchParams
+  const { date, from, to } = await searchParams
   const now = new Date()
   const todayDubai = formatInTimeZone(now, 'Asia/Dubai', 'yyyy-MM-dd')
-  const reportDate = date && DATE_RE.test(date) ? date : todayDubai
 
-  const [settings, { orders, fixedMenuCounts }] = await Promise.all([
+  let rangeFrom: string
+  let rangeTo: string
+  if (from && to && DATE_RE.test(from) && DATE_RE.test(to)) {
+    rangeFrom = from <= to ? from : to
+    rangeTo = from <= to ? to : from
+  } else {
+    const single = date && DATE_RE.test(date) ? date : todayDubai
+    rangeFrom = single
+    rangeTo = single
+  }
+  const isSingleDay = rangeFrom === rangeTo
+
+  const [settings, { orders, fixedMenuCounts, costByItem }] = await Promise.all([
     getSettings(),
-    loadDailyReportData(reportDate),
+    loadDailyReportData(rangeFrom, rangeTo),
   ])
 
   const byPeriod = PERIOD_ORDER.reduce((acc, p) => {
@@ -180,10 +227,13 @@ export default async function PrintDailyReportPage({
     return acc
   }, {} as Record<string, OrderRow[]>)
 
-  const reportDateDisplay = (() => {
-    const d = new Date(reportDate + 'T00:00:00Z')
-    return d.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })
-  })()
+  function fmtLong(d: string) {
+    return new Date(d + 'T00:00:00Z').toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })
+  }
+  function fmtShort(d: string) {
+    return new Date(d + 'T00:00:00Z').toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
+  }
+  const reportDateDisplay = isSingleDay ? fmtLong(rangeFrom) : `${fmtShort(rangeFrom)} – ${fmtShort(rangeTo)}`
   const printTime = formatInTimeZone(now, 'Asia/Dubai', 'h:mm a')
 
   const totalOrders = orders.length
@@ -205,11 +255,11 @@ export default async function PrintDailyReportPage({
           {totalOrders} à la carte order{totalOrders !== 1 ? 's' : ''} · {settings.currency} {totalRevenue.toFixed(2)} · {totalFixedMenu} fixed-menu meal{totalFixedMenu !== 1 ? 's' : ''} · Printed at {printTime}
         </p>
         <p style={{ fontSize: 11, color: '#7C7063', margin: '6px 0 0', fontStyle: 'italic' }}>
-          Fixed-menu counts are a headcount per period, not broken down by dish.
+          Fixed-menu counts are a headcount per period{!isSingleDay ? ', summed across the range,' : ''} not broken down by dish.
         </p>
       </div>
 
-      <WholeDayItemTotals orders={orders} />
+      <CombinedItemTotals orders={orders} costByItem={costByItem} currency={settings.currency} rangeLabel={isSingleDay ? 'Whole Day' : 'Selected Range'} />
 
       {PERIOD_ORDER.map(period => (
         <PeriodSection key={period} period={period} orders={byPeriod[period]} fixedMenuCount={fixedMenuCounts[period]} />
