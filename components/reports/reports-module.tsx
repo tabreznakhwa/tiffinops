@@ -685,7 +685,7 @@ export function ReportsModule({ data, initialTab }: { data: ReportData; initialT
             {data.range.days} day{data.range.days !== 1 ? 's' : ''}
           </span>
           <button
-            onClick={() => window.open('/print/outstanding', '_blank')}
+            onClick={() => window.open(`/print/outstanding?from=${from}&to=${to}`, '_blank')}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-[8px] text-xs font-bold"
             style={{ background: '#C0392B', color: '#fff' }}
           >

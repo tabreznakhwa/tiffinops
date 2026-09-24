@@ -4,10 +4,40 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { getSettings } from '@/lib/settings/getSettings'
 import { BillPrintSetup } from '@/components/bills/bill-print-setup'
 
+const DATE_RE = /^\d{4}-\d{2}-\d{2}$/
+const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+
 function fmtDate(d: string) {
   return new Date(d + 'T00:00:00Z').toLocaleDateString('en-GB', {
     day: 'numeric', month: 'short', year: 'numeric',
   })
+}
+
+// Same rule the on-screen Outstanding page's month-wise breakdown uses: an
+// invoice is attributed to whichever calendar month holds more of its billing
+// period (26 Jul – 25 Aug counts as August). Kept in sync with
+// app/(app)/outstanding/page.tsx's majorityMonth() so this PDF's month filter
+// agrees with that page's monthly bucketing.
+function majorityMonth(start: string, end: string): string {
+  const s = new Date(start + 'T00:00:00Z')
+  const e = new Date(end + 'T00:00:00Z')
+  const totalDays = Math.round((e.getTime() - s.getTime()) / 86_400_000) + 1
+  if (totalDays <= 0) return start.slice(0, 7)
+
+  const startMonthEnd = new Date(s.getFullYear(), s.getMonth() + 1, 0)
+  const daysInStartMonth = Math.max(0, Math.min(e.getTime(), startMonthEnd.getTime()) - s.getTime()) / 86_400_000 + 1
+  const daysInEndMonth = totalDays - daysInStartMonth
+
+  if (daysInEndMonth > daysInStartMonth) {
+    return `${String(e.getFullYear()).padStart(4, '0')}-${String(e.getMonth() + 1).padStart(2, '0')}`
+  } else {
+    return `${String(s.getFullYear()).padStart(4, '0')}-${String(s.getMonth() + 1).padStart(2, '0')}`
+  }
+}
+
+function monthLabel(monthKey: string): string {
+  const [y, m] = monthKey.split('-').map(Number)
+  return `${MONTH_NAMES[m - 1]} ${y}`
 }
 
 const cell: React.CSSProperties = {
@@ -28,11 +58,23 @@ const hdr: React.CSSProperties = {
   textAlign: 'left',
 }
 
-export default async function OutstandingPrintPage() {
+export default async function OutstandingPrintPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ from?: string; to?: string }>
+}) {
   await requireAuth()
 
   const admin    = createAdminClient()
   const settings = await getSettings()
+
+  const { from, to } = await searchParams
+  const rangeFrom = from && DATE_RE.test(from) ? from : ''
+  const rangeTo   = to   && DATE_RE.test(to)   ? to   : ''
+  const hasRange  = !!(rangeFrom && rangeTo)
+  // Inclusive 'YYYY-MM' bounds an invoice's majority month must fall within.
+  const monthFrom = hasRange ? rangeFrom.slice(0, 7) : ''
+  const monthTo   = hasRange ? rangeTo.slice(0, 7)   : ''
 
   const printedAt = formatInTimeZone(new Date(), 'Asia/Dubai', 'd MMM yyyy, h:mm a')
 
@@ -67,15 +109,47 @@ export default async function OutstandingPrintPage() {
     offset += PAGE
   }
 
+  // Scope to the requested month(s) — same bucketing rule as the on-screen
+  // Outstanding page's month-wise breakdown, so this PDF agrees with it.
+  const scopedInvoices = hasRange
+    ? allInvoices.filter(inv => {
+        const start = inv.billing_period_start ?? inv.invoice_date
+        const end   = inv.billing_period_end   || inv.invoice_date
+        const mk = majorityMonth(start, end)
+        return mk >= monthFrom && mk <= monthTo
+      })
+    : allInvoices
+
+  // Net off payments already applied to each invoice, so a 'partial' invoice
+  // shows what's actually still owed rather than its full original amount.
+  const paidByInvoice = new Map<string, number>()
+  if (scopedInvoices.length > 0) {
+    const ids = scopedInvoices.map(inv => inv.id)
+    const { data: paymentRows } = await admin
+      .from('payments')
+      .select('invoice_id, amount')
+      .in('invoice_id', ids)
+      .is('voided_at', null)
+    for (const p of (paymentRows ?? []) as { invoice_id: string | null; amount: string }[]) {
+      if (!p.invoice_id) continue
+      paidByInvoice.set(p.invoice_id, (paidByInvoice.get(p.invoice_id) ?? 0) + (parseFloat(String(p.amount)) || 0))
+    }
+  }
+
   // Group by customer
   type CustomerSummary = {
     full_name: string
     customer_code: string
-    invoices: InvRow[]
+    invoices: (InvRow & { remaining: number })[]
     total: number
   }
   const custMap = new Map<string, CustomerSummary>()
-  for (const inv of allInvoices) {
+  for (const inv of scopedInvoices) {
+    const billed = parseFloat(String(inv.total_amount)) || 0
+    const paid = Math.min(paidByInvoice.get(inv.id) ?? 0, billed)
+    const remaining = Math.max(0, billed - paid)
+    if (remaining <= 0.005) continue // fully settled — nothing pending on this invoice
+
     const key  = inv.customers?.customer_code ?? inv.id
     const name = inv.customers?.full_name ?? 'Unknown'
     const code = inv.customers?.customer_code ?? ''
@@ -83,12 +157,16 @@ export default async function OutstandingPrintPage() {
       custMap.set(key, { full_name: name, customer_code: code, invoices: [], total: 0 })
     }
     const entry = custMap.get(key)!
-    entry.invoices.push(inv)
-    entry.total += parseFloat(String(inv.total_amount))
+    entry.invoices.push({ ...inv, remaining })
+    entry.total += remaining
   }
 
   const customers = [...custMap.values()].sort((a, b) => b.total - a.total)
   const grandTotal = customers.reduce((s, c) => s + c.total, 0)
+  const totalInvoices = customers.reduce((s, c) => s + c.invoices.length, 0)
+  const periodLabel = hasRange
+    ? (monthFrom === monthTo ? monthLabel(monthFrom) : `${monthLabel(monthFrom)} – ${monthLabel(monthTo)}`)
+    : ''
 
   const TYPE_LABELS: Record<string, string> = {
     a_la_carte_cycle: 'A La Carte',
@@ -108,7 +186,11 @@ export default async function OutstandingPrintPage() {
           <h1 style={{ fontFamily: 'var(--font-display)', fontSize: 22, fontWeight: 800, margin: '0 0 2px' }}>
             Outstanding Payments Report
           </h1>
-          <p style={{ fontSize: 12, color: '#7C7063' }}>All issued invoices pending payment — as of {printedAt} (Dubai)</p>
+          <p style={{ fontSize: 12, color: '#7C7063' }}>
+            {hasRange
+              ? `Invoices pending payment for ${periodLabel} — as of ${printedAt} (Dubai)`
+              : `All issued invoices pending payment — as of ${printedAt} (Dubai)`}
+          </p>
         </div>
         <div style={{ textAlign: 'right' }}>
           <p style={{ fontSize: 11, color: '#7C7063' }}>Printed: {printedAt}</p>
@@ -121,7 +203,7 @@ export default async function OutstandingPrintPage() {
         {[
           { label: 'Total Outstanding', value: `${settings.currency} ${grandTotal.toFixed(2)}` },
           { label: 'Customers with Balance', value: String(customers.length) },
-          { label: 'Total Invoices', value: String(allInvoices.length) },
+          { label: 'Total Invoices', value: String(totalInvoices) },
         ].map(kpi => (
           <div key={kpi.label} style={{ background: '#FBF6EE', border: '1px solid #ECE2D3', borderRadius: 8, padding: '10px 14px' }}>
             <p style={{ fontSize: 9, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.08em', color: '#7C7063', margin: '0 0 3px' }}>
@@ -136,7 +218,9 @@ export default async function OutstandingPrintPage() {
 
       {/* ── Per-customer detail ── */}
       {customers.length === 0 ? (
-        <p style={{ color: '#7C7063', fontSize: 13 }}>No outstanding invoices at this time.</p>
+        <p style={{ color: '#7C7063', fontSize: 13 }}>
+          {hasRange ? `No invoices pending payment for ${periodLabel}.` : 'No outstanding invoices at this time.'}
+        </p>
       ) : (
         <>
           {customers.map((cust, ci) => (
@@ -162,7 +246,8 @@ export default async function OutstandingPrintPage() {
                     <th style={hdr}>Invoice Date</th>
                     <th style={{ ...hdr, color: '#C0392B' }}>Due Date</th>
                     <th style={{ ...hdr, textAlign: 'right' }}>Status</th>
-                    <th style={{ ...hdr, textAlign: 'right' }}>Amount ({settings.currency})</th>
+                    <th style={{ ...hdr, textAlign: 'right' }}>Billed ({settings.currency})</th>
+                    <th style={{ ...hdr, textAlign: 'right' }}>Pending ({settings.currency})</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -184,8 +269,11 @@ export default async function OutstandingPrintPage() {
                         <td style={{ ...cell, fontSize: 10, textAlign: 'right', textTransform: 'uppercase', letterSpacing: '.05em', color: inv.status === 'partial' ? '#D4890A' : '#7C7063' }}>
                           {inv.status}
                         </td>
-                        <td style={{ ...cell, textAlign: 'right', fontWeight: 700 }}>
+                        <td style={{ ...cell, textAlign: 'right', color: '#7C7063' }}>
                           {parseFloat(String(inv.total_amount)).toFixed(2)}
+                        </td>
+                        <td style={{ ...cell, textAlign: 'right', fontWeight: 700 }}>
+                          {inv.remaining.toFixed(2)}
                         </td>
                       </tr>
                     )
@@ -198,7 +286,7 @@ export default async function OutstandingPrintPage() {
           {/* ── Grand total ── */}
           <div style={{ borderTop: '3px solid #221A13', marginTop: 8, paddingTop: 10, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <span style={{ fontWeight: 700, fontSize: 14 }}>
-              Grand Total Outstanding — {customers.length} customer{customers.length !== 1 ? 's' : ''}, {allInvoices.length} invoice{allInvoices.length !== 1 ? 's' : ''}
+              Grand Total Outstanding — {customers.length} customer{customers.length !== 1 ? 's' : ''}, {totalInvoices} invoice{totalInvoices !== 1 ? 's' : ''}
             </span>
             <span style={{ fontFamily: 'var(--font-display)', fontWeight: 800, fontSize: 18, color: '#C0392B' }}>
               {settings.currency} {grandTotal.toFixed(2)}
