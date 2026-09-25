@@ -99,6 +99,11 @@ export default async function OrdersPage({
       </div>
 
       <OrdersModule
+        // Force a full remount on every date-range navigation — otherwise the
+        // table can be left showing a stale render from the previous range
+        // (e.g. Apply to a new date still showing the old range's rows)
+        // if the client router doesn't cleanly replace this subtree.
+        key={`${from}-${to}`}
         orders={orders}
         isOwner={user.role === 'owner'}
         initialFrom={from}

@@ -245,6 +245,9 @@ export function OrdersModule({
     params.set('from', fromDate)
     params.set('to', toDate)
     router.push(`/orders?${params.toString()}`)
+    // Belt-and-braces against the client router cache serving a stale
+    // payload for this URL — force a real server refetch.
+    router.refresh()
   }
 
   function setQuickRange(from: string, to: string) {
@@ -254,6 +257,7 @@ export function OrdersModule({
     params.set('from', from)
     params.set('to', to)
     router.push(`/orders?${params.toString()}`)
+    router.refresh()
   }
 
   // ── Void handler ──────────────────────────────────────────────────────────
