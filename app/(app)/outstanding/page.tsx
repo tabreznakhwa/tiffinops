@@ -1,7 +1,7 @@
 export const dynamic = 'force-dynamic'
 
 import { formatInTimeZone } from 'date-fns-tz'
-import { requireAuth } from '@/lib/auth'
+import { requireAuth, canGiveDiscount } from '@/lib/auth'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { getSettings } from '@/lib/settings/getSettings'
 import { getCustomerBalancesInRange, getCustomerLastPayments, getCustomerOutstandingSince, getCustomerOldestUnpaidInvoice, getCustomerAdjustmentTotalsInRange } from '@/lib/db/aggregates'
@@ -383,6 +383,7 @@ export default async function OutstandingPage({
       totalCustomers={customerList.length}
       currency={settings.currency}
       userRole={user.role}
+      canGiveDiscount={canGiveDiscount(user)}
       rangeFrom={rangeFrom}
       rangeTo={rangeTo}
     />

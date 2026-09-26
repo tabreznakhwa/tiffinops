@@ -84,6 +84,10 @@ interface Props {
   totalCustomers: number
   currency:       string
   userRole:       string
+  // Server-computed canGiveDiscount(user) — gates the month-wise "Discount"
+  // button and Record Payment's per-invoice discount trigger. Separate from
+  // canSettle (owner-only), which also covers the broader write-off flow.
+  canGiveDiscount: boolean
   rangeFrom:      string
   rangeTo:        string
 }
@@ -461,7 +465,7 @@ function InvoiceDiscountDialog({
   )
 }
 
-export function OutstandingModule({ rows, plans, totalCustomers, currency, userRole, rangeFrom, rangeTo }: Props) {
+export function OutstandingModule({ rows, plans, totalCustomers, currency, userRole, canGiveDiscount, rangeFrom, rangeTo }: Props) {
   const canEditStartDate = userRole === 'owner'
   const canEditPauseDate = ['owner', 'manager', 'data_entry'].includes(userRole)
   // Mirrors recordPayment()'s role gate (the server re-checks anyway).
@@ -1137,7 +1141,7 @@ export function OutstandingModule({ rows, plans, totalCustomers, currency, userR
                                               <HandCoins size={11} /> Pay
                                             </button>
                                           )}
-                                          {canSettle && b.status !== 'paid' && b.remaining > 0.005 && (
+                                          {canGiveDiscount && b.status !== 'paid' && b.remaining > 0.005 && (
                                             <button
                                               type="button"
                                               onClick={() => setDiscountTarget({ row, bill: b })}
@@ -1204,7 +1208,7 @@ export function OutstandingModule({ rows, plans, totalCustomers, currency, userR
           initialAmount={payTarget.amount}
           initialInvoiceId={payTarget.invoiceId}
           onClose={() => { setPayTarget(null); router.refresh() }}
-          isOwner={canSettle}
+          canDiscount={canGiveDiscount}
         />
       )}
 

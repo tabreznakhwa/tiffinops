@@ -19,6 +19,7 @@ export async function POST(req: NextRequest) {
       can_record_payment?: boolean | null
       can_see_financials?: boolean | null
       can_export_reports?: boolean | null
+      can_give_discount?: boolean | null
     }
 
     if (!body.id) {
@@ -62,6 +63,7 @@ export async function POST(req: NextRequest) {
           can_record_payment: body.can_record_payment ?? null,
           can_see_financials: body.can_see_financials ?? null,
           can_export_reports: body.can_export_reports ?? null,
+          can_give_discount:  body.can_give_discount ?? null,
         })
         .eq('id', body.id)
       if (error) return NextResponse.json({ error: error.message }, { status: 500 })

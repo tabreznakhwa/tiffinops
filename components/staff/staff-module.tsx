@@ -289,7 +289,7 @@ function StaffRow({ user, isCurrentUser }: { user: User; isCurrentUser: boolean 
     window.location.assign('/staff')
   }
 
-  async function changePerm(field: 'can_record_payment' | 'can_see_financials' | 'can_export_reports', val: boolean | null) {
+  async function changePerm(field: 'can_record_payment' | 'can_see_financials' | 'can_export_reports' | 'can_give_discount', val: boolean | null) {
     if (busy) return
     setBusy(true)
     setPermError(null)
@@ -299,6 +299,7 @@ function StaffRow({ user, isCurrentUser }: { user: User; isCurrentUser: boolean 
       can_record_payment:  field === 'can_record_payment' ? val : user.can_record_payment,
       can_see_financials:  field === 'can_see_financials' ? val : user.can_see_financials,
       can_export_reports:  field === 'can_export_reports' ? val : user.can_export_reports,
+      can_give_discount:   field === 'can_give_discount'  ? val : user.can_give_discount,
     })
     if (result.error) { setPermError(result.error); setBusy(false); return }
     window.location.assign('/staff')
@@ -421,6 +422,15 @@ function StaffRow({ user, isCurrentUser }: { user: User; isCurrentUser: boolean 
                 label="Export Reports"
                 value={user.can_export_reports}
                 onChange={v => changePerm('can_export_reports', v)}
+                disabled={isCurrentUser || busy}
+              />
+            </div>
+            <div className="flex items-center gap-1.5">
+              <span className="text-[11px]" style={{ color: 'var(--color-muted)' }}>Give Discount</span>
+              <PermToggle
+                label="Give Discount"
+                value={user.can_give_discount}
+                onChange={v => changePerm('can_give_discount', v)}
                 disabled={isCurrentUser || busy}
               />
             </div>

@@ -61,6 +61,15 @@ export function canRecordPayment(user: AppUser): boolean {
   return ['owner', 'manager', 'accounts'].includes(user.role)
 }
 
+// Gates applyInvoiceDiscount() — Outstanding's month-wise discount button and
+// Record Payment's per-invoice discount button. Does NOT cover the separate
+// row-level "Settle with discount / write-off" flow in Outstanding, which
+// stays owner-only (write-off is a broader action than a single discount).
+export function canGiveDiscount(user: AppUser): boolean {
+  if (user.can_give_discount !== null) return user.can_give_discount
+  return user.role === 'owner'
+}
+
 export function canSeeFinancials(user: AppUser): boolean {
   if (user.can_see_financials !== null) return user.can_see_financials
   return ['owner', 'manager', 'accounts'].includes(user.role)

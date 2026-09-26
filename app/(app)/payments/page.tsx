@@ -1,7 +1,7 @@
 export const dynamic = 'force-dynamic'
 
 import { formatInTimeZone } from 'date-fns-tz'
-import { requireAuth } from '@/lib/auth'
+import { requireAuth, canGiveDiscount } from '@/lib/auth'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { PaymentsModule } from '@/components/payments/payments-module'
 import type { PaymentRow, CustomerForModal } from '@/components/payments/payments-module'
@@ -58,6 +58,7 @@ export default async function PaymentsPage() {
       todayTotal={todayTotal}
       monthTotal={monthTotal}
       isOwner={user.role === 'owner'}
+      canGiveDiscount={canGiveDiscount(user)}
     />
   )
 }

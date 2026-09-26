@@ -1,7 +1,7 @@
 'use server'
 
 import { revalidatePath } from 'next/cache'
-import { requireAuth } from '@/lib/auth'
+import { requireAuth, canGiveDiscount } from '@/lib/auth'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { generateMonthlyInvoices } from '@/lib/invoices/generateMonthlyInvoices'
 import { generateAlaCarteInvoices } from '@/lib/invoices/generateAlaCarteInvoices'
@@ -618,9 +618,13 @@ export async function voidInvoice(id: string, reason: string): Promise<InvoiceAc
 
 // ── applyInvoiceDiscount ─────────────────────────────────────────────────────
 //
-// Owner-only discount on a single invoice — used by the Outstanding page's
-// month-wise breakdown so one month's bill can be reduced without touching the
-// customer's other cycles. Bumps discount_amount / lowers total_amount, keeps
+// Discount on a single invoice — used by the Outstanding page's month-wise
+// breakdown so one month's bill can be reduced without touching the
+// customer's other cycles, and by Record Payment's per-invoice "Discount"
+// trigger. Owner by default; gated by canGiveDiscount() so the owner can also
+// grant this to a specific staff member (users.can_give_discount) without
+// making them a full owner — see lib/auth.ts. A reason is always required,
+// for either caller. Bumps discount_amount / lowers total_amount, keeps
 // the VAT-inclusive tax and the invoice's ledger debit in sync, records the
 // reason in the notes, and re-checks paid/partial against the new total (a
 // discount down to what's already paid flips the invoice to Paid).
@@ -631,7 +635,7 @@ export async function applyInvoiceDiscount(
   reason: string
 ): Promise<InvoiceActionResult> {
   const user = await requireAuth()
-  if (user.role !== 'owner') return { error: 'Only the owner can discount invoices' }
+  if (!canGiveDiscount(user)) return { error: 'You do not have permission to discount invoices' }
 
   if (!Number.isFinite(amount) || amount <= 0) return { error: 'Enter a discount greater than 0' }
   if (!reason || reason.trim().length < 3) return { error: 'Please give a reason (at least 3 characters)' }

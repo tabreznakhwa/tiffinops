@@ -63,7 +63,7 @@ export function RecordPaymentModal({
   initialAmount,
   initialInvoiceId,
   onClose,
-  isOwner = false,
+  canDiscount = false,
 }: {
   customers: Customer[]
   preselectedCustomer?: Customer
@@ -73,9 +73,10 @@ export function RecordPaymentModal({
   initialInvoiceId?: string
   onClose: () => void
   // Shows the per-invoice "Discount" trigger in the "Apply to Invoice(s)"
-  // list — applyInvoiceDiscount() itself is owner-gated server-side too,
-  // this only controls whether the affordance is offered at all.
-  isOwner?: boolean
+  // list — pass canGiveDiscount(user) from the caller. applyInvoiceDiscount()
+  // itself is gated server-side too, this only controls whether the
+  // affordance is offered at all.
+  canDiscount?: boolean
 }) {
   const [query, setQuery]           = useState('')
   const [showList, setShowList]     = useState(false)
@@ -393,7 +394,7 @@ export function RecordPaymentModal({
                             {' · '}{INVOICE_TYPE_LABEL[inv.invoice_type]}
                             {' · '}{INVOICE_STATUS_LABEL[inv.status] ?? inv.status}
                           </span>
-                          {isOwner && DISCOUNTABLE_STATUSES.has(inv.status) && (
+                          {canDiscount && DISCOUNTABLE_STATUSES.has(inv.status) && (
                             <button
                               type="button"
                               onClick={e => { e.stopPropagation(); setDiscountTarget(inv) }}

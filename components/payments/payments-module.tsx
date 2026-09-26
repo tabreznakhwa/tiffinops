@@ -95,12 +95,16 @@ export function PaymentsModule({
   todayTotal,
   monthTotal,
   isOwner,
+  canGiveDiscount = false,
 }: {
   payments: PaymentRow[]
   customers: CustomerForModal[]
   todayTotal: number
   monthTotal: number
   isOwner: boolean
+  // Server-computed canGiveDiscount(user) — threaded into Record Payment's
+  // per-invoice "Discount" trigger. Defaults false for safety.
+  canGiveDiscount?: boolean
 }) {
   const router = useRouter()
   const { currency } = useAppSettings()
@@ -649,7 +653,7 @@ export function PaymentsModule({
         <RecordPaymentModal
           customers={customers}
           onClose={() => { setShowModal(false); router.refresh() }}
-          isOwner={isOwner}
+          canDiscount={canGiveDiscount}
         />
       )}
     </div>

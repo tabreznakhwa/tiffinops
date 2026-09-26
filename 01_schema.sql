@@ -39,6 +39,7 @@ create table users (
   can_record_payment boolean,
   can_export_reports boolean,
   can_see_financials boolean,
+  can_give_discount boolean,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );

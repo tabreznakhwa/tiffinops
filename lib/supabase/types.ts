@@ -13,6 +13,7 @@ export type Database = {
           can_record_payment: boolean | null
           can_export_reports: boolean | null
           can_see_financials: boolean | null
+          can_give_discount: boolean | null
           created_at: string
           updated_at: string
         }
@@ -25,6 +26,7 @@ export type Database = {
           can_record_payment?: boolean | null
           can_export_reports?: boolean | null
           can_see_financials?: boolean | null
+          can_give_discount?: boolean | null
           created_at?: string
           updated_at?: string
         }
@@ -37,6 +39,7 @@ export type Database = {
           can_record_payment?: boolean | null
           can_export_reports?: boolean | null
           can_see_financials?: boolean | null
+          can_give_discount?: boolean | null
           created_at?: string
           updated_at?: string
         }
