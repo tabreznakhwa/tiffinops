@@ -115,10 +115,15 @@ const MAI_DUBAI_AREA = 'Mai Dubai'
  *
  * @param targetMonth  'YYYY-MM' of the month being closed (defaults to current Dubai month)
  * @param createdBy    auth user ID to stamp on each invoice
+ * @param options.onlyArea  restrict this run to customers in a single area
+ *   (e.g. 'Mai Dubai') — for a manual backfill of one area without touching
+ *   every other postpaid customer in the same pass. Omit for the normal
+ *   full-system run (what the cron job and the "Generate" button use).
  */
 export async function generateMonthlyInvoices(
   targetMonth: string,
   createdBy: string,
+  options?: { onlyArea?: string },
 ): Promise<GenerateResult> {
   const admin = createAdminClient()
 
@@ -156,6 +161,7 @@ export async function generateMonthlyInvoices(
   const postpaidSubs = (subs ?? []).filter(s => {
     const c = s.customers as unknown as { payment_terms?: string; customer_type?: string; area?: string | null } | null
     if (c?.payment_terms !== 'postpaid') return false
+    if (options?.onlyArea && c?.area !== options.onlyArea) return false
     if (c?.customer_type === 'fixed_menu') return c?.area === MAI_DUBAI_AREA
     return true
   })

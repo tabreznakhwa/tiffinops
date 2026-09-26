@@ -2049,6 +2049,27 @@ export function InvoicesModule({
               Print Summary
             </a>
           )}
+          {isOwner && filtered.length > 0 && (
+            <a
+              // Batch PDF of every invoice currently matching the on-screen
+              // filters (area / date range / status) — e.g. set Area to
+              // "Mai Dubai" and From/To to today to print exactly the
+              // invoices just generated for that area.
+              href={`/print/invoices?${new URLSearchParams({
+                ...(areaFilter.length ? { area: areaFilter.join(',') } : {}),
+                ...(fromDate ? { from: fromDate } : {}),
+                ...(toDate ? { to: toDate } : {}),
+                ...(activeStatus !== 'all' ? { status: activeStatus } : {}),
+              }).toString()}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center gap-1.5 px-4 py-2.5 rounded-[10px] text-sm font-bold transition-opacity"
+              style={{ background: 'var(--color-cream)', color: '#1A6B6B', border: '1.5px solid #1A6B6B' }}
+            >
+              <Printer size={14} />
+              Print Filtered ({filtered.length})
+            </a>
+          )}
           {isOwner && (
             <button
               onClick={() => setShowAlaCarteModal(true)}

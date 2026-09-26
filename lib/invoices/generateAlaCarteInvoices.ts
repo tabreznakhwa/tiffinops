@@ -52,6 +52,9 @@ export type AlaCarteGenerateResult = {
  * @param forMonth   'YYYY-MM' of the month being closed (used to compute default period)
  * @param createdBy  user ID to stamp on each invoice (or 'system-cron')
  * @param options    optional period override; when absent the standard cycle is used
+ * @param options.onlyArea  restrict this run to customers in a single area
+ *   (e.g. 'Mai Dubai') — for a manual backfill of one area without touching
+ *   every other active a_la_carte/hybrid customer in the same pass.
  */
 export async function generateAlaCarteInvoices(
   forMonth: string,
@@ -61,6 +64,7 @@ export async function generateAlaCarteInvoices(
     periodEnd?: string
     discountPercent?: number
     customerDiscounts?: Record<string, number>  // customer_id → % override
+    onlyArea?: string
   },
 ): Promise<AlaCarteGenerateResult> {
   const admin = createAdminClient()
@@ -84,11 +88,13 @@ export async function generateAlaCarteInvoices(
   const vatRate = parseFloat(String(settings?.vat_percent ?? '5'))
 
   // Active A La Carte / Hybrid customers
-  const { data: customers, error: custErr } = await admin
+  let customerQuery = admin
     .from('customers')
     .select('id, full_name, customer_code')
     .in('customer_type', ['a_la_carte', 'hybrid'])
     .eq('status', 'active')
+  if (options?.onlyArea) customerQuery = customerQuery.eq('area', options.onlyArea)
+  const { data: customers, error: custErr } = await customerQuery
 
   if (custErr || !customers?.length) {
     return { generated: 0, skipped: 0, errors: custErr ? [custErr.message] : [], invoice_ids: [], total_amount: 0, discount_total: 0, month: forMonth }
