@@ -86,6 +86,37 @@ export async function triggerAlaCarteInvoices(
   }
 }
 
+// Mai Dubai customers share one 26th-of-prev-month→25th-of-targetMonth cycle
+// regardless of customer_type (see MAI_DUBAI_AREA in generateMonthlyInvoices.ts) —
+// this runs BOTH generators (fixed-plan + à la carte) scoped to only that area,
+// for a manual backfill/catch-up run that never touches any other area's
+// billing cycle, unlike calling triggerMonthlyInvoices/triggerAlaCarteInvoices
+// directly (those process every eligible customer system-wide).
+export type MaiDubaiGenerateResult = {
+  monthly:  GenerateResult
+  alaCarte: AlaCarteGenerateResult
+  month:    string
+}
+
+export async function triggerMaiDubaiInvoices(
+  targetMonth?: string
+): Promise<{ error?: string } & Partial<MaiDubaiGenerateResult>> {
+  const user = await requireAuth()
+  if (user.role !== 'owner') return { error: 'Only the owner can generate invoices' }
+
+  const currentDubaiMonth = formatInTimeZone(new Date(), 'Asia/Dubai', 'yyyy-MM')
+  const month = targetMonth ?? currentDubaiMonth
+
+  try {
+    const monthly  = await generateMonthlyInvoices(month, user.id, { onlyArea: 'Mai Dubai' })
+    const alaCarte = await generateAlaCarteInvoices(month, user.id, { onlyArea: 'Mai Dubai' })
+    revalidatePath('/invoices')
+    return { monthly, alaCarte, month }
+  } catch (err: unknown) {
+    return { error: err instanceof Error ? err.message : 'Generation failed — check server logs' }
+  }
+}
+
 export type AlaCarteCustomer = { id: string; full_name: string; customer_code: string }
 
 // ── bulkIssueDraftInvoices ────────────────────────────────────────────────────
@@ -164,6 +195,7 @@ export type OpenInvoice = {
   invoice_type: Enums<'invoice_type'>
   status: Enums<'invoice_status'>
   total_amount: string
+  discount_amount: string
   billing_period_start: string | null
   billing_period_end: string | null
   paid_so_far: number
@@ -181,7 +213,7 @@ export async function getCustomerOpenInvoices(customerId: string): Promise<OpenI
 
   const { data: invoices } = await admin
     .from('invoices')
-    .select('id, invoice_number, invoice_type, status, total_amount, billing_period_start, billing_period_end')
+    .select('id, invoice_number, invoice_type, status, total_amount, discount_amount, billing_period_start, billing_period_end')
     .eq('customer_id', customerId)
     .in('status', OPEN_STATUSES)
     .order('invoice_date', { ascending: false })

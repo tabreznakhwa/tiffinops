@@ -16,6 +16,7 @@ import {
   triggerAlaCarteInvoices,
   triggerPrepaidInvoices,
   triggerFixedAnniversaryInvoices,
+  triggerMaiDubaiInvoices,
   getInvoiceItems,
   bulkDeleteDraftInvoices,
   bulkIssueDraftInvoices,
@@ -23,6 +24,7 @@ import {
   type CreateInvoiceInput,
   type UpdateInvoiceInput,
   type AlaCarteCustomer,
+  type MaiDubaiGenerateResult,
 } from '@/lib/invoices/actions'
 import type { GenerateResult } from '@/lib/invoices/generateMonthlyInvoices'
 import type { AlaCarteGenerateResult } from '@/lib/invoices/generateAlaCarteInvoices'
@@ -969,6 +971,187 @@ function BulkGenerateModal({
   )
 }
 
+// ── Mai Dubai — Area-Scoped Bulk Generate Modal ───────────────────────────────
+// Runs BOTH the fixed-plan and à la carte generators scoped to only the Mai
+// Dubai area (26th-of-prev-month → 25th-of-targetMonth shared cycle), without
+// touching any other area's billing cycle in the same pass — see
+// triggerMaiDubaiInvoices in lib/invoices/actions.ts.
+
+function BulkMaiDubaiModal({
+  defaultMonth,
+  onClose,
+}: {
+  defaultMonth: string
+  onClose: () => void
+}) {
+  const [month, setMonth] = useState(defaultMonth)
+  const [isPending, startTransition] = useTransition()
+  const [result, setResult] = useState<MaiDubaiGenerateResult | null>(null)
+  const [error, setError] = useState('')
+
+  function fmtMonth(yyyyMM: string) {
+    const [y, m] = yyyyMM.split('-').map(Number)
+    return new Date(y, m - 1, 1).toLocaleDateString('en-GB', { month: 'long', year: 'numeric' })
+  }
+
+  function handleGenerate() {
+    setError('')
+    setResult(null)
+    startTransition(async () => {
+      const res = await triggerMaiDubaiInvoices(month)
+      if (res.error) { setError(res.error); return }
+      setResult(res as MaiDubaiGenerateResult)
+    })
+  }
+
+  const totalGenerated = result ? result.monthly.generated + result.alaCarte.generated : 0
+  const totalSkipped   = result ? result.monthly.skipped + result.alaCarte.skipped : 0
+  const allErrors      = result ? [...result.monthly.errors, ...result.alaCarte.errors] : []
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center px-4"
+      style={{ background: 'rgba(34,26,19,0.5)' }}
+      onClick={(e) => { if (e.target === e.currentTarget && !isPending) onClose() }}
+    >
+      <div
+        className="w-full max-w-[420px] rounded-[18px] p-6"
+        style={{ background: 'var(--color-surface)', border: '1px solid var(--color-border)' }}
+      >
+        {/* Header */}
+        <div className="flex items-start justify-between mb-4">
+          <div>
+            <p className="text-[10px] font-bold uppercase tracking-widest mb-0.5" style={{ color: 'var(--color-saffron)' }}>
+              Bulk Action · Area-Scoped
+            </p>
+            <h3 className="font-display font-bold text-[18px]" style={{ color: 'var(--color-ink)' }}>
+              Generate — Mai Dubai Only
+            </h3>
+          </div>
+          <button
+            onClick={onClose}
+            disabled={isPending}
+            className="w-8 h-8 flex items-center justify-center rounded-full transition-colors hover:bg-cream"
+            style={{ color: 'var(--color-muted)' }}
+          >
+            <X size={16} />
+          </button>
+        </div>
+
+        {!result ? (
+          <>
+            {/* Info */}
+            <div
+              className="rounded-[10px] px-4 py-3 mb-5 text-sm"
+              style={{ background: 'var(--color-cream)', border: '1px solid var(--color-border)' }}
+            >
+              <p style={{ color: 'var(--color-ink)' }}>
+                Runs both the <strong>fixed-plan</strong> and <strong>à la carte</strong> generators for{' '}
+                <strong>Mai Dubai customers only</strong> — every other area is left untouched.
+              </p>
+              <p className="mt-1.5 text-xs" style={{ color: 'var(--color-muted)' }}>
+                Mai Dubai bills on a shared 26th-of-prev-month → 25th-of-selected-month cycle, for every
+                customer type. Existing invoices for that cycle are skipped — safe to re-run.
+              </p>
+            </div>
+
+            {/* Month picker */}
+            <div className="mb-5">
+              <label className="block text-xs font-bold mb-1.5" style={{ color: 'var(--color-ink)' }}>
+                Target Month
+              </label>
+              <input
+                type="month"
+                value={month}
+                onChange={(e) => setMonth(e.target.value)}
+                className="w-full rounded-[10px] px-3 py-2.5 text-sm focus:outline-none focus:ring-1 focus:ring-saffron"
+                style={{
+                  background: 'var(--color-cream)',
+                  border: '1px solid var(--color-border)',
+                  color: 'var(--color-ink)',
+                }}
+              />
+              <p className="text-[11px] mt-1" style={{ color: 'var(--color-muted)' }}>
+                Bills the cycle ending 25 {fmtMonth(month)}
+              </p>
+            </div>
+
+            {error && (
+              <p className="text-xs mb-4 font-semibold" style={{ color: 'var(--color-red)' }}>
+                {error}
+              </p>
+            )}
+
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={onClose}
+                className="flex-1 py-2.5 rounded-[10px] text-sm font-bold"
+                style={{ background: 'var(--color-border)', color: 'var(--color-muted)' }}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleGenerate}
+                disabled={isPending || !month}
+                className="flex-1 py-2.5 rounded-[10px] text-sm font-bold transition-opacity"
+                style={{
+                  background: 'var(--color-ember)',
+                  color: '#fff',
+                  opacity: isPending || !month ? 0.6 : 1,
+                }}
+              >
+                {isPending ? 'Generating…' : `Generate for ${fmtMonth(month)}`}
+              </button>
+            </div>
+          </>
+        ) : (
+          /* Result screen */
+          <div>
+            <div className="space-y-3 mb-5">
+              <div className="flex justify-between items-center py-2.5 px-4 rounded-[10px]" style={{ background: 'var(--color-green-soft)' }}>
+                <span className="text-sm font-semibold" style={{ color: 'var(--color-green)' }}>Invoices Generated</span>
+                <span className="font-display font-bold text-[22px] num" style={{ color: 'var(--color-green)' }}>{totalGenerated}</span>
+              </div>
+              <div className="grid grid-cols-2 gap-2 text-xs" style={{ color: 'var(--color-muted)' }}>
+                <div className="rounded-[8px] px-3 py-2" style={{ background: 'var(--color-cream)' }}>
+                  Fixed Plan: <strong>{result.monthly.generated}</strong>
+                </div>
+                <div className="rounded-[8px] px-3 py-2" style={{ background: 'var(--color-cream)' }}>
+                  À La Carte: <strong>{result.alaCarte.generated}</strong>
+                </div>
+              </div>
+              <div className="flex justify-between items-center py-2.5 px-4 rounded-[10px]" style={{ background: 'var(--color-cream)' }}>
+                <span className="text-sm font-semibold" style={{ color: 'var(--color-muted)' }}>Skipped (duplicate / no price)</span>
+                <span className="font-display font-bold text-[22px] num" style={{ color: 'var(--color-muted)' }}>{totalSkipped}</span>
+              </div>
+              {allErrors.length > 0 && (
+                <div className="rounded-[10px] px-4 py-3" style={{ background: 'var(--color-red-soft)', border: '1px solid var(--color-red)' }}>
+                  <p className="text-xs font-bold mb-1" style={{ color: 'var(--color-red)' }}>
+                    {allErrors.length} error{allErrors.length !== 1 ? 's' : ''}:
+                  </p>
+                  {allErrors.map((e, i) => (
+                    <p key={i} className="text-xs" style={{ color: 'var(--color-red)' }}>{e}</p>
+                  ))}
+                </div>
+              )}
+            </div>
+            <button
+              type="button"
+              onClick={onClose}
+              className="w-full py-2.5 rounded-[10px] text-sm font-bold"
+              style={{ background: 'var(--color-saffron)', color: '#fff' }}
+            >
+              Done — View Invoices
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
 // ── Prepaid Anniversary Bulk Generate Modal ───────────────────────────────────
 // Prepaid customers are billed on their own start-date anniversary (see
 // generatePrepaidInvoices.ts), not a shared calendar-month cycle. This runs
@@ -1867,6 +2050,7 @@ export function InvoicesModule({
   const [showAlaCarteModal, setShowAlaCarteModal] = useState(false)
   const [showPrepaidModal, setShowPrepaidModal] = useState(false)
   const [showFixedAnniversaryModal, setShowFixedAnniversaryModal] = useState(false)
+  const [showMaiDubaiModal, setShowMaiDubaiModal] = useState(false)
   const [selectedDraftIds, setSelectedDraftIds] = useState<Set<string>>(new Set())
   const [showBulkDeleteConfirm, setShowBulkDeleteConfirm] = useState(false)
   const [bulkDeleteError, setBulkDeleteError] = useState('')
@@ -2108,6 +2292,19 @@ export function InvoicesModule({
                 <path d="M12 6v6l4 2"/>
               </svg>
               Generate Fixed (Anniversary)
+            </button>
+          )}
+          {isOwner && (
+            <button
+              onClick={() => setShowMaiDubaiModal(true)}
+              className="flex items-center gap-1.5 px-4 py-2.5 rounded-[10px] text-sm font-bold transition-opacity"
+              style={{ background: '#B8452E', color: '#fff' }}
+            >
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-4 h-4" aria-hidden="true">
+                <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0Z"/>
+                <circle cx="12" cy="10" r="3"/>
+              </svg>
+              Generate — Mai Dubai Only
             </button>
           )}
           {isOwner && (
@@ -2447,6 +2644,14 @@ export function InvoicesModule({
         <BulkFixedAnniversaryModal
           defaultDate={defaultPrepaidDate}
           onClose={() => setShowFixedAnniversaryModal(false)}
+        />
+      )}
+
+      {/* Mai Dubai — Area-Scoped Bulk Generate Modal */}
+      {showMaiDubaiModal && (
+        <BulkMaiDubaiModal
+          defaultMonth={defaultGenerateMonth}
+          onClose={() => setShowMaiDubaiModal(false)}
         />
       )}
 

@@ -318,9 +318,16 @@ export function RecordPaymentModal({
                 <p className="text-xs" style={{ color: 'var(--color-muted)' }}>No open invoices for this customer</p>
               ) : (
                 <div className="rounded-[10px] overflow-hidden" style={{ border: '1px solid var(--color-border)' }}>
+                  <div className="flex items-center gap-2.5 px-3 py-1" style={{ background: 'var(--color-cream)', borderBottom: '1px solid var(--color-border)' }}>
+                    <span className="flex-shrink-0 w-[15px]" />
+                    <span className="flex-1 text-[10px] font-bold uppercase tracking-wide" style={{ color: 'var(--color-muted)' }}>Invoice</span>
+                    <span className="flex-shrink-0 text-[10px] font-bold uppercase tracking-wide text-right" style={{ color: 'var(--color-muted)', width: 60 }}>Discount</span>
+                    <span className="flex-shrink-0 text-[10px] font-bold uppercase tracking-wide text-right" style={{ color: 'var(--color-muted)', width: 70 }}>Due</span>
+                  </div>
                   {openInvoices.map((inv, i) => {
                     const on = allocations[inv.id] !== undefined
                     const due = Math.max(0, parseFloat(inv.total_amount) - inv.paid_so_far)
+                    const discount = parseFloat(inv.discount_amount || '0')
                     return (
                       <div
                         key={inv.id}
@@ -349,7 +356,14 @@ export function RecordPaymentModal({
                             {' · '}{INVOICE_TYPE_LABEL[inv.invoice_type]}
                             {' · '}{INVOICE_STATUS_LABEL[inv.status] ?? inv.status}
                           </span>
-                          <span className="text-xs font-semibold num" style={{ color: on ? 'var(--color-saffron)' : 'var(--color-ink)' }}>
+                          <span
+                            className="flex-shrink-0 text-xs num text-right"
+                            style={{ color: discount > 0 ? '#1A6B6B' : 'var(--color-muted)', width: 60 }}
+                            title="Discount already applied to this invoice"
+                          >
+                            {discount > 0 ? `-${discount.toFixed(2)}` : '—'}
+                          </span>
+                          <span className="flex-shrink-0 text-xs font-semibold num text-right" style={{ color: on ? 'var(--color-saffron)' : 'var(--color-ink)', width: 70 }}>
                             {due.toFixed(2)} due
                           </span>
                         </button>
