@@ -1,10 +1,14 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { X, Search } from 'lucide-react'
+import { X, Search, BadgePercent } from 'lucide-react'
 import { recordPayment } from '@/lib/payments/actions'
-import { getCustomerOpenInvoices, type OpenInvoice } from '@/lib/invoices/actions'
+import { getCustomerOpenInvoices, applyInvoiceDiscount, type OpenInvoice } from '@/lib/invoices/actions'
 import type { Enums } from '@/lib/supabase/types'
+
+// Statuses applyInvoiceDiscount() will accept — mirrors its own server-side
+// check, kept here only to decide whether the "Discount" trigger shows.
+const DISCOUNTABLE_STATUSES = new Set(['issued', 'partial', 'overdue'])
 
 type PaymentMode = Enums<'payment_mode'>
 
@@ -59,6 +63,7 @@ export function RecordPaymentModal({
   initialAmount,
   initialInvoiceId,
   onClose,
+  isOwner = false,
 }: {
   customers: Customer[]
   preselectedCustomer?: Customer
@@ -67,6 +72,10 @@ export function RecordPaymentModal({
   // customer's open invoices load (used by the month-wise outstanding rows).
   initialInvoiceId?: string
   onClose: () => void
+  // Shows the per-invoice "Discount" trigger in the "Apply to Invoice(s)"
+  // list — applyInvoiceDiscount() itself is owner-gated server-side too,
+  // this only controls whether the affordance is offered at all.
+  isOwner?: boolean
 }) {
   const [query, setQuery]           = useState('')
   const [showList, setShowList]     = useState(false)
@@ -88,6 +97,8 @@ export function RecordPaymentModal({
   // payment goes to each — lets one card/cash payment cover several
   // invoices at once (e.g. customer settles two months together).
   const [allocations, setAllocations]           = useState<Record<string, string>>({})
+  // Invoice currently open in the "Give Discount" dialog, or null when closed.
+  const [discountTarget, setDiscountTarget]     = useState<OpenInvoice | null>(null)
 
   const requiresRef = MODES.find(m => m.value === mode)?.requiresRef ?? false
 
@@ -154,6 +165,30 @@ export function RecordPaymentModal({
 
   function clearInvoices() {
     setAllocations({})
+  }
+
+  // Re-fetch open invoices after a discount is applied from within this
+  // modal, so the Discount/Due columns and any in-progress allocation stay
+  // correct — a discount can shrink an invoice's due amount below what's
+  // already allocated, or clear it to zero and drop it out of the open list
+  // entirely (it becomes Paid), in which case its allocation must go too.
+  async function handleDiscountApplied() {
+    setDiscountTarget(null)
+    if (!customer) return
+    const invs = await getCustomerOpenInvoices(customer.id)
+    setOpenInvoices(invs)
+    setAllocations(prev => {
+      const next: Record<string, string> = {}
+      for (const [id, val] of Object.entries(prev)) {
+        const inv = invs.find(i => i.id === id)
+        if (!inv) continue // fully discounted off the open list — drop the allocation
+        const outstanding = Math.max(0, parseFloat(inv.total_amount) - inv.paid_so_far)
+        if (outstanding <= 0.004) continue
+        const current = parseFloat(val) || 0
+        next[id] = current > outstanding + 0.004 ? outstanding.toFixed(2) : val
+      }
+      return next
+    })
   }
 
   function setAllocationAmount(id: string, value: string) {
@@ -336,10 +371,12 @@ export function RecordPaymentModal({
                           background: on ? 'var(--color-saffron-soft)' : 'var(--color-surface)',
                         }}
                       >
-                        <button
-                          type="button"
+                        <div
+                          role="button"
+                          tabIndex={0}
                           onClick={() => toggleInvoice(inv)}
-                          className="w-full flex items-center gap-2.5 px-3 py-2 text-left"
+                          onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleInvoice(inv) } }}
+                          className="w-full flex items-center gap-2.5 px-3 py-2 text-left cursor-pointer"
                         >
                           <span
                             className="flex-shrink-0 w-[15px] h-[15px] rounded-[4px] flex items-center justify-center"
@@ -351,11 +388,22 @@ export function RecordPaymentModal({
                               </svg>
                             )}
                           </span>
-                          <span className="flex-1 text-xs" style={{ color: on ? 'var(--color-saffron)' : 'var(--color-ink)' }}>
+                          <span className="flex-1 text-xs min-w-0" style={{ color: on ? 'var(--color-saffron)' : 'var(--color-ink)' }}>
                             <span className="font-semibold">{inv.invoice_number}</span>
                             {' · '}{INVOICE_TYPE_LABEL[inv.invoice_type]}
                             {' · '}{INVOICE_STATUS_LABEL[inv.status] ?? inv.status}
                           </span>
+                          {isOwner && DISCOUNTABLE_STATUSES.has(inv.status) && (
+                            <button
+                              type="button"
+                              onClick={e => { e.stopPropagation(); setDiscountTarget(inv) }}
+                              title="Give a discount on this invoice"
+                              className="flex-shrink-0 flex items-center gap-0.5 px-1.5 py-0.5 rounded-[6px] text-[10px] font-bold"
+                              style={{ color: 'var(--color-saffron)', border: '1px solid var(--color-saffron)' }}
+                            >
+                              <BadgePercent size={10} /> Discount
+                            </button>
+                          )}
                           <span
                             className="flex-shrink-0 text-xs num text-right"
                             style={{ color: discount > 0 ? '#1A6B6B' : 'var(--color-muted)', width: 60 }}
@@ -366,7 +414,7 @@ export function RecordPaymentModal({
                           <span className="flex-shrink-0 text-xs font-semibold num text-right" style={{ color: on ? 'var(--color-saffron)' : 'var(--color-ink)', width: 70 }}>
                             {due.toFixed(2)} due
                           </span>
-                        </button>
+                        </div>
                         {on && (
                           <div className="flex items-center gap-2 px-3 pb-2 pl-[34px]">
                             <span className="text-xs" style={{ color: 'var(--color-muted)' }}>Allocate</span>
@@ -586,6 +634,136 @@ export function RecordPaymentModal({
                 </button>
               </>
             )}
+          </div>
+        </form>
+      </div>
+
+      {discountTarget && (
+        <GiveDiscountDialog
+          invoice={discountTarget}
+          onClose={() => setDiscountTarget(null)}
+          onApplied={handleDiscountApplied}
+        />
+      )}
+    </div>
+  )
+}
+
+function GiveDiscountDialog({
+  invoice,
+  onClose,
+  onApplied,
+}: {
+  invoice: OpenInvoice
+  onClose: () => void
+  onApplied: () => void
+}) {
+  const due = Math.max(0, parseFloat(invoice.total_amount) - invoice.paid_so_far)
+  const [amount, setAmount]   = useState(due > 0 ? due.toFixed(2) : '')
+  const [reason, setReason]   = useState('')
+  const [loading, setLoading] = useState(false)
+  const [error, setError]     = useState('')
+
+  const amountNum = parseFloat(amount)
+  const tooMuch    = !isNaN(amountNum) && amountNum > due + 0.005
+  const canSubmit  = !loading && !isNaN(amountNum) && amountNum > 0 && !tooMuch && reason.trim().length >= 3
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault()
+    if (!canSubmit) return
+    setError('')
+    setLoading(true)
+    const result = await applyInvoiceDiscount(invoice.id, amountNum, reason.trim())
+    setLoading(false)
+    if (result.error) { setError(result.error); return }
+    onApplied()
+  }
+
+  return (
+    <div
+      className="fixed inset-0 z-[60] flex items-center justify-center p-4"
+      style={{ background: 'rgba(34,26,19,.55)' }}
+      onClick={e => e.target === e.currentTarget && onClose()}
+    >
+      <div className="relative w-full max-w-xs rounded-[18px] p-5 shadow-xl" style={{ background: 'var(--color-surface)' }}>
+        <button
+          type="button"
+          onClick={onClose}
+          className="absolute right-3 top-3 flex items-center justify-center w-7 h-7 rounded-full"
+          style={{ color: 'var(--color-muted)' }}
+          aria-label="Close"
+        >
+          <X size={16} />
+        </button>
+
+        <p className="text-xs font-bold uppercase tracking-widest mb-0.5" style={{ color: 'var(--color-saffron)', letterSpacing: '.12em' }}>
+          Give Discount
+        </p>
+        <h3 className="font-display font-bold text-[16px] mb-1" style={{ color: 'var(--color-ink)' }}>
+          {invoice.invoice_number}
+        </h3>
+        <p className="text-xs mb-3" style={{ color: 'var(--color-muted)' }}>
+          Due: <span className="font-bold">AED {due.toFixed(2)}</span> · Lowers this invoice&apos;s total — cash books stay untouched.
+        </p>
+
+        <form onSubmit={handleSubmit} className="space-y-3">
+          <div>
+            <label className="block text-xs font-semibold mb-1.5" style={{ color: 'var(--color-muted)' }}>
+              Discount Amount (AED) *
+            </label>
+            <input
+              type="number"
+              value={amount}
+              onChange={e => setAmount(e.target.value)}
+              min="0.01"
+              step="0.01"
+              required
+              className="w-full rounded-[10px] px-3 py-2 text-sm num focus:outline-none focus:ring-1 focus:ring-saffron"
+              style={{ background: 'var(--color-cream)', border: '1px solid var(--color-border)', color: 'var(--color-ink)' }}
+            />
+            {tooMuch && (
+              <p className="text-[11px] mt-1 font-semibold" style={{ color: 'var(--color-red, #C0392B)' }}>
+                Can&apos;t exceed the due amount — money already paid needs a refund, not a discount
+              </p>
+            )}
+          </div>
+
+          <div>
+            <label className="block text-xs font-semibold mb-1.5" style={{ color: 'var(--color-muted)' }}>
+              Reason *
+            </label>
+            <textarea
+              value={reason}
+              onChange={e => setReason(e.target.value)}
+              rows={2}
+              required
+              placeholder="e.g. Goodwill gesture for late delivery"
+              className="w-full rounded-[10px] px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-saffron resize-none"
+              style={{ background: 'var(--color-cream)', border: '1px solid var(--color-border)', color: 'var(--color-ink)' }}
+            />
+          </div>
+
+          {error && (
+            <p className="text-xs font-semibold" style={{ color: 'var(--color-red)' }}>{error}</p>
+          )}
+
+          <div className="flex gap-2 pt-1">
+            <button
+              type="button"
+              onClick={onClose}
+              className="flex-1 py-2 rounded-[10px] text-xs font-semibold"
+              style={{ background: 'var(--color-cream)', border: '1px solid var(--color-border)', color: 'var(--color-muted)' }}
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={!canSubmit}
+              className="flex-1 py-2 rounded-[10px] text-xs font-semibold disabled:opacity-50"
+              style={{ background: 'var(--color-saffron)', color: '#fff' }}
+            >
+              {loading ? 'Applying…' : 'Apply Discount'}
+            </button>
           </div>
         </form>
       </div>

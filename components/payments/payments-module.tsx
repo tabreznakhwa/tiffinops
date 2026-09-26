@@ -649,6 +649,7 @@ export function PaymentsModule({
         <RecordPaymentModal
           customers={customers}
           onClose={() => { setShowModal(false); router.refresh() }}
+          isOwner={isOwner}
         />
       )}
     </div>

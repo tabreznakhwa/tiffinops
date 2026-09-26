@@ -1204,6 +1204,7 @@ export function OutstandingModule({ rows, plans, totalCustomers, currency, userR
           initialAmount={payTarget.amount}
           initialInvoiceId={payTarget.invoiceId}
           onClose={() => { setPayTarget(null); router.refresh() }}
+          isOwner={canSettle}
         />
       )}
 
