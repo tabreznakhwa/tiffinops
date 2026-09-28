@@ -252,15 +252,24 @@ export async function generateMonthlyInvoices(
 
   // Fetch existing invoices for either cycle's period start to skip
   // duplicates — keyed by customer+period since the two areas use different
-  // period starts for the same targetMonth.
+  // period starts for the same targetMonth. Keyed on BOTH billing_period_start
+  // AND billing_period_end (not just start) — matching on start alone let a
+  // stray, wrong-period invoice (e.g. a short 6-7 day stub from a since-fixed
+  // generator bug) silently satisfy this check and mask a customer who
+  // genuinely has no correctly-bounded invoice for the real cycle (see the
+  // 2026-09 Mai Dubai incident this comment was added for). Cancelled
+  // invoices are excluded too — a corrected/replaced invoice must free its
+  // period up for regeneration, not block it forever, same as
+  // generateFixedAnniversaryInvoices.ts and generatePrepaidInvoices.ts.
   const { data: existingInvoices } = await admin
     .from('invoices')
-    .select('customer_id, billing_period_start')
+    .select('customer_id, billing_period_start, billing_period_end')
     .eq('invoice_type', 'fixed_monthly')
+    .neq('status', 'cancelled')
     .in('billing_period_start', [maiDubaiPeriodStart, otherPeriodStart])
 
   const alreadyInvoiced = new Set(
-    (existingInvoices ?? []).map((i) => `${i.customer_id}|${i.billing_period_start}`)
+    (existingInvoices ?? []).map((i) => `${i.customer_id}|${i.billing_period_start}|${i.billing_period_end}`)
   )
 
   let generated = 0
@@ -308,7 +317,7 @@ export async function generateMonthlyInvoices(
   for (const group of groups) {
     const customer = group.members[0].customers as unknown as { full_name: string; customer_code: string; customer_type: string; area: string | null } | null
 
-    if (alreadyInvoiced.has(`${group.customerId}|${group.periodStart}`)) {
+    if (alreadyInvoiced.has(`${group.customerId}|${group.periodStart}|${group.periodEnd}`)) {
       skipped++
       continue
     }
