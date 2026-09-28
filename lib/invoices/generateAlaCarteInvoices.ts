@@ -87,11 +87,20 @@ export async function generateAlaCarteInvoices(
     .from('app_settings').select('vat_percent').eq('id', 1).single()
   const vatRate = parseFloat(String(settings?.vat_percent ?? '5'))
 
-  // Active A La Carte / Hybrid customers
+  // Active customers of any type. Originally restricted to a_la_carte/hybrid,
+  // but that unconditionally skipped fixed_menu customers who currently have
+  // NO active covering subscription (lapsed, paused, or never had one) yet
+  // still place ad hoc credit orders — those orders were falling through
+  // every generator (flat-plan generators require an active subscription;
+  // this one required customer_type != fixed_menu). Safe to include
+  // fixed_menu here because hasActivePlanOn (below) already excludes any
+  // order date that DOES have an active plan in force, regardless of
+  // customer_type — so a fixed_menu customer currently on an active plan is
+  // untouched by this generator, exactly as before.
   let customerQuery = admin
     .from('customers')
     .select('id, full_name, customer_code')
-    .in('customer_type', ['a_la_carte', 'hybrid'])
+    .in('customer_type', ['a_la_carte', 'hybrid', 'fixed_menu'])
     .eq('status', 'active')
   if (options?.onlyArea) customerQuery = customerQuery.eq('area', options.onlyArea)
   const { data: customers, error: custErr } = await customerQuery
