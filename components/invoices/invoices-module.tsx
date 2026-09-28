@@ -2254,6 +2254,29 @@ export function InvoicesModule({
               Print Filtered ({filtered.length})
             </a>
           )}
+          {isOwner && filtered.length > 0 && (
+            <a
+              // One row per customer, every matching invoice's total_amount
+              // summed — same filters as "Print Filtered" above, but a
+              // name + amount statement instead of full tax invoices. Set
+              // Area = Mai Dubai + a From/To date range to get "who was
+              // billed what" for that cycle across every invoice type
+              // (fixed monthly, a la carte, adhoc) in one page.
+              href={`/print/statement?${new URLSearchParams({
+                ...(areaFilter.length ? { area: areaFilter.join(',') } : {}),
+                ...(fromDate ? { from: fromDate } : {}),
+                ...(toDate ? { to: toDate } : {}),
+                ...(activeStatus !== 'all' ? { status: activeStatus } : {}),
+              }).toString()}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center gap-1.5 px-4 py-2.5 rounded-[10px] text-sm font-bold transition-opacity"
+              style={{ background: 'var(--color-cream)', color: '#1A6B6B', border: '1.5px solid #1A6B6B' }}
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="15" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
+              Print Statement
+            </a>
+          )}
           {isOwner && (
             <button
               onClick={() => setShowAlaCarteModal(true)}
