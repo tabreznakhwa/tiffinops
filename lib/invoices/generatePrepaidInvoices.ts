@@ -48,7 +48,7 @@ function anniversaryDateForMonth(startDate: string, year: number, month: number)
 }
 
 // The following month's anniversary date for this subscription.
-function nextAnniversaryAfter(startDate: string, from: string): string {
+export function nextAnniversaryAfter(startDate: string, from: string): string {
   let year  = Number(from.slice(0, 4))
   let month = Number(from.slice(5, 7)) + 1
   if (month > 12) { month = 1; year += 1 }
@@ -61,7 +61,7 @@ function nextAnniversaryAfter(startDate: string, from: string): string {
 // catch-up path below: a subscriber whose exact anniversary day already
 // passed this month with no invoice yet still needs to be billed for THAT
 // cycle, not a fresh one starting today.
-function mostRecentAnniversaryOnOrBefore(startDate: string, today: string): string {
+export function mostRecentAnniversaryOnOrBefore(startDate: string, today: string): string {
   let year  = Number(today.slice(0, 4))
   let month = Number(today.slice(5, 7))
   let candidate = anniversaryDateForMonth(startDate, year, month)
@@ -121,10 +121,13 @@ function monthLabelFor(date: string): string {
  *
  * @param today      'YYYY-MM-DD', Dubai-local "today" (or an override for a missed/manual run)
  * @param createdBy  auth user ID to stamp on each invoice (or 'system-cron')
+ * @param options.onlyArea  restrict automatic runs to one area; omit for the
+ *   owner-triggered manual run across all areas.
  */
 export async function generatePrepaidAnniversaryInvoices(
   today: string,
   createdBy: string,
+  options?: { onlyArea?: string },
 ): Promise<GenerateResult> {
   const admin = createAdminClient()
 
@@ -144,15 +147,17 @@ export async function generatePrepaidAnniversaryInvoices(
       meal_prices,
       fixed_plan_id,
       fixed_plans(plan_name, meal_periods),
-      customers(full_name, customer_code, payment_terms, customer_type)
+      customers(full_name, customer_code, payment_terms, customer_type, area)
     `)
     .eq('status', 'active')
 
   if (subsErr) return { generated: 0, skipped: 0, referralRewardsGenerated: 0, errors: [subsErr.message], month: today }
 
   const prepaidActive = (subs ?? []).filter(s => {
-    const customer = s.customers as unknown as { payment_terms?: string } | null
-    return customer?.payment_terms === 'prepaid' && today >= s.start_date
+    const customer = s.customers as unknown as { payment_terms?: string; area?: string | null } | null
+    if (customer?.payment_terms !== 'prepaid' || today < s.start_date) return false
+    if (options?.onlyArea && customer.area !== options.onlyArea) return false
+    return true
   })
 
   if (prepaidActive.length === 0) {

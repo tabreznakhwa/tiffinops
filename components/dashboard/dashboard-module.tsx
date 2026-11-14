@@ -8,7 +8,7 @@ import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
   ResponsiveContainer, ReferenceLine,
 } from 'recharts'
-import { TrendingUp, TrendingDown, AlertCircle } from 'lucide-react'
+import { TrendingUp, TrendingDown, AlertCircle, FileClock } from 'lucide-react'
 import { useAppSettings } from '@/components/settings/settings-context'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -55,6 +55,15 @@ export type DashboardData = {
   ordersToday: number
   ordersByPeriod: { breakfast: number; lunch: number; dinner: number }
   pendingApprovals: number
+  invoicesDueForGeneration: {
+    customerId: string
+    fullName: string
+    customerCode: string
+    area: string | null
+    kind: 'fixed_anniversary' | 'prepaid_anniversary' | 'postpaid_monthly' | 'a_la_carte_cycle'
+    periodStart: string
+    periodEnd: string
+  }[]
   // Chart
   rev30d: { date: string; amount: number }[]
   recentPayments: { id: string; payment_number: string; payment_date: string; amount: string; mode: string; voided_at: string | null; customers: { full_name: string; customer_code: string } | null }[]
@@ -140,6 +149,13 @@ function SectionLabel({ children }: { children: string }) {
 }
 
 // ── Main Dashboard ────────────────────────────────────────────────────────────
+
+const DUE_KIND_LABELS: Record<DashboardData['invoicesDueForGeneration'][number]['kind'], string> = {
+  fixed_anniversary: 'Fixed-plan anniversary',
+  prepaid_anniversary: 'Prepaid anniversary',
+  postpaid_monthly: 'Postpaid monthly',
+  a_la_carte_cycle: 'A La Carte cycle',
+}
 
 const PERIOD_OPTIONS = [
   { key: 'today',      label: 'Today' },
@@ -268,6 +284,57 @@ export function DashboardModule({ data }: { data: DashboardData }) {
           </Link>
         )}
       </div>
+
+      {d.invoicesDueForGeneration.length > 0 && (
+        <div
+          className="rounded-[14px] p-4 mb-5"
+          style={{ background: 'var(--color-surface)', border: '1px solid var(--color-gold)', boxShadow: 'var(--shadow-card)' }}
+        >
+          <div className="flex items-start justify-between gap-3 flex-wrap mb-3">
+            <div className="flex items-start gap-2.5">
+              <span className="mt-0.5 flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-[9px]"
+                style={{ background: 'var(--color-cream)', color: 'var(--color-gold)' }}>
+                <FileClock size={17} />
+              </span>
+              <div>
+                <p className="font-bold text-sm" style={{ color: 'var(--color-ink)' }}>
+                  {d.invoicesDueForGeneration.length} invoice{d.invoicesDueForGeneration.length !== 1 ? 's' : ''} due for manual generation
+                </p>
+                <p className="text-xs mt-0.5" style={{ color: 'var(--color-muted)' }}>
+                  Customers outside Mai Dubai are never generated automatically.
+                </p>
+              </div>
+            </div>
+            <Link
+              href="/invoices"
+              className="px-3 py-1.5 rounded-[8px] text-xs font-bold"
+              style={{ background: 'var(--color-gold)', color: '#fff' }}
+            >
+              Open Invoice Generation →
+            </Link>
+          </div>
+          <div className="grid gap-2 md:grid-cols-2">
+            {d.invoicesDueForGeneration.map((item) => (
+              <div key={`${item.customerId}-${item.kind}-${item.periodStart}`}
+                className="flex items-start justify-between gap-3 rounded-[9px] px-3 py-2"
+                style={{ background: 'var(--color-cream)', border: '1px solid var(--color-border)' }}>
+                <div className="min-w-0">
+                  <p className="text-xs font-bold truncate" style={{ color: 'var(--color-ink)' }}>{item.fullName}</p>
+                  <p className="text-[10px]" style={{ color: 'var(--color-muted)' }}>
+                    {item.customerCode} · {item.area?.trim() || 'Area not set'}
+                  </p>
+                </div>
+                <div className="text-right flex-shrink-0">
+                  <p className="text-[10px] font-bold" style={{ color: 'var(--color-gold)' }}>{DUE_KIND_LABELS[item.kind]}</p>
+                  <p className="text-[10px] num" style={{ color: 'var(--color-muted)' }}>
+                    {fmtDate(item.periodStart)} – {fmtDate(item.periodEnd)}
+                  </p>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* ── Billing KPIs (A La Carte orders) ── */}
       <SectionLabel>Orders Billed</SectionLabel>

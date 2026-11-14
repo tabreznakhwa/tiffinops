@@ -21,8 +21,11 @@ export async function GET(req: NextRequest) {
   const dateParam = url.searchParams.get('date')
   const today = dateParam ?? formatInTimeZone(new Date(), 'Asia/Dubai', 'yyyy-MM-dd')
 
-  // System-initiated — no real user, use a sentinel ID
-  const result = await generatePrepaidAnniversaryInvoices(today, 'system-cron')
+  // Automatic generation is intentionally limited to Mai Dubai. The same
+  // generator remains available without this scope through the owner-only UI.
+  const result = await generatePrepaidAnniversaryInvoices(today, 'system-cron', {
+    onlyArea: 'Mai Dubai',
+  })
 
   return NextResponse.json({ ok: true, ...result })
 }

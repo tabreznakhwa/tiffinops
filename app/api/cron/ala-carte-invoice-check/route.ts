@@ -52,8 +52,11 @@ export async function GET(req: NextRequest) {
     })
   }
 
-  // Generate draft invoices
-  const result = await generateAlaCarteInvoices(month, 'system-cron')
+  // Automatic generation is intentionally limited to Mai Dubai. Customers in
+  // every other area are surfaced on the dashboard and generated manually.
+  const result = await generateAlaCarteInvoices(month, 'system-cron', {
+    onlyArea: 'Mai Dubai',
+  })
 
   if (result.generated === 0 && result.errors.length === 0) {
     return NextResponse.json({

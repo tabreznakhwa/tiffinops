@@ -874,7 +874,7 @@ function BulkGenerateModal({
               style={{ background: 'var(--color-cream)', border: '1px solid var(--color-border)' }}
             >
               <p style={{ color: 'var(--color-ink)' }}>
-                Creates a <strong>draft fixed_monthly invoice</strong> for every active
+                Creates and <strong>issues a fixed_monthly invoice</strong> for every eligible
                 <strong> postpaid</strong> subscriber. Existing invoices for the billed month are skipped.
               </p>
               <p className="mt-1.5 text-xs" style={{ color: 'var(--color-muted)' }}>
@@ -1214,13 +1214,13 @@ function BulkPrepaidModal({ defaultDate, onClose }: { defaultDate: string; onClo
               style={{ background: 'var(--color-cream)', border: '1px solid var(--color-border)' }}
             >
               <p style={{ color: 'var(--color-ink)' }}>
-                Creates a <strong>draft fixed_monthly invoice</strong> for every active prepaid
-                subscriber whose billing anniversary (the day-of-month they started on) falls on
-                the selected date.
+                Creates and <strong>issues a fixed_monthly invoice</strong> for every active prepaid
+                subscriber whose latest uninvoiced billing anniversary falls on or before the
+                selected date.
               </p>
               <p className="mt-1.5 text-xs" style={{ color: 'var(--color-muted)' }}>
                 Due date = the selected date itself (prepaid = pay in advance, no lead time) ·
-                Customers not due on this date are skipped, not double-billed · Safe to re-run.
+                Already covered cycles are skipped, not double-billed · Safe to re-run · This action is manual for customers outside Mai Dubai.
               </p>
             </div>
 
@@ -1379,7 +1379,7 @@ function BulkFixedAnniversaryModal({ defaultDate, onClose }: { defaultDate: stri
               style={{ background: 'var(--color-cream)', border: '1px solid var(--color-border)' }}
             >
               <p style={{ color: 'var(--color-ink)' }}>
-                Creates a <strong>draft fixed_monthly invoice</strong> for every postpaid fixed_menu
+                Creates and <strong>issues a fixed_monthly invoice</strong> for every postpaid fixed_menu
                 subscriber with a monthly cycle that has fully elapsed as of the selected date —
                 each measured from their own subscription-start anniversary, in arrears.
               </p>

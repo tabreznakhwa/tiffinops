@@ -9,6 +9,7 @@ import {
   getOrderDailyTotals,
 } from '@/lib/db/aggregates'
 import { chargeForCustomer, groupSubscriptionsByCustomer } from '@/lib/billing/subscription-charge'
+import { getCustomersDueForInvoiceGeneration } from '@/lib/invoices/getDueForInvoiceGeneration'
 
 export const dynamic = 'force-dynamic'
 
@@ -103,6 +104,7 @@ export default async function DashboardPage({
     lastMonthBilledTotal,
     periodBilled,
     billedDayMap,
+    invoicesDueForGeneration,
   ] = await Promise.all([
     admin.from('payments').select('amount').is('voided_at', null).eq('payment_date', todayStr),
     admin.from('payments').select('amount').is('voided_at', null)
@@ -143,6 +145,7 @@ export default async function DashboardPage({
     getOrderTotalInRange(admin, lastMonthStart, lastMonthEnd),
     getOrderTotalInRange(admin, periodStart, periodEnd),
     getOrderDailyTotals(admin, d30Start, todayStr),
+    user.role === 'owner' ? getCustomersDueForInvoiceGeneration(todayStr) : Promise.resolve([]),
   ])
 
   const periodCollected = (periodPayRows ?? []).reduce((s, p) => s + parseFloat(String(p.amount)), 0)
@@ -319,6 +322,7 @@ export default async function DashboardPage({
     ordersToday:         orders.length,
     ordersByPeriod:      byPeriod,
     pendingApprovals:    pendingApprovals ?? 0,
+    invoicesDueForGeneration,
     rev30d,
     recentPayments:      ((recentPayments ?? []) as unknown as PayRow[]).slice(0, 6),
   }

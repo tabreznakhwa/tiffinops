@@ -25,8 +25,11 @@ export async function GET(req: NextRequest) {
   const currentDubaiMonth = formatInTimeZone(new Date(), 'Asia/Dubai', 'yyyy-MM')
   const targetMonth = monthParam ?? currentDubaiMonth
 
-  // System-initiated — no real user, use a sentinel ID
-  const result = await generateMonthlyInvoices(targetMonth, 'system-cron')
+  // Automatic generation is intentionally limited to Mai Dubai. Customers in
+  // every other area are surfaced on the dashboard and generated manually.
+  const result = await generateMonthlyInvoices(targetMonth, 'system-cron', {
+    onlyArea: 'Mai Dubai',
+  })
 
   return NextResponse.json({ ok: true, ...result })
 }

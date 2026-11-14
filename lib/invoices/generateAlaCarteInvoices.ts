@@ -13,8 +13,8 @@ import { formatInTimeZone } from 'date-fns-tz'
 // the customer. Same in-force resolution rule as mealPeriodsCoveredOn in
 // lib/billing/subscription-charge.ts (a row past its end_date, or zeroed out
 // to retire a superseded row, never counts, however recent its start_date).
-type CoveringSub = { customer_id: string; start_date: string; end_date: string | null; agreed_monthly_price: string | number }
-function hasActivePlanOn(subs: CoveringSub[], date: string): boolean {
+export type CoveringSub = { customer_id: string; start_date: string; end_date: string | null; agreed_monthly_price: string | number }
+export function hasActivePlanOn(subs: CoveringSub[], date: string): boolean {
   for (const s of subs) {
     if (s.start_date > date) continue
     if (s.end_date != null && s.end_date < date) continue
