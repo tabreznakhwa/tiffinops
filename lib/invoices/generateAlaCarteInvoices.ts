@@ -127,54 +127,117 @@ export async function generateAlaCarteInvoices(
     else coveringSubsByCustomer.set(s.customer_id, [s])
   }
 
-  // Already-invoiced order IDs (in non-cancelled invoices)
+  // Already-invoiced order IDs (in non-cancelled invoices). Page this parent
+  // table too: the project now has far more rows than PostgREST's default
+  // response limit, and an incomplete set could bill an order twice.
   const alreadyInvoicedOrderIds = new Set<string>()
   {
-    const { data: items } = await admin
-      .from('invoice_items')
-      .select('order_id, invoices!inner(status)')
-      .not('order_id', 'is', null)
-      .not('invoices.status', 'eq', 'cancelled')
-    for (const item of items ?? []) {
-      if (item.order_id) alreadyInvoicedOrderIds.add(item.order_id)
+    const PAGE = 500; let off = 0
+    while (true) {
+      const { data, error } = await admin
+        .from('invoice_items')
+        .select('id, order_id, invoices!inner(status)')
+        .not('order_id', 'is', null)
+        .not('invoices.status', 'eq', 'cancelled')
+        .order('id')
+        .range(off, off + PAGE - 1)
+      if (error) {
+        return { generated: 0, skipped: 0, errors: [error.message], invoice_ids: [], total_amount: 0, discount_total: 0, month: forMonth }
+      }
+      for (const item of data ?? []) {
+        if (item.order_id) alreadyInvoicedOrderIds.add(item.order_id)
+      }
+      if (!data || data.length < PAGE) break
+      off += PAGE
     }
   }
 
   // Customers already invoiced this cycle (idempotency)
-  const { data: existingForCycle } = await admin
+  const { data: existingForCycle, error: existingErr } = await admin
     .from('invoices')
     .select('customer_id')
     .eq('invoice_type', 'a_la_carte_cycle')
     .eq('billing_period_start', periodStart)
     .eq('billing_period_end', periodEnd)
+    .neq('status', 'cancelled')
+  if (existingErr) {
+    return { generated: 0, skipped: 0, errors: [existingErr.message], invoice_ids: [], total_amount: 0, discount_total: 0, month: forMonth }
+  }
 
   const alreadyHasCycleInvoice = new Set((existingForCycle ?? []).map(i => i.customer_id))
 
-  // Fetch all credit non-cancelled orders in the period, including their items in one query
+  // Fetch credit non-cancelled orders first, without embedding order_items.
+  // PostgREST applies its row limit to the flattened parent+child result when
+  // an embedded one-to-many relationship is selected. A 500-row page could
+  // therefore contain only ~13 days of orders when each order had several
+  // items, and `data.length < PAGE` falsely looked like the final page. That
+  // silently truncated every busy Mai Dubai cycle invoice. Page the parent
+  // orders independently, then fetch their items in bounded ID batches.
   type OrderRow = {
     id: string; customer_id: string; total_amount: string
     order_date: string; order_number: string; meal_period: string; notes: string | null
     order_items: { item_name_snapshot: string; quantity: string; unit_price: string | null }[]
   }
-  const allOrders: OrderRow[] = []
+  type OrderBase = Omit<OrderRow, 'order_items'>
+  const orderBases: OrderBase[] = []
   {
     const PAGE = 500; let off = 0
     while (true) {
-      const { data } = await admin
+      const { data, error } = await admin
         .from('orders')
-        .select('id, customer_id, total_amount, order_date, order_number, meal_period, notes, order_items(item_name_snapshot, quantity, unit_price)')
+        .select('id, customer_id, total_amount, order_date, order_number, meal_period, notes')
         .in('customer_id', customerIds)
         .gte('order_date', periodStart)
         .lte('order_date', periodEnd)
         .eq('is_credit', true)
         .not('order_status', 'in', '(cancelled,voided,draft)')
+        .order('id')
         .range(off, off + PAGE - 1)
+      if (error) {
+        return { generated: 0, skipped: 0, errors: [error.message], invoice_ids: [], total_amount: 0, discount_total: 0, month: forMonth }
+      }
       if (!data || data.length === 0) break
-      allOrders.push(...(data as unknown as OrderRow[]))
+      orderBases.push(...(data as unknown as OrderBase[]))
       if (data.length < PAGE) break
       off += PAGE
     }
   }
+
+  type OrderItemRow = {
+    id: string
+    order_id: string
+    item_name_snapshot: string
+    quantity: string
+    unit_price: string | null
+  }
+  const itemsByOrder = new Map<string, OrderItemRow[]>()
+  const ID_BATCH = 200
+  for (let i = 0; i < orderBases.length; i += ID_BATCH) {
+    const ids = orderBases.slice(i, i + ID_BATCH).map(o => o.id)
+    const PAGE = 500; let off = 0
+    while (true) {
+      const { data, error } = await admin
+        .from('order_items')
+        .select('id, order_id, item_name_snapshot, quantity, unit_price')
+        .in('order_id', ids)
+        .order('id')
+        .range(off, off + PAGE - 1)
+      if (error) {
+        return { generated: 0, skipped: 0, errors: [error.message], invoice_ids: [], total_amount: 0, discount_total: 0, month: forMonth }
+      }
+      for (const item of (data ?? []) as OrderItemRow[]) {
+        const list = itemsByOrder.get(item.order_id)
+        if (list) list.push(item)
+        else itemsByOrder.set(item.order_id, [item])
+      }
+      if (!data || data.length < PAGE) break
+      off += PAGE
+    }
+  }
+  const allOrders: OrderRow[] = orderBases.map(order => ({
+    ...order,
+    order_items: itemsByOrder.get(order.id) ?? [],
+  }))
 
   // Group uninvoiced orders by customer — excluding any order already
   // covered by an active fixed plan on its date (see hasActivePlanOn above);

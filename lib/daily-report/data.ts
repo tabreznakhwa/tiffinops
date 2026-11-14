@@ -35,17 +35,7 @@ export async function loadDailyReportData(from: string, to: string): Promise<{
 }> {
   const admin = createAdminClient()
 
-  const [{ data: orders }, { data: subsData }, { data: pauseRows }, { data: menuItems }] = await Promise.all([
-    // Every non-cancelled/voided/draft order in the range — à la carte orders
-    // plus hybrid customers' "extra" orders. This is the only place dish-level
-    // data exists; fixed-menu subscription meals have none (see below).
-    admin
-      .from('orders')
-      .select('id, meal_period, order_status, total_amount, order_items(id, item_name_snapshot, quantity, total_price)')
-      .gte('order_date', from)
-      .lte('order_date', to)
-      .not('order_status', 'in', '(cancelled,voided,draft)'),
-
+  const [{ data: subsData }, { data: pauseRows }, { data: menuItems }] = await Promise.all([
     // Every subscription row — needed to resolve, per customer per day, which
     // meal periods were actually in force (and not paused).
     admin
@@ -65,6 +55,60 @@ export async function loadDailyReportData(from: string, to: string): Promise<{
       .from('menu_items')
       .select('name, cost_price'),
   ])
+
+  // Fetch parent orders independently from their one-to-many items. An embedded
+  // order_items select is capped at 1,000 expanded rows by PostgREST, which made
+  // a full busy month appear as exactly 1,000 orders and understated revenue.
+  type OrderBase = Omit<OrderRow, 'order_items'>
+  type ItemRow = OrderItemRow & { order_id: string }
+  const PAGE = 1000
+  const orderBases: OrderBase[] = []
+  let orderOffset = 0
+  while (true) {
+    const { data, error } = await admin
+      .from('orders')
+      .select('id, meal_period, order_status, total_amount')
+      .gte('order_date', from)
+      .lte('order_date', to)
+      .not('order_status', 'in', '(cancelled,voided,draft)')
+      .order('order_date')
+      .order('created_at')
+      .order('id')
+      .range(orderOffset, orderOffset + PAGE - 1)
+    if (error) throw new Error(`Could not load daily report orders: ${error.message}`)
+    const batch = (data ?? []) as unknown as OrderBase[]
+    orderBases.push(...batch)
+    if (batch.length < PAGE) break
+    orderOffset += PAGE
+  }
+
+  const itemsByOrder = new Map<string, OrderItemRow[]>()
+  const ID_BATCH = 200
+  for (let i = 0; i < orderBases.length; i += ID_BATCH) {
+    const orderIds = orderBases.slice(i, i + ID_BATCH).map(order => order.id)
+    let itemOffset = 0
+    while (true) {
+      const { data, error } = await admin
+        .from('order_items')
+        .select('id, order_id, item_name_snapshot, quantity, total_price')
+        .in('order_id', orderIds)
+        .order('id')
+        .range(itemOffset, itemOffset + PAGE - 1)
+      if (error) throw new Error(`Could not load daily report items: ${error.message}`)
+      const batch = (data ?? []) as unknown as ItemRow[]
+      for (const item of batch) {
+        const list = itemsByOrder.get(item.order_id)
+        if (list) list.push(item)
+        else itemsByOrder.set(item.order_id, [item])
+      }
+      if (batch.length < PAGE) break
+      itemOffset += PAGE
+    }
+  }
+  const orders: OrderRow[] = orderBases.map(order => ({
+    ...order,
+    order_items: itemsByOrder.get(order.id) ?? [],
+  }))
 
   const pausesBySub = new Map<string, { meal_period: string; pause_start: string; pause_end: string | null }[]>()
   for (const p of pauseRows ?? []) {
@@ -116,7 +160,7 @@ export async function loadDailyReportData(from: string, to: string): Promise<{
   }
 
   return {
-    orders: (orders ?? []) as unknown as OrderRow[],
+    orders,
     fixedMenuCounts,
     costByItem,
   }
