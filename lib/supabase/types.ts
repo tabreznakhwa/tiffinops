@@ -440,6 +440,45 @@ export type Database = {
           { foreignKeyName: 'orders_created_by_fkey'; columns: ['created_by']; referencedRelation: 'users'; referencedColumns: ['id'] }
         ]
       }
+      menu_message_deliveries: {
+        Row: {
+          id: string
+          menu_date: string
+          meal_period: Enums<'meal_period'>
+          recipient_role: string
+          recipient_phone: string
+          status: string
+          message_body: string
+          error_detail: string | null
+          sent_at: string | null
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          menu_date: string
+          meal_period: Enums<'meal_period'>
+          recipient_role: string
+          recipient_phone: string
+          status?: string
+          message_body: string
+          error_detail?: string | null
+          sent_at?: string | null
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          menu_date?: string
+          meal_period?: Enums<'meal_period'>
+          recipient_role?: string
+          recipient_phone?: string
+          status?: string
+          message_body?: string
+          error_detail?: string | null
+          sent_at?: string | null
+          created_at?: string
+        }
+        Relationships: []
+      }
       whatsapp_messages: {
         Row: {
           id: string
@@ -983,6 +1022,10 @@ export type Database = {
           cash_opening_balance: string
           bank_opening_balance: string
           opening_balance_date: string | null
+          menu_whatsapp_enabled: boolean
+          menu_whatsapp_from_number: string | null
+          menu_whatsapp_owner_number: string | null
+          menu_whatsapp_manager_number: string | null
           purchase_prefix: string
           supplier_prefix: string
           inventory_item_prefix: string
@@ -1008,6 +1051,10 @@ export type Database = {
           cash_opening_balance?: string
           bank_opening_balance?: string
           opening_balance_date?: string | null
+          menu_whatsapp_enabled?: boolean
+          menu_whatsapp_from_number?: string | null
+          menu_whatsapp_owner_number?: string | null
+          menu_whatsapp_manager_number?: string | null
           purchase_prefix?: string
           supplier_prefix?: string
           inventory_item_prefix?: string
@@ -1033,6 +1080,10 @@ export type Database = {
           cash_opening_balance?: string
           bank_opening_balance?: string
           opening_balance_date?: string | null
+          menu_whatsapp_enabled?: boolean
+          menu_whatsapp_from_number?: string | null
+          menu_whatsapp_owner_number?: string | null
+          menu_whatsapp_manager_number?: string | null
           purchase_prefix?: string
           supplier_prefix?: string
           inventory_item_prefix?: string

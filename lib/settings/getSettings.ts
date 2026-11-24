@@ -21,6 +21,10 @@ export type AppSettings = {
   cash_opening_balance: string
   bank_opening_balance: string
   opening_balance_date: string | null
+  menu_whatsapp_enabled: boolean
+  menu_whatsapp_from_number: string | null
+  menu_whatsapp_owner_number: string | null
+  menu_whatsapp_manager_number: string | null
   updated_at: string
 }
 
@@ -44,6 +48,10 @@ export const FALLBACK: AppSettings = {
   cash_opening_balance: '0',
   bank_opening_balance: '0',
   opening_balance_date: null,
+  menu_whatsapp_enabled: false,
+  menu_whatsapp_from_number: null,
+  menu_whatsapp_owner_number: null,
+  menu_whatsapp_manager_number: null,
   updated_at: new Date().toISOString(),
 }
 
@@ -51,7 +59,7 @@ export const FALLBACK: AppSettings = {
 export const getSettings = cache(async (): Promise<AppSettings> => {
   const admin = createAdminClient()
   const { data } = await admin.from('app_settings').select('*').eq('id', 1).single()
-  return (data as AppSettings | null) ?? FALLBACK
+  return data ? { ...FALLBACK, ...(data as Partial<AppSettings>) } : FALLBACK
 })
 
 // VAT back-calculation: total × rate / (100 + rate)

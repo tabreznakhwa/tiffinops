@@ -144,6 +144,10 @@ export function SettingsModule({ settings }: { settings: AppSettings }) {
   const [paymentPrefix,   setPaymentPrefix]   = useState(settings.payment_prefix)
   const [customerPrefix,  setCustomerPrefix]  = useState(settings.customer_prefix)
   const [billingDay,      setBillingDay]      = useState(String(settings.default_billing_day))
+  const [menuWhatsappEnabled, setMenuWhatsappEnabled] = useState(!!settings.menu_whatsapp_enabled)
+  const [menuWhatsappFrom, setMenuWhatsappFrom] = useState(settings.menu_whatsapp_from_number ?? '')
+  const [menuWhatsappOwner, setMenuWhatsappOwner] = useState(settings.menu_whatsapp_owner_number ?? '')
+  const [menuWhatsappManager, setMenuWhatsappManager] = useState(settings.menu_whatsapp_manager_number ?? '')
 
   const [success,  setSuccess]  = useState(false)
   const [errorMsg, setErrorMsg] = useState('')
@@ -182,6 +186,10 @@ export function SettingsModule({ settings }: { settings: AppSettings }) {
         cash_opening_balance:  cashOpeningBalance,
         bank_opening_balance:  bankOpeningBalance,
         opening_balance_date:  openingBalanceDate || null,
+        menu_whatsapp_enabled: menuWhatsappEnabled,
+        menu_whatsapp_from_number: menuWhatsappFrom || null,
+        menu_whatsapp_owner_number: menuWhatsappOwner || null,
+        menu_whatsapp_manager_number: menuWhatsappManager || null,
       })
 
       if (result.error) {
@@ -397,7 +405,61 @@ export function SettingsModule({ settings }: { settings: AppSettings }) {
           </div>
         </Section>
 
-        {/* ── Section 5: Number Prefixes ────────────────────────────────────── */}
+        {/* ── Section 5: Scheduled WhatsApp menu ────────────────────────────── */}
+        <Section title="Scheduled WhatsApp Menu" defaultOpen={false}>
+          <div
+            className="text-xs px-3 py-2 rounded-[8px]"
+            style={{ background: 'var(--color-blue-soft, #EFF6FF)', color: 'var(--color-blue)', border: '1px solid #BFDBFE' }}
+          >
+            Sends the published Mai Dubai menu to the owner and manager for forwarding to the group: breakfast at 9 PM the previous evening, lunch at 9 AM, and dinner at 1 PM (Dubai time). Each recipient must have messaged the DoubleTick number within the preceding 24 hours.
+          </div>
+
+          <label className="flex items-center gap-3 text-sm font-semibold" style={{ color: 'var(--color-ink)' }}>
+            <input
+              type="checkbox"
+              checked={menuWhatsappEnabled}
+              onChange={e => setMenuWhatsappEnabled(e.target.checked)}
+              className="h-4 w-4"
+            />
+            Enable automatic daily menu messages
+          </label>
+
+          <Field label="DoubleTick WhatsApp Number" hint="The business number connected to your DoubleTick API, including country code">
+            <input
+              type="tel"
+              value={menuWhatsappFrom}
+              onChange={e => setMenuWhatsappFrom(e.target.value)}
+              placeholder="+971 50 123 4567"
+              className={inputClass}
+              style={inputStyle}
+            />
+          </Field>
+
+          <div className="grid sm:grid-cols-2 gap-4">
+            <Field label="Owner WhatsApp Number" hint="Receives every scheduled menu">
+              <input
+                type="tel"
+                value={menuWhatsappOwner}
+                onChange={e => setMenuWhatsappOwner(e.target.value)}
+                placeholder="+971 50 123 4567"
+                className={inputClass}
+                style={inputStyle}
+              />
+            </Field>
+            <Field label="Manager WhatsApp Number" hint="Optional; leave blank if only the owner should receive it">
+              <input
+                type="tel"
+                value={menuWhatsappManager}
+                onChange={e => setMenuWhatsappManager(e.target.value)}
+                placeholder="+971 50 123 4567"
+                className={inputClass}
+                style={inputStyle}
+              />
+            </Field>
+          </div>
+        </Section>
+
+        {/* ── Section 6: Number Prefixes ────────────────────────────────────── */}
         <Section title="Number Prefixes" defaultOpen={false}>
           <div className="grid sm:grid-cols-2 gap-4">
             <Field label="Invoice Prefix *">
